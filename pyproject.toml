@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "blitz"
+version = "0.1.0"
+description = "Bulk Loading & Interactive Time-series Zonal-analysis"
+authors = [
+    "alienkrieg <alienkrieg@gmail.com>",
+    "Philipp Mattern <philipp.mattern@inp-greifswald.de>"
+]
+
+[tool.poetry.dependencies]
+python = ">3.11,<3.12"
+numpy = ">1.24.0,<1.25.0"
+PyQt5 = "^5.15.9"
+pyqtgraph = "^0.13.3"
+QDarkStyle = "^3.1"
+psutil = "^5.9.5"
+natsort = "^8.4.0"
+opencv-python = "^4.8.0"
+numba = "^0.57.1"
+
+[tool.poetry.dev-dependencies]
+pyinstaller = "^5.13.2"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
