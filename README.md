@@ -17,4 +17,6 @@ After a successful installation, you can start **BLITZ** by executing:
 
 It is also possible building the executable using the package `pyinstaller`:
 
-    $ pyinstaller --onefile --windowed blitz.py
+    $ pyinstaller --noconsole --windowed blitz.py
+
+Do not use --onefile; this collides with multicore-processing
