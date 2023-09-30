@@ -356,7 +356,7 @@ def _load_video(
     return np.stack(frames), metadata
 
 
-def from_tof(file_path: str) -> np.ndarray:
+def tof_from_json(file_path: str) -> np.ndarray:
     with open(file_path, 'r') as file:
         raw_data = json.load(file)
 

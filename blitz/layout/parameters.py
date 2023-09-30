@@ -18,10 +18,10 @@ FILE_PARAMS = [
             'step': 0.1,
             'limits': (0.1 , 1)}
     ]},
-    {'name': 'Load Additional Data',
+    {'name': 'Load TOF Data',
         'type': 'group',
         'expanded' :False,
-        'tooltip': 'Additional Data to load',
+        'tooltip': 'TOF Data to load',
         'children': [
         {'name': 'Browse', 'type': 'action'},
         {'name': 'Show', 'type': 'bool', 'value': False, 'enabled': False},

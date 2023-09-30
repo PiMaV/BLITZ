@@ -2,10 +2,11 @@ from typing import Any, Optional
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QDropEvent
 from PyQt5.QtWidgets import (QDialog, QLabel, QMainWindow, QPushButton,
-                             QVBoxLayout, QTextEdit)
+                             QTextEdit, QVBoxLayout, QWidget)
+from pyqtgraph import mkPen
 
 
 class LoadingDialog:
@@ -20,34 +21,26 @@ class LoadingDialog:
         self.dialog.setModal(True)
 
 
-class PlotterWindow:
-    def __init__(self, main_window: QMainWindow) -> None:
-        self.mainWindow = main_window
+class WindowedPlot(QMainWindow):
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
 
-        self.window = QMainWindow()
-        self.window.setWindowTitle("Additional Plot")
-        self.window.resize(500, 400)
-
-        # Create a PlotWidget and set data
         self.plot_item  = pg.PlotItem()
         self.plot_widget = pg.PlotWidget(plotItem=self.plot_item)
         self.legend = self.plot_item.addLegend()
 
-        self.window.setCentralWidget(self.plot_widget)
+        self.setCentralWidget(self.plot_widget)
 
     def plot_data(
         self,
-        x_data,
-        y_data,
-        pen_color,
+        x_data: np.ndarray,
+        y_data: np.ndarray,
+        pen_color: str,
         label: Optional[str] = None,
     ) -> None:
         plot_data = self.plot_item.plot(x_data, y_data, pen=pen_color, width=1)
         if label:
             self.legend.addItem(plot_data, label)
-
-    def show(self):
-        self.window.show()
 
 
 class DragDropButton(QPushButton):
@@ -81,12 +74,18 @@ class LoggingTextEdit(QTextEdit):
 
 
 class DraggableCrosshair:
-    def __init__(self, main_window: QMainWindow) -> None:
+    def __init__(self, main_window: "MainWindow") -> None:
         self.main_window = main_window
         self.v_line_itself = pg.InfiniteLine(angle=90, movable=True)
         self.h_line_itself = pg.InfiniteLine(angle=0, movable=True)
-        self.main_window.imageView.addItem(self.v_line_itself)
-        self.main_window.imageView.addItem(self.h_line_itself)
+        self.main_window.image_viewer.addItem(self.v_line_itself)
+        self.main_window.image_viewer.addItem(self.h_line_itself)
+        self.pen = mkPen(
+            color=(200, 200, 200, 140),
+            style=Qt.PenStyle.DashDotDotLine,
+            width=1,
+        )
+
         self.setup_connections()
         self.toggle_crosshair()
 
@@ -96,19 +95,21 @@ class DraggableCrosshair:
         self.items_added = False
 
     def toggle_crosshair(self):
-        crosshair_state = self.main_window.rootParamEdit.param(
+        crosshair_state = self.main_window.parameters_edit.param(
             'Visualisations', 'Crosshair'
         ).value()
 
         if crosshair_state:
-            if self.v_line_itself not in self.main_window.imageView.view.items:
-                self.main_window.imageView.addItem(self.v_line_itself)
+            if (self.v_line_itself
+                    not in self.main_window.image_viewer.view.items):
+                self.main_window.image_viewer.view.addItem(self.v_line_itself)
 
-            if self.h_line_itself not in self.main_window.imageView.view.items:
-                self.main_window.imageView.addItem(self.h_line_itself)
+            if (self.h_line_itself
+                    not in self.main_window.image_viewer.view.items):
+                self.main_window.image_viewer.view.addItem(self.h_line_itself)
 
-            self.v_line_itself.setPen(self.main_window.crosshair_pen)
-            self.h_line_itself.setPen(self.main_window.crosshair_pen)
+            self.h_line_itself.setPen(self.pen)
+            self.v_line_itself.setPen(self.pen)
 
             self.v_line_itself.setMovable(True)
             self.h_line_itself.setMovable(True)
@@ -116,22 +117,22 @@ class DraggableCrosshair:
             self.v_line_itself.setMovable(False)
             self.h_line_itself.setMovable(False)
 
-            self.main_window.imageView.removeItem(self.h_line_itself)
-            self.main_window.imageView.removeItem(self.v_line_itself)
+            self.main_window.image_viewer.view.removeItem(self.h_line_itself)
+            self.main_window.image_viewer.view.removeItem(self.v_line_itself)
 
     def update_plots(self):
         x = int(self.v_line_itself.getPos()[0])
         y = int(self.h_line_itself.getPos()[1])
-        frame_idx = int(self.main_window.imageView.timeLine.value())
+        frame_idx = int(self.main_window.image_viewer.timeLine.value())
 
         self.main_window.v_line.clear()
         self.main_window.h_line.clear()
         self.plot_data(frame_idx, x, y)
 
     def plot_data(self, frame_idx: int, x: int, y: int) -> None:
-        frame_max = self.main_window.masked_data.shape[0] - 1
-        x_max = self.main_window.masked_data.shape[1] - 1
-        y_max = self.main_window.masked_data.shape[2] - 1
+        frame_max = self.main_window.data.image.shape[0] - 1
+        x_max = self.main_window.data.image.shape[1] - 1
+        y_max = self.main_window.data.image.shape[2] - 1
         if frame_idx > frame_max:
             print("Frame index out of bounds, skipping plotting.")
             return
@@ -143,18 +144,18 @@ class DraggableCrosshair:
             print("Indices out of bounds, skipping plotting.")
             return
 
-        x_values = np.arange(self.main_window.masked_data.shape[2])
+        x_values = np.arange(self.main_window.data.image.shape[2])
 
-        if (len(self.main_window.masked_data.shape) == 4
-                and self.main_window.masked_data.shape[3] == 3):
+        if (len(self.main_window.data.image.shape) == 4
+                and self.main_window.data.image.shape[3] == 3):
             # colored image
-            r_data_v = self.main_window.masked_data[frame_idx, x, :, 0]
-            g_data_v = self.main_window.masked_data[frame_idx, x, :, 1]
-            b_data_v = self.main_window.masked_data[frame_idx, x, :, 2]
+            r_data_v = self.main_window.data.image[frame_idx, x, :, 0]
+            g_data_v = self.main_window.data.image[frame_idx, x, :, 1]
+            b_data_v = self.main_window.data.image[frame_idx, x, :, 2]
 
-            r_data_h = self.main_window.masked_data[frame_idx, :, y, 0]
-            g_data_h = self.main_window.masked_data[frame_idx, :, y, 1]
-            b_data_h = self.main_window.masked_data[frame_idx, :, y, 2]
+            r_data_h = self.main_window.data.image[frame_idx, :, y, 0]
+            g_data_h = self.main_window.data.image[frame_idx, :, y, 1]
+            b_data_h = self.main_window.data.image[frame_idx, :, y, 2]
 
             self.main_window.v_line.plot(r_data_v, x_values, pen='r')
             self.main_window.v_line.plot(g_data_v, x_values, pen='g')
@@ -165,7 +166,7 @@ class DraggableCrosshair:
             self.main_window.h_line.plot(b_data_h, pen='b')
         else:
             # grayscale image
-            v_data = self.main_window.masked_data[frame_idx, x, :]
-            h_data = self.main_window.masked_data[frame_idx, :, y]
+            v_data = self.main_window.data.image[frame_idx, x, :]
+            h_data = self.main_window.data.image[frame_idx, :, y]
             self.main_window.v_line.plot(v_data, x_values, pen='gray')
             self.main_window.h_line.plot(h_data, pen='gray')
