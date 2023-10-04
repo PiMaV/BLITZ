@@ -12,14 +12,11 @@ from PyQt5.QtWidgets import (QApplication, QFileDialog, QHeaderView, QLabel,
 from pyqtgraph.dockarea import Dock, DockArea
 from pyqtgraph.parametertree import Parameter, ParameterTree
 
-from ..data.image import ImageData
-from ..data.load import from_file
 from ..tools import get_available_ram, insert_line_breaks
 from .parameters import EDIT_PARAMS, FILE_PARAMS
 from .tof import TOFWindow
 from .viewer import ImageViewer
-from .widgets import (DragDropButton, DraggableCrosshair, LoadingDialog,
-                      LoggingTextEdit)
+from .widgets import DragDropButton, LoadingDialog, LoggingTextEdit
 
 TITLE = (
     "BLITZ V 1.5.2 : Bulk Loading & Interactive Time-series Zonal-analysis "
@@ -46,10 +43,6 @@ class MainWindow(QMainWindow):
         self.setup_file_info_dock()
         self.setup_image_and_line_viewers()
 
-        self.crosshair = DraggableCrosshair(self)
-        self.image_viewer.roi.setPen(self.crosshair.pen)
-        self.image_viewer.ui.roiPlot.setFixedHeight(self.common_size)
-
         script_dir = os.path.dirname(os.path.abspath(__file__))
         icon_path = os.path.join(script_dir, 'BLITZ.ico')
         self.setWindowIcon(QIcon(icon_path))
@@ -61,8 +54,6 @@ class MainWindow(QMainWindow):
         self.angle_labels = []
         self.setup_connections()
         sys.stdout = LoggingTextEdit(self.history)
-        self.add_line_labels()
-        self.toggle_roi()
 
         self.tof_window: None | TOFWindow = None
 
@@ -89,12 +80,12 @@ class MainWindow(QMainWindow):
             self.common_size,
             int(h_line_height),
         )
-        self.dock_v_line = self.create_dock(
+        self.dock_v_plot = self.create_dock(
             "V Line",
             self.common_size,
             h_viewer_height - int(h_line_height / 2),
         )
-        self.dock_h_line = self.create_dock(
+        self.dock_h_plot = self.create_dock(
             "H Line",
             image_viewer_width,
             h_line_height,
@@ -107,10 +98,10 @@ class MainWindow(QMainWindow):
 
         area.addDock(self.dock_image_viewer, 'bottom')
         area.addDock(self.dock_load_data, 'left')
-        area.addDock(self.dock_h_line, 'top', self.dock_image_viewer)
-        area.addDock(self.dock_edit_data, 'right', self.dock_h_line)
-        area.addDock(self.dock_v_line, 'bottom', self.dock_load_data)
-        area.addDock(self.dock_file_metadata, 'bottom', self.dock_v_line)
+        area.addDock(self.dock_h_plot, 'top', self.dock_image_viewer)
+        area.addDock(self.dock_edit_data, 'right', self.dock_h_plot)
+        area.addDock(self.dock_v_plot, 'bottom', self.dock_load_data)
+        area.addDock(self.dock_file_metadata, 'bottom', self.dock_v_plot)
 
     def create_dock(self, name: str, width: float, height: float) -> Dock:
         dock = Dock(name, size=(width, height))
@@ -186,28 +177,32 @@ class MainWindow(QMainWindow):
         self.dock_file_metadata.addWidget(file_info_widget)
 
     def setup_image_and_line_viewers(self) -> None:
-        v_line_viewbox = pg.ViewBox()
-        v_line_viewbox.invertX(True)
-        v_line_viewbox.invertY(True)
-        v_line_item = pg.PlotItem(viewBox=v_line_viewbox)
-        v_line_item.showGrid(x=True, y=True, alpha=0.4)
-        self.v_line = pg.PlotWidget(plotItem=v_line_item)
-        self.dock_v_line.addWidget(self.v_line)
+        v_plot_viewbox = pg.ViewBox()
+        v_plot_viewbox.invertX(True)
+        v_plot_viewbox.invertY(True)
+        v_plot_item = pg.PlotItem(viewBox=v_plot_viewbox)
+        v_plot_item.showGrid(x=True, y=True, alpha=0.4)
+        self.v_plot = pg.PlotWidget(plotItem=v_plot_item)
+        self.dock_v_plot.addWidget(self.v_plot)
 
-        h_line_viewbox = pg.ViewBox()
-        h_line_viewbox.invertX(True)
-        h_line_viewbox.invertY(True)
-        h_line_item = pg.PlotItem(viewBox=h_line_viewbox)
-        h_line_item.showGrid(x=True, y=True, alpha=0.4)
-        self.h_line = pg.PlotWidget(plotItem=h_line_item)
-        self.dock_h_line.addWidget(self.h_line)
+        h_plot_viewbox = pg.ViewBox()
+        h_plot_viewbox.invertX(True)
+        h_plot_viewbox.invertY(True)
+        h_plot_item = pg.PlotItem(viewBox=h_plot_viewbox)
+        h_plot_item.showGrid(x=True, y=True, alpha=0.4)
+        self.h_plot = pg.PlotWidget(plotItem=h_plot_item)
+        self.dock_h_plot.addWidget(self.h_plot)
 
-        self.data = ImageData()
-        self.image_viewer = ImageViewer(self.data, self.info_label)
+        self.image_viewer = ImageViewer(
+            h_plot=self.h_plot,
+            v_plot=self.v_plot,
+            info_label=self.info_label,
+            common_size=self.common_size,
+        )
         self.dock_image_viewer.addWidget(self.image_viewer)
 
-        self.v_line.setYLink(self.image_viewer.getView())
-        self.h_line.setXLink(self.image_viewer.getView())
+        self.v_plot.setYLink(self.image_viewer.getView())
+        self.h_plot.setXLink(self.image_viewer.getView())
 
     def set_default_geometry(self, size_factor: float = 0.85) -> None:
         screen_geometry = QApplication.primaryScreen().availableGeometry()
@@ -223,11 +218,9 @@ class MainWindow(QMainWindow):
     def setup_connections(self) -> None:
         self.browse_button.clicked.connect(self.browse_file)
         self.browse_button.file_dropped.connect(self.load_from_filepath)
-        self.image_viewer.timeLine.sigPositionChanged.connect(
-            self.crosshair.update_plots
-        )
         self.reset_button.clicked.connect(self.reset_view)
-        self.image_viewer.poly_roi.sigRegionChanged.connect(
+
+        self.image_viewer.roi_viewer.sigRegionChanged.connect(
             self.update_line_labels_and_angles
         )
 
@@ -258,7 +251,7 @@ class MainWindow(QMainWindow):
         ).sigActivated.connect(self.apply_mask)
         self.parameters_edit.param(
             'ROI','Enable'
-        ).sigValueChanged.connect(self.toggle_roi)
+        ).sigValueChanged.connect(self.image_viewer.roi_viewer.toggle)
         self.parameters_edit.param(
             'ROI','show in mm'
         ).sigValueChanged.connect(self.update_line_labels_and_angles)
@@ -267,7 +260,7 @@ class MainWindow(QMainWindow):
         ).sigValueChanged.connect(self.update_line_labels_and_angles)
         self.parameters_edit.param(
             'Visualisations', 'Crosshair'
-        ).sigValueChanged.connect(self.crosshair.toggle_crosshair)
+        ).sigValueChanged.connect(self.image_viewer.toggle_crosshair)
 
         self.parameters_file.param(
             'Loading Pars', 'max. RAM (GB)'
@@ -281,7 +274,9 @@ class MainWindow(QMainWindow):
             'Load TOF Data', 'Show'
         ).setOpts(enabled=True, value=True)
         if self.tof_window is None:
-            self.tof_window = TOFWindow(self, path, self.data.meta)
+            self.tof_window = TOFWindow(
+                self, path, self.image_viewer.data.meta,
+            )
         else:
             self.tof_window.update_plot(path)
             self.tof_window.show()
@@ -317,43 +312,34 @@ class MainWindow(QMainWindow):
     def load_data(self, filepath: Optional[str] = None) -> None:
         start_time = clock()
         dialog = self.show_loading_dialog()
-        if filepath:
-            self.parameters_edit.param(
-                'Calculations', 'Operation'
-            ).setValue('Org')
-            data, metadata = from_file(
-                filepath,
-                size=self.parameters_file.param(
-                    'Loading Pars', 'Size ratio'
-                ).value(),
-                ratio=self.parameters_file.param(
-                    'Loading Pars', 'Subset ratio'
-                ).value(),
-                convert_to_8_bit=self.parameters_file.param(
-                    'Loading Pars', 'Load as 8 bit'
-                ).value(),
-                ram_size=self.parameters_file.param(
-                    'Loading Pars', 'max. RAM (GB)'
-                ).value(),
-            )
-        else:
-            # If filepath is not provided, load random data
-            data, metadata = from_file()
+        size = self.parameters_file.param(
+            'Loading Pars', 'Size ratio'
+        ).value()
+        ratio = self.parameters_file.param(
+            'Loading Pars', 'Subset ratio'
+        ).value()
+        convert_to_8_bit = self.parameters_file.param(
+            'Loading Pars', 'Load as 8 bit'
+        ).value()
+        ram_size = self.parameters_file.param(
+            'Loading Pars', 'max. RAM (GB)'
+        ).value()
 
-        self.data.set(data, metadata)
+        self.image_viewer.load_data(
+            filepath if filepath else None,
+            size=size,
+            ratio=ratio,
+            convert_to_8_bit=convert_to_8_bit,
+            ram_size=ram_size,
+        )
 
         print(f"Available RAM: {get_available_ram():.2f} GB")
         self.parameters_edit.param(
             'Mask', 'Mask'
         ).setOpts(enabled=True, value=False)
-
-        self.init_roi_and_crosshair()
         self.filepath = filepath
         self.close_loading_dialog(dialog)
         print(f"Time taken to load_data: {clock() - start_time:.2f} seconds")
-
-        self.image_viewer.show_image(self.data.image)
-        self.image_viewer.ui.roiPlot.plotItem.vb.autoRange()
 
     def on_operation_changed(self) -> None:
         operation = self.parameters_edit.param(
@@ -364,35 +350,22 @@ class MainWindow(QMainWindow):
         dialog = self.show_loading_dialog(message="Calculating statistics...")
         print(f"Available RAM: {get_available_ram():.2f} GB")
 
-        if operation == 'Min':
-            self.image_viewer.setImage(self.data.min)
-        elif operation == 'Max':
-            self.image_viewer.setImage(self.data.max)
-        elif operation == 'Mean':
-            self.image_viewer.setImage(self.data.mean)
-        elif operation == 'STD':
-            self.image_viewer.setImage(self.data.std)
-        elif operation == 'Org':
-            self.image_viewer.setImage(self.data.image)
-        else:
-            print("Operation not implemented")
+        self.image_viewer.manipulation(operation)
 
         self.close_loading_dialog(dialog)
         print(f"Time taken to calculate: {clock() - start_time:.2f} seconds")
         print(f"Available RAM: {get_available_ram():.2f} GB")
 
     def checkbox_changed(self) -> None:
-        rotate = self.parameters_edit.param(
-            'Manipulations', 'Rotate CCW'
-        ).value()
-        flip_x = self.parameters_edit.param('Manipulations', 'Flip X').value()
-        flip_y = self.parameters_edit.param('Manipulations', 'Flip Y').value()
-
-        self.image_viewer.update_data(rotate, flip_x, flip_y)
+        if self.parameters_edit.param('Manipulations', 'Rotate CCW').value():
+            self.image_viewer.manipulation("rotate")
+        if self.parameters_edit.param('Manipulations', 'Flip X').value():
+            self.image_viewer.manipulation("flip_x")
+        if self.parameters_edit.param('Manipulations', 'Flip Y').value():
+            self.image_viewer.manipulation("flip_y")
 
     def apply_mask(self) -> None:
         self.image_viewer.apply_mask()
-        self.init_roi_and_crosshair()
         self.parameters_edit.param('Calculations', 'Operation').setValue('Org')
 
     def reset_view(self) -> None:
@@ -403,20 +376,6 @@ class MainWindow(QMainWindow):
         self.parameters_edit.param('Manipulations', 'Flip X').setValue(False)
         self.parameters_edit.param('Manipulations', 'Flip Y').setValue(False)
         self.parameters_edit.param('Mask', 'Mask').setValue(False)
-        self.init_roi_and_crosshair()
-
-    def init_roi_and_crosshair(self) -> None:
-        height = self.data.image.shape[2]
-        width = self.data.image.shape[1]
-        percentage = 0.02
-        roi_width = max(int(percentage * width),1)
-        roi_height = max(int(percentage * height),1)
-        x_pos = (width - roi_width) / 2
-        y_pos = (height - roi_height) / 2
-        self.image_viewer.roi.setPos([x_pos, y_pos])
-        self.image_viewer.roi.setSize([roi_width, roi_height])
-        self.crosshair.v_line_itself.setPos(width / 2)
-        self.crosshair.h_line_itself.setPos(height / 2)
 
     def show_loading_dialog(
         self,
@@ -430,116 +389,9 @@ class MainWindow(QMainWindow):
     def close_loading_dialog(self, dialog) -> None:
         dialog.accept()
 
-    def toggle_roi(self) -> None:
-        is_checked = self.parameters_edit.param('ROI', 'Enable').value()
-        self.image_viewer.poly_roi.setVisible(is_checked)
-        for label in self.line_labels:
-            label.setVisible(is_checked)
-        for label in self.angle_labels:
-            label.setVisible(is_checked)
-        if is_checked:
-            self.update_line_labels_and_angles()
-
-    def convert_to_view_coords(self, point) -> pg.ViewBox:
-        return self.image_viewer.poly_roi.mapToView(point)  # type: ignore
-
-    def midpoint(self, p1, p2) -> tuple[float, float]:
-        view_coords_p1 = self.convert_to_view_coords(p1)
-        view_coords_p2 = self.convert_to_view_coords(p2)
-        return (
-            (view_coords_p1.x() + view_coords_p2.x()) / 2,
-            (view_coords_p1.y() + view_coords_p2.y()) / 2,
-        )
-
-    def add_line_labels(self) -> None:
-        self.line_labels = []
-        points = self.image_viewer.poly_roi.getHandles()
-        for i in range(len(points)):
-            self.create_label(i, points)
-
-    def create_label(self, i: int, points: list) -> None:
-        p1 = points[i].pos()
-        p2 = points[(i + 1) % len(points)].pos()
-        mid = self.midpoint(p1, p2)
-
-        # Calculate the length of the line segment
-        length = np.sqrt((p2.x() - p1.x())**2 + (p2.y() - p1.y())**2)
-
-        # Set the length as the text of the label
-        label = pg.TextItem("{:.2f}".format(length))
-
-        label.setPos(mid[0], mid[1])
-        self.image_viewer.getView().addItem(label)
-        self.line_labels.append(label)
-
-    def angle_between_lines(self, p0, p1, p2) -> float:
-        angle1 = np.arctan2(p1.y() - p0.y(), p1.x() - p0.x())
-        angle2 = np.arctan2(p2.y() - p0.y(), p2.x() - p0.x())
-        angle = np.degrees(angle1 - angle2)
-        angle = abs(angle) % 360
-        if angle > 180:
-            angle = 360 - angle
-        return angle
-
     def update_line_labels_and_angles(self) -> None:
-        points = self.image_viewer.poly_roi.getHandles()
-        n = len(points)
-
-        if not hasattr(self, 'angle_labels'):
-            self.angle_labels = []
-        if not hasattr(self, 'angles'):
-            self.angles = []
-
-        for i in range(len(points)):
-            p1 = points[i].pos()
-            p2 = points[(i + 1) % len(points)].pos()
-            mid = self.midpoint(p1, p2)
-
-            # Recalculate the length of the line segment
-            length = np.sqrt((p2.x() - p1.x())**2 + (p2.y() - p1.y())**2)
-            is_checked = self.parameters_edit.param('ROI', 'show in mm').value()
-            if is_checked:
-                length = self.convert_to_mm(length)
-            else:
-                length = length
-
-            if i < len(self.line_labels):
-                self.line_labels[i].setPos(mid[0], mid[1])
-                self.line_labels[i].setText("{:.2f}".format(length))
-            else:
-                self.create_label(i, points)
-
-        while len(self.line_labels) > len(points):
-            label = self.line_labels.pop()
-            self.image_viewer.getView().removeItem(label)
-
-        for i in range(n):
-            p0 = points[i].pos()
-            p1 = points[(i - 1) % n].pos()
-            p2 = points[(i + 1) % n].pos()
-
-            angle = self.angle_between_lines(p0, p1, p2)
-
-            if i < len(self.angle_labels):
-                self.angle_labels[i].setPos(
-                    self.convert_to_view_coords(p0).x(),
-                    self.convert_to_view_coords(p0).y(),
-                )
-                self.angle_labels[i].setText(f"{angle:.2f}°")
-            else:
-                angle_label = pg.TextItem(f"{angle:.2f}°")
-                angle_label.setPos(p0.x(), p0.y())
-                self.image_viewer.getView().addItem(angle_label)
-                self.angle_labels.append(angle_label)
-
-            self.angles.append(angle)
-
-        while len(self.angle_labels) > n:
-            label = self.angle_labels.pop()
-            self.image_viewer.getView().removeItem(label)
-
-    def convert_to_mm(self, value_in_pixels: int) -> float:
-        conv_px = float(self.parameters_edit.param('ROI', 'Pixels').value())
-        conv_mm = float(self.parameters_edit.param('ROI', 'in mm').value())
-        value_in_mm = value_in_pixels * conv_mm / conv_px
-        return value_in_mm
+        self.image_viewer.roi_viewer.update_line_labels_and_angles(
+            show_in_mm=self.parameters_edit.param('ROI', 'show in mm').value(),
+            pixels=float(self.parameters_edit.param('ROI', 'Pixels').value()),
+            in_mm=float(self.parameters_edit.param('ROI', 'in mm').value()),
+        )

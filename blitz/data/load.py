@@ -23,7 +23,7 @@ def from_file(
     ratio: int = 1,
     convert_to_8_bit: bool = False,
     ram_size: int = 1,
-) -> tuple[np.ndarray, list[dict[str, Any]] | dict[str, Any]]:
+) -> tuple[np.ndarray, list[dict[str, Any]]]:
     if filepath is None:
         data, metadata = create_info_image(
             message="No data",
@@ -222,7 +222,7 @@ def _load_numpy_array(
     ratio,
     convert_to_8_bit,
     ram_size,
-) -> tuple[np.ndarray, dict[str, Any]]:
+) -> tuple[np.ndarray, list[dict[str, Any]]]:
     array_files = [f for f in os.listdir(folder_path) if f.endswith('.npy')]
 
     first_array = np.load(os.path.join(folder_path, array_files[0]))
@@ -274,7 +274,7 @@ def _load_numpy_array(
             metadata_list.append(metadata)
 
     matrix = np.stack(matrix_list)  # type: ignore
-    return matrix, metadata_list  # type: ignore
+    return matrix, metadata_list
 
 
 def _load_and_process_file(
