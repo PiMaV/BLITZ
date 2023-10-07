@@ -2,8 +2,8 @@ from typing import Optional
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QMouseEvent
+from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtGui import QDropEvent, QMouseEvent
 from PyQt5.QtWidgets import QLabel
 from pyqtgraph import RectROI, mkPen
 
@@ -14,8 +14,10 @@ from ..tools import format_pixel_value, wrap_text
 
 class ImageViewer(pg.ImageView):
 
+    file_dropped = pyqtSignal(str)
+
     def __init__(
-        self,
+        self, dock,
         h_plot: pg.PlotWidget,
         v_plot: pg.PlotWidget,
         info_label: QLabel,
@@ -24,7 +26,7 @@ class ImageViewer(pg.ImageView):
         view = pg.PlotItem()
         view.showGrid(x=True, y=True, alpha=0.4)
         super().__init__(view=view)
-
+        dock.addWidget(self)
         self.ui.graphicsView.setBackground(pg.mkBrush(20, 20, 20))
 
         self.ui.roiBtn.setChecked(True)
@@ -36,15 +38,11 @@ class ImageViewer(pg.ImageView):
         )
         self.ui.histogram.gradient.loadPreset('greyclip')
 
-        self.roi_viewer = ImageViewerROI(self.getView())
+        self.measure_roi = MeasureROI(self.view)
 
         self.data = ImageData()
         self.mask: None | RectROI = None
         self.pixel_value: Optional[np.ndarray] = None
-
-        self.scene.sigMouseMoved.connect(self.mouseMovedScene)
-        self.timeLine.sigPositionChanged.connect(self.mouse_moved_timeline)
-        self.ui.roiPlot.mousePressEvent = self.on_roi_plot_clicked
 
         self.info_label = info_label
         self.h_plot = h_plot
@@ -63,6 +61,25 @@ class ImageViewer(pg.ImageView):
         self.crosshair_state = False
         self.toggle_crosshair()
 
+        self.scene.sigMouseMoved.connect(self.mouseMovedScene)
+        self.timeLine.sigPositionChanged.connect(self.update_position_label)
+        self.ui.roiPlot.mousePressEvent = self.on_roi_plot_clicked
+        self.roi.sigRegionChanged.connect(
+            lambda: self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
+        )
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, e: QDropEvent):
+        print("Hello")
+        if e.mimeData().hasUrls():
+            e.accept()
+        else:
+            e.ignore()
+
+    def dropEvent(self, e: QDropEvent) -> None:
+        file_path = e.mimeData().urls()[0].toLocalFile()
+        self.file_dropped.emit(file_path)
+
     def load_data(self, filepath: Optional[str] = None, **kwargs) -> None:
         if filepath is None:
             self.data.set(*from_file())
@@ -70,34 +87,27 @@ class ImageViewer(pg.ImageView):
             self.data.set(*from_file(filepath, **kwargs))
 
         self.show_image(self.data.image)
-        self.ui.roiPlot.plotItem.vb.autoRange()
         self.init_roi_and_crosshair()
 
     def init_roi_and_crosshair(self) -> None:
         height = self.data.image.shape[2]
         width = self.data.image.shape[1]
-        roi_width = max(int(0.02 * width), 1)
-        roi_height = max(int(0.02 * height), 1)
-        x_pos = (width - roi_width) / 2
-        y_pos = (height - roi_height) / 2
-        self.roi_viewer.setPos([x_pos, y_pos])
-        self.roi_viewer.setSize([roi_width, roi_height])
         self.crosshair_vline.setPos(width / 2)
         self.crosshair_hline.setPos(height / 2)
 
     def manipulation(self, operation: str) -> None:
         match operation:
-            case 'Min':
+            case 'min':
                 self.setImage(self.data.min)
-            case 'Max':
+            case 'max':
                 self.setImage(self.data.max)
-            case 'Mean':
+            case 'mean':
                 self.setImage(self.data.mean)
-            case 'STD':
+            case 'std':
                 self.setImage(self.data.std)
-            case 'Org':
+            case 'org':
                 self.setImage(self.data.image)
-            case ('rotate', 'flip_x', 'flip_y'):
+            case 'transpose' | 'flip_x' | 'flip_y':
                 getattr(self.data, operation)()
                 self.setImage(
                     self.data.image,
@@ -108,20 +118,8 @@ class ImageViewer(pg.ImageView):
             case _:
                 print("Operation not implemented")
 
-    def new_mask(self) -> None:
-        img = self.getImageItem().image
-        width, height = img.shape[0], img.shape[1]  # type: ignore
-        self.mask = RectROI([0, 0], [width, height], pen=(0,9))
-        self.mask.addScaleHandle([0, 0], [1, 1])
-        self.mask.addScaleHandle([1, 1], [0, 0])
-        self.mask.addScaleHandle([0, 1], [1, 0])
-        self.mask.addScaleHandle([1, 0], [0, 1])
-        self.view.addItem(self.mask)
-
     def reset(self) -> None:
         self.data.reset()
-        if self.mask is not None:
-            self.view.removeItem(self.mask)
         self.show_image(self.data.image, autoRange=True)
         self.autoRange()
         self.autoLevels()
@@ -129,8 +127,10 @@ class ImageViewer(pg.ImageView):
         self.init_roi_and_crosshair()
 
     def apply_mask(self) -> None:
+        if self.mask is None:
+            return
         self.data.mask(self.mask)
-        self.view.removeItem(self.mask)
+        self.toggle_mask()
         self.setImage(self.data.image, autoRange=True)
         self.init_roi_and_crosshair()
 
@@ -138,24 +138,23 @@ class ImageViewer(pg.ImageView):
         if self.mask is None:
             img = self.getImageItem().image
             width, height = img.shape[0], img.shape[1]  # type: ignore
-            self.mask = RectROI([0, 0], [width, height], pen=(0,9))
-            self.mask.addScaleHandle([0, 0], [1, 1])
-            self.mask.addScaleHandle([1, 1], [0, 0])
-            self.mask.addScaleHandle([0, 1], [1, 0])
-            self.mask.addScaleHandle([1, 0], [0, 1])
+            self.mask = RectROI((0, 0), (width, height), pen=(0, 9))
+            self.mask.addScaleHandle((0, 0), (1, 1))
+            self.mask.addScaleHandle((1, 1), (0, 0))
+            self.mask.addScaleHandle((0, 1), (1, 0))
+            self.mask.addScaleHandle((1, 0), (0, 1))
             self.view.addItem(self.mask)
         else:
             self.view.removeItem(self.mask)
-            self.data.reset()
-            self.setImage(self.data.image)
+            self.mask = None
 
     def show_image(self, image: np.ndarray, **kwargs) -> None:
         self.image = image
+        self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
         self.setImage(image, **kwargs)
 
     def mouseMovedScene(self, pos: tuple[float, float]) -> None:
         img_coords = self.view.vb.mapSceneToView(pos)
-        print(self.roi_viewer.mapToView(pos))
         self.x_, self.y_ = int(img_coords.x()), int(img_coords.y())
 
         if (0 <= self.x_ < self.data.image.shape[0]
@@ -168,17 +167,14 @@ class ImageViewer(pg.ImageView):
     def on_roi_plot_clicked(self, ev) -> None:
         if isinstance(ev, QMouseEvent):
             if ev.button() == Qt.MouseButton.MiddleButton:
-                x_pos = self.ui.roiPlot.plotItem.vb.mapSceneToView(
+                x = self.ui.roiPlot.plotItem.vb.mapSceneToView(  # type: ignore
                     ev.pos()
                 ).x()
-                index = int(x_pos)
+                index = int(x)
                 index = max(0, min(index, self.data.image.shape[0]-1))
                 self.setCurrentIndex(index)
             else:
                 pg.PlotWidget.mousePressEvent(self.ui.roiPlot, ev)
-
-    def mouse_moved_timeline(self) -> None:
-        self.update_position_label()
 
     def update_position_label(self) -> None:
         self.current_image = int(self.currentIndex)
@@ -274,27 +270,24 @@ class ImageViewer(pg.ImageView):
             self.h_plot.plot(h_data, pen='gray')
 
 
-class ImageViewerROI(pg.PolyLineROI):
+class MeasureROI(pg.PolyLineROI):
 
-    def __init__(self, image_view: pg.ViewBox) -> None:
+    def __init__(self, view):
         super().__init__([[0, 0], [0, 20], [10, 10]], closed=True)
-        self.image_view = image_view
-        self.setPen(color=(128, 128, 0, 100), width=3)
-        self.line_labels = []
-        self.angle_labels = []
-        self.angles = []
+        self.sigRegionChanged.connect(self.update_labels)
+        self.view = view
 
-        self.n_pixels = 1
-        self.pixels_in_mm = 1
+        self.n_px = 1
+        self.px_in_mm = 1
         self.show_in_mm = False
 
+        self.line_labels = []
+        self.angle_labels = []
+
+        self.view.addItem(self)
+        self.setPen(color=(128, 128, 0, 100), width=3)
         self._visible = True
-        # setting the view before connecting sigRegionChanged prevents
-        # self.mapToView to return None
-        self.image_view.addItem(self)
-        self.update_line_labels_and_angles()
         self.toggle()
-        self.sigRegionChanged.connect(self.update_line_labels_and_angles)
 
     def toggle(self) -> None:
         self._visible = not self._visible
@@ -304,72 +297,56 @@ class ImageViewerROI(pg.PolyLineROI):
         for label in self.angle_labels:
             label.setVisible(self._visible)
         if self._visible:
-            self.update_line_labels_and_angles()
+            self.update_labels()
 
-    def midpoint(self, p1, p2) -> tuple[float, float]:
-        view_coords_p1 = self.mapToView(p1)
-        view_coords_p2 = self.mapToView(p2)
-        return (
-            (view_coords_p1.x() + view_coords_p2.x()) / 2,  # type: ignore
-            (view_coords_p1.y() + view_coords_p2.y()) / 2,  # type: ignore
-        )
+    def update_labels(self) -> None:
+        self.update_angles()
+        self.update_lines()
 
-    @staticmethod
-    def angle_between_lines(p0, p1, p2) -> float:
-        angle1 = np.arctan2(p1.y() - p0.y(), p1.x() - p0.x())
-        angle2 = np.arctan2(p2.y() - p0.y(), p2.x() - p0.x())
-        angle = np.degrees(angle1 - angle2)
-        angle = abs(angle) % 360
-        if angle > 180:
-            angle = 360 - angle
-        return angle
+    def update_angles(self) -> None:
+        positions = self.getSceneHandlePositions()
 
-    def update_line_labels_and_angles(self) -> None:
-        points = self.getHandles()
-        n = len(points)
+        while len(self.angle_labels) > len(positions):
+            label = self.angle_labels.pop()
+            self.view.removeItem(label)
 
-        for i in range(n):
-            p1 = points[i].pos()
-            p2 = points[(i + 1) % n].pos()
-            length = np.sqrt((p2.x() - p1.x())**2 + (p2.y() - p1.y())**2)
-            if self.show_in_mm:
-                length = length * self.pixels_in_mm / self.n_pixels
-            mid = self.midpoint(p1, p2)
-
-            if i < len(self.line_labels):
-                self.line_labels[i].setPos(mid[0], mid[1])
-                self.line_labels[i].setText("{:.2f}".format(length))
-            else:
-                label = pg.TextItem("{:.2f}".format(length))
-                label.setPos(mid[0], mid[1])
-                self.image_view.addItem(label)
-                self.line_labels.append(label)
-
-        while len(self.line_labels) > n:
-            label = self.line_labels.pop()
-            self.image_view.removeItem(label)
-
-        for i in range(n):
-            p0 = points[i].pos()
-            p1 = points[(i - 1) % n].pos()
-            p2 = points[(i + 1) % n].pos()
-
-            angle = ImageViewerROI.angle_between_lines(p0, p1, p2)
-
+        for i, (_, pos) in enumerate(positions):
+            _, prev_pos = positions[(i - 1) % len(positions)]
+            _, next_pos = positions[(i + 1) % len(positions)]
+            angle = pg.Point(pos - next_pos).angle(
+                pg.Point(pos - prev_pos)
+            )
+            pos = self.view.mapToView(pos)
             if i < len(self.angle_labels):
-                self.angle_labels[i].setPos(
-                    self.mapToView(p0).x(),  # type: ignore
-                    self.mapToView(p0).y(),  # type: ignore
-                )
+                self.angle_labels[i].setPos(pos.x(), pos.y())
                 self.angle_labels[i].setText(f"{angle:.2f}°")
             else:
                 angle_label = pg.TextItem(f"{angle:.2f}°")
-                angle_label.setPos(p0.x(), p0.y())
-                self.image_view.addItem(angle_label)
+                angle_label.setPos(pos.x(), pos.y())
+                self.view.addItem(angle_label)
                 self.angle_labels.append(angle_label)
 
-            self.angles.append(angle)
+    def update_lines(self) -> None:
+        positions = self.getSceneHandlePositions()
 
-        while len(self.angle_labels) > n:
-            label = self.angle_labels.pop()
-            self.image_view.removeItem(label)
+        while len(self.line_labels) > len(positions):
+            label = self.line_labels.pop()
+            self.view.removeItem(label)
+
+        for i, (_, pos) in enumerate(positions):
+            _, next_pos = positions[(i + 1) % len(positions)]
+            pos = self.view.mapToView(pos)
+            next_pos = self.view.mapToView(next_pos)
+            length = pg.Point(pos - next_pos).length()
+            mid = (pos + next_pos) / 2
+            if self.show_in_mm:
+                length = length * self.px_in_mm / self.n_px
+            pos = self.view.mapToView(pos)
+            if i < len(self.line_labels):
+                self.line_labels[i].setPos(mid.x(), mid.y())
+                self.line_labels[i].setText(f"{length:.2f}")
+            else:
+                angle_label = pg.TextItem(f"{length:.2f}")
+                angle_label.setPos(mid.x(), mid.y())
+                self.view.addItem(angle_label)
+                self.line_labels.append(angle_label)

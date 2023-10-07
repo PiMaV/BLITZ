@@ -1,6 +1,8 @@
-import numpy as np
 from typing import Any
+
+import numpy as np
 import pyqtgraph as pg
+
 
 class ImageData:
 
@@ -75,7 +77,7 @@ class ImageData:
         self._mean = None
         self._std = None
 
-    def rotate(self) -> None:
+    def transpose(self) -> None:
         if self._image is None:
             self._image = self._original_image
         self._image = np.swapaxes(self._image, 1, 2)
