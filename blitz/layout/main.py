@@ -26,18 +26,30 @@ TITLE = (
 
 class MainWindow(QMainWindow):
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        window_ratio: float = .77,
+        relative_size: float = .85,
+    ) -> None:
         super().__init__()
-
-        self.window_ratio = .77
-
-        area = DockArea()
-        self.setup_docks(area)
-        area.docks
-
-        self.setCentralWidget(area)
         self.setWindowTitle(TITLE)
-        self.set_default_geometry()
+
+        self.window_ratio = window_ratio
+        screen_geometry = QApplication.primaryScreen().availableGeometry()
+        width = int(screen_geometry.width() * relative_size)
+        height = int(screen_geometry.height() * relative_size)
+        self.setGeometry(
+            (screen_geometry.width() - width) // 2,
+            (screen_geometry.height() - height) // 2,
+            width,
+            height,
+        )
+        self.image_viewer_size = int(window_ratio * self.width())
+        self.border_size = int((1-window_ratio) * self.width() / 2)
+
+        self.dock_area = DockArea()
+        self.setup_docks()
+        self.setCentralWidget(self.dock_area)
 
         self.setup_parameter_tree()
         self.setup_file_info_dock()
@@ -47,66 +59,54 @@ class MainWindow(QMainWindow):
         icon_path = os.path.join(script_dir, 'BLITZ.ico')
         self.setWindowIcon(QIcon(icon_path))
 
-        self.default_filepath = script_dir
-        self.rect_roi_positions = {}
-        self.message_count = 0
-        self.line_labels = []
-        self.angle_labels = []
+        self.last_file_dir = script_dir
         self.setup_connections()
         sys.stdout = LoggingTextEdit(self.history)
 
         self.tof_window: None | TOFWindow = None
 
-        pg.setConfigOptions(useNumba=True)
+    def setup_docks(self) -> None:
+        h_plot_height = 1.1 * self.border_size
+        h_viewer_height = self.height() - h_plot_height
 
-    def setup_docks(self, area: DockArea) -> None:
-        image_viewer_width = int(self.window_ratio * self.width())
-        self.common_size = int((self.width() - image_viewer_width) / 2)
-        h_line_height = self.common_size*1.1
-        h_viewer_height = self.height() - h_line_height
-
-        self.dock_load_data = self.create_dock(
+        self.dock_load_data = Dock(
             "Load Data",
-            self.common_size,
-            h_line_height,
+            size=(self.border_size, h_plot_height),
+            hideTitle=True,
         )
-        self.dock_edit_data = self.create_dock(
+        self.dock_edit_data = Dock(
             "Edit Data",
-            self.common_size*1.2,
-            h_line_height,
+            size=(1.2 * self.border_size, h_plot_height),
+            hideTitle=True,
         )
-        self.dock_file_metadata = self.create_dock(
+        self.dock_file_meta = Dock(
             "File Metadata",
-            self.common_size,
-            int(h_line_height),
+            size=(self.border_size, int(h_plot_height)),
+            hideTitle=True,
         )
-        self.dock_v_plot = self.create_dock(
+        self.dock_v_plot = Dock(
             "V Line",
-            self.common_size,
-            h_viewer_height - int(h_line_height / 2),
+            size=(self.border_size, h_viewer_height - int(h_plot_height / 2)),
+            hideTitle=True,
         )
-        self.dock_h_plot = self.create_dock(
+        self.dock_h_plot = Dock(
             "H Line",
-            image_viewer_width,
-            h_line_height,
+            size=(self.image_viewer_size, h_plot_height),
+            hideTitle=True,
         )
-        self.dock_image_viewer = self.create_dock(
+        self.dock_image_viewer = Dock(
             "Image Viewer",
-            image_viewer_width,
-            h_viewer_height,
+            size=(self.image_viewer_size, h_viewer_height),
+            hideTitle=True,
         )
+        print(self.image_viewer_size)
 
-        area.addDock(self.dock_image_viewer, 'bottom')
-        area.addDock(self.dock_load_data, 'left')
-        area.addDock(self.dock_h_plot, 'top', self.dock_image_viewer)
-        area.addDock(self.dock_edit_data, 'right', self.dock_h_plot)
-        area.addDock(self.dock_v_plot, 'bottom', self.dock_load_data)
-        area.addDock(self.dock_file_metadata, 'bottom', self.dock_v_plot)
-
-    def create_dock(self, name: str, width: float, height: float) -> Dock:
-        dock = Dock(name, size=(width, height))
-        dock.hideTitleBar()
-        return dock
+        self.dock_area.addDock(self.dock_image_viewer, 'bottom')
+        self.dock_area.addDock(self.dock_load_data, 'left')
+        self.dock_area.addDock(self.dock_h_plot, 'top', self.dock_image_viewer)
+        self.dock_area.addDock(self.dock_edit_data, 'right', self.dock_h_plot)
+        self.dock_area.addDock(self.dock_v_plot, 'bottom', self.dock_load_data)
+        self.dock_area.addDock(self.dock_file_meta, 'bottom', self.dock_v_plot)
 
     def setup_parameter_tree(self) -> None:
         self.paramTreeEdit, self.parameters_edit = self.create_parameter_tree(
@@ -117,7 +117,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout()
         layout.addWidget(self.paramTreeEdit)
         self.reset_button = QPushButton("Reset View")
-        self.reset_button.setFixedSize(int(self.common_size*.9) , 20)
+        self.reset_button.setFixedSize(int(self.border_size*.9) , 20)
         layout.addWidget(self.reset_button, 0, Qt.AlignmentFlag.AlignCenter)
         container = QWidget()
         container.setLayout(layout)
@@ -133,7 +133,7 @@ class MainWindow(QMainWindow):
         self.browse_button = DragDropButton(
             "Click to browse or\nDrag and Drop file here"
         )
-        self.browse_button.setFixedSize(int(self.common_size*.9) , 50)
+        self.browse_button.setFixedSize(int(self.border_size*.9) , 50)
         layout.addStretch(1)
         layout.addWidget(self.browse_button, 0, Qt.AlignmentFlag.AlignCenter)
         layout.addStretch(1)
@@ -174,20 +174,18 @@ class MainWindow(QMainWindow):
         layout.setStretch(0, 1)
         layout.setStretch(1, 2)
         file_info_widget.setLayout(layout)
-        self.dock_file_metadata.addWidget(file_info_widget)
+        self.dock_file_meta.addWidget(file_info_widget)
 
     def setup_image_and_line_viewers(self) -> None:
         v_plot_viewbox = pg.ViewBox()
-        v_plot_viewbox.invertX(True)
-        v_plot_viewbox.invertY(True)
+        v_plot_viewbox.invertX()
+        v_plot_viewbox.invertY()
         v_plot_item = pg.PlotItem(viewBox=v_plot_viewbox)
         v_plot_item.showGrid(x=True, y=True, alpha=0.4)
         self.v_plot = pg.PlotWidget(plotItem=v_plot_item)
         self.dock_v_plot.addWidget(self.v_plot)
 
         h_plot_viewbox = pg.ViewBox()
-        h_plot_viewbox.invertX(True)
-        h_plot_viewbox.invertY(True)
         h_plot_item = pg.PlotItem(viewBox=h_plot_viewbox)
         h_plot_item.showGrid(x=True, y=True, alpha=0.4)
         self.h_plot = pg.PlotWidget(plotItem=h_plot_item)
@@ -197,32 +195,17 @@ class MainWindow(QMainWindow):
             h_plot=self.h_plot,
             v_plot=self.v_plot,
             info_label=self.info_label,
-            common_size=self.common_size,
+            roi_height=self.border_size,
         )
         self.dock_image_viewer.addWidget(self.image_viewer)
 
         self.v_plot.setYLink(self.image_viewer.getView())
         self.h_plot.setXLink(self.image_viewer.getView())
 
-    def set_default_geometry(self, size_factor: float = 0.85) -> None:
-        screen_geometry = QApplication.primaryScreen().availableGeometry()
-        width = int(screen_geometry.width() * size_factor)
-        height = int(screen_geometry.height() * size_factor)
-        self.setGeometry(
-            (screen_geometry.width() - width) // 2,
-            (screen_geometry.height() - height) // 2,
-            width,
-            height,
-        )
-
     def setup_connections(self) -> None:
         self.browse_button.clicked.connect(self.browse_file)
-        self.browse_button.file_dropped.connect(self.load_from_filepath)
+        self.browse_button.file_dropped.connect(self.load_images)
         self.reset_button.clicked.connect(self.reset_view)
-
-        self.image_viewer.roi_viewer.sigRegionChanged.connect(
-            self.update_line_labels_and_angles
-        )
 
         self.parameters_file.param(
             'Load TOF Data', 'Browse'
@@ -254,10 +237,13 @@ class MainWindow(QMainWindow):
         ).sigValueChanged.connect(self.image_viewer.roi_viewer.toggle)
         self.parameters_edit.param(
             'ROI','show in mm'
-        ).sigValueChanged.connect(self.update_line_labels_and_angles)
+        ).sigValueChanged.connect(self.update_roi_settings)
         self.parameters_edit.param(
             'ROI','Pixels'
-        ).sigValueChanged.connect(self.update_line_labels_and_angles)
+        ).sigValueChanged.connect(self.update_roi_settings)
+        self.parameters_edit.param(
+            'ROI','in mm'
+        ).sigValueChanged.connect(self.update_roi_settings)
         self.parameters_edit.param(
             'Visualisations', 'Crosshair'
         ).sigValueChanged.connect(self.image_viewer.toggle_crosshair)
@@ -282,34 +268,24 @@ class MainWindow(QMainWindow):
             self.tof_window.show()
 
     def show_tof(self) -> None:
-        show = self.parameters_file.param(
-            'Load TOF Data', 'Show'
-        ).value()
+        show = self.parameters_file.param('Load TOF Data', 'Show').value()
         if self.tof_window is not None and show:
             self.tof_window.show()
         elif self.tof_window is not None and not show:
             self.tof_window.hide()
 
     def browse_file(self) -> None:
-        if not hasattr(self, 'filepath') or not self.filepath:
-            initial_directory = self.default_filepath
-        else:
-            initial_directory = os.path.dirname(self.filepath)
-
-        self.filepath, _ = QFileDialog.getOpenFileName(
-            directory=initial_directory
+        file_path, _ = QFileDialog.getOpenFileName(
+            directory=self.last_file_dir
         )
-        self.load_from_filepath()
+        if file_path:
+            self.last_filepath = os.path.dirname(file_path)
+            string_temp = insert_line_breaks(self.last_filepath)
+            print(f"Loading file: {string_temp}")
+            self.browse_button.setText(string_temp)
+            self.load_images(file_path)
 
-    def load_from_filepath(self, filepath: Optional[str] = None) -> None:
-        self.filepath = filepath if filepath is not None else self.filepath
-        dirname = os.path.dirname(self.filepath)  # type: ignore
-        string_temp = insert_line_breaks(dirname)
-        print(f"Loading file: {string_temp}")
-        self.browse_button.setText(string_temp)
-        self.load_data(filepath=self.filepath)
-
-    def load_data(self, filepath: Optional[str] = None) -> None:
+    def load_images(self, file_path: Optional[str] = None) -> None:
         start_time = clock()
         dialog = self.show_loading_dialog()
         size = self.parameters_file.param(
@@ -326,7 +302,7 @@ class MainWindow(QMainWindow):
         ).value()
 
         self.image_viewer.load_data(
-            filepath if filepath else None,
+            file_path,
             size=size,
             ratio=ratio,
             convert_to_8_bit=convert_to_8_bit,
@@ -337,7 +313,6 @@ class MainWindow(QMainWindow):
         self.parameters_edit.param(
             'Mask', 'Mask'
         ).setOpts(enabled=True, value=False)
-        self.filepath = filepath
         self.close_loading_dialog(dialog)
         print(f"Time taken to load_data: {clock() - start_time:.2f} seconds")
 
@@ -389,9 +364,14 @@ class MainWindow(QMainWindow):
     def close_loading_dialog(self, dialog) -> None:
         dialog.accept()
 
-    def update_line_labels_and_angles(self) -> None:
-        self.image_viewer.roi_viewer.update_line_labels_and_angles(
-            show_in_mm=self.parameters_edit.param('ROI', 'show in mm').value(),
-            pixels=float(self.parameters_edit.param('ROI', 'Pixels').value()),
-            in_mm=float(self.parameters_edit.param('ROI', 'in mm').value()),
-        )
+    def update_roi_settings(self) -> None:
+        self.image_viewer.roi_viewer.show_in_mm = self.parameters_edit.param(
+            'ROI', 'show in mm'
+        ).value()
+        self.image_viewer.roi_viewer.n_pixels = self.parameters_edit.param(
+            'ROI', 'Pixels'
+        ).value()
+        self.image_viewer.roi_viewer.pixels_in_mm = self.parameters_edit.param(
+            'ROI', 'in mm'
+        ).value()
+        self.image_viewer.roi_viewer.update_line_labels_and_angles()

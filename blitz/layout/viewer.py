@@ -19,7 +19,7 @@ class ImageViewer(pg.ImageView):
         h_plot: pg.PlotWidget,
         v_plot: pg.PlotWidget,
         info_label: QLabel,
-        common_size: float,
+        roi_height: float,
     ) -> None:
         view = pg.PlotItem()
         view.showGrid(x=True, y=True, alpha=0.4)
@@ -30,18 +30,13 @@ class ImageViewer(pg.ImageView):
         self.ui.roiBtn.setChecked(True)
         self.roiClicked()
         self.ui.histogram.setMinimumWidth(220)
-        self.ui.roiPlot.setFixedHeight(common_size)
+        self.ui.roiPlot.setFixedHeight(roi_height)
         self.ui.roiPlot.plotItem.showGrid(  # type: ignore
             x=True, y=True, alpha=0.6,
         )
         self.ui.histogram.gradient.loadPreset('greyclip')
 
-        self.roi_viewer = ImageViewerROI(
-            [[0,0], [0,20], [10, 10]],
-            self,
-            closed=True,
-        )
-        self.view.addItem(self.roi_viewer)
+        self.roi_viewer = ImageViewerROI(self.getView())
 
         self.data = ImageData()
         self.mask: None | RectROI = None
@@ -81,8 +76,8 @@ class ImageViewer(pg.ImageView):
     def init_roi_and_crosshair(self) -> None:
         height = self.data.image.shape[2]
         width = self.data.image.shape[1]
-        roi_width = max(int(0.02 * width),1)
-        roi_height = max(int(0.02 * height),1)
+        roi_width = max(int(0.02 * width), 1)
+        roi_height = max(int(0.02 * height), 1)
         x_pos = (width - roi_width) / 2
         y_pos = (height - roi_height) / 2
         self.roi_viewer.setPos([x_pos, y_pos])
@@ -160,6 +155,7 @@ class ImageViewer(pg.ImageView):
 
     def mouseMovedScene(self, pos: tuple[float, float]) -> None:
         img_coords = self.view.vb.mapSceneToView(pos)
+        print(self.roi_viewer.mapToView(pos))
         self.x_, self.y_ = int(img_coords.x()), int(img_coords.y())
 
         if (0 <= self.x_ < self.data.image.shape[0]
@@ -280,23 +276,25 @@ class ImageViewer(pg.ImageView):
 
 class ImageViewerROI(pg.PolyLineROI):
 
-    def __init__(
-        self,
-        positions: list[list[int]],
-        image_viewer: ImageViewer,
-        closed: bool = False,
-        pos=None,
-        **kwargs,
-    ) -> None:
-        super().__init__(positions, closed, pos, **kwargs)
-        self.image_viewer = image_viewer
+    def __init__(self, image_view: pg.ViewBox) -> None:
+        super().__init__([[0, 0], [0, 20], [10, 10]], closed=True)
+        self.image_view = image_view
         self.setPen(color=(128, 128, 0, 100), width=3)
         self.line_labels = []
-        points = self.getHandles()
-        for i in range(len(points)):
-            self.create_label(i, points)
         self.angle_labels = []
-        self._visible = False
+        self.angles = []
+
+        self.n_pixels = 1
+        self.pixels_in_mm = 1
+        self.show_in_mm = False
+
+        self._visible = True
+        # setting the view before connecting sigRegionChanged prevents
+        # self.mapToView to return None
+        self.image_view.addItem(self)
+        self.update_line_labels_and_angles()
+        self.toggle()
+        self.sigRegionChanged.connect(self.update_line_labels_and_angles)
 
     def toggle(self) -> None:
         self._visible = not self._visible
@@ -308,35 +306,16 @@ class ImageViewerROI(pg.PolyLineROI):
         if self._visible:
             self.update_line_labels_and_angles()
 
-    def convert_to_view_coords(self, point) -> pg.ViewBox:
-        print(point)
-        return self.mapToView(point)  # type: ignore
-
     def midpoint(self, p1, p2) -> tuple[float, float]:
-        view_coords_p1 = self.convert_to_view_coords(p1)
-        view_coords_p2 = self.convert_to_view_coords(p2)
-        # return (
-        #     (view_coords_p1.x() + view_coords_p2.x()) / 2,
-        #     (view_coords_p1.y() + view_coords_p2.y()) / 2,
-        # )
-        return (0, 10)
+        view_coords_p1 = self.mapToView(p1)
+        view_coords_p2 = self.mapToView(p2)
+        return (
+            (view_coords_p1.x() + view_coords_p2.x()) / 2,  # type: ignore
+            (view_coords_p1.y() + view_coords_p2.y()) / 2,  # type: ignore
+        )
 
-    def create_label(self, i: int, points: list) -> None:
-        p1 = points[i].pos()
-        p2 = points[(i + 1) % len(points)].pos()
-        mid = self.midpoint(p1, p2)
-
-        # Calculate the length of the line segment
-        length = np.sqrt((p2.x() - p1.x())**2 + (p2.y() - p1.y())**2)
-
-        # Set the length as the text of the label
-        label = pg.TextItem("{:.2f}".format(length))
-
-        label.setPos(mid[0], mid[1])
-        self.image_viewer.getView().addItem(label)
-        self.line_labels.append(label)
-
-    def angle_between_lines(self, p0, p1, p2) -> float:
+    @staticmethod
+    def angle_between_lines(p0, p1, p2) -> float:
         angle1 = np.arctan2(p1.y() - p0.y(), p1.x() - p0.x())
         angle2 = np.arctan2(p2.y() - p0.y(), p2.x() - p0.x())
         angle = np.degrees(angle1 - angle2)
@@ -345,63 +324,52 @@ class ImageViewerROI(pg.PolyLineROI):
             angle = 360 - angle
         return angle
 
-    def update_line_labels_and_angles(
-        self,
-        show_in_mm: bool = False,
-        pixels: float | int = 1,
-        in_mm: float | int = 1,
-    ) -> None:
+    def update_line_labels_and_angles(self) -> None:
         points = self.getHandles()
         n = len(points)
 
-        if not hasattr(self, 'angle_labels'):
-            self.angle_labels = []
-        if not hasattr(self, 'angles'):
-            self.angles = []
-
-        for i in range(len(points)):
+        for i in range(n):
             p1 = points[i].pos()
-            p2 = points[(i + 1) % len(points)].pos()
-            mid = self.midpoint(p1, p2)
-
-            # recalculate the length of the line segment
+            p2 = points[(i + 1) % n].pos()
             length = np.sqrt((p2.x() - p1.x())**2 + (p2.y() - p1.y())**2)
-            if show_in_mm:
-                length = length * in_mm / pixels
-            else:
-                length = length
+            if self.show_in_mm:
+                length = length * self.pixels_in_mm / self.n_pixels
+            mid = self.midpoint(p1, p2)
 
             if i < len(self.line_labels):
                 self.line_labels[i].setPos(mid[0], mid[1])
                 self.line_labels[i].setText("{:.2f}".format(length))
             else:
-                self.create_label(i, points)
+                label = pg.TextItem("{:.2f}".format(length))
+                label.setPos(mid[0], mid[1])
+                self.image_view.addItem(label)
+                self.line_labels.append(label)
 
-        while len(self.line_labels) > len(points):
+        while len(self.line_labels) > n:
             label = self.line_labels.pop()
-            self.image_viewer.getView().removeItem(label)
+            self.image_view.removeItem(label)
 
         for i in range(n):
             p0 = points[i].pos()
             p1 = points[(i - 1) % n].pos()
             p2 = points[(i + 1) % n].pos()
 
-            angle = self.angle_between_lines(p0, p1, p2)
+            angle = ImageViewerROI.angle_between_lines(p0, p1, p2)
 
             if i < len(self.angle_labels):
                 self.angle_labels[i].setPos(
-                    self.convert_to_view_coords(p0).x(),
-                    self.convert_to_view_coords(p0).y(),
+                    self.mapToView(p0).x(),  # type: ignore
+                    self.mapToView(p0).y(),  # type: ignore
                 )
                 self.angle_labels[i].setText(f"{angle:.2f}°")
             else:
                 angle_label = pg.TextItem(f"{angle:.2f}°")
                 angle_label.setPos(p0.x(), p0.y())
-                self.image_viewer.getView().addItem(angle_label)
+                self.image_view.addItem(angle_label)
                 self.angle_labels.append(angle_label)
 
             self.angles.append(angle)
 
         while len(self.angle_labels) > n:
             label = self.angle_labels.pop()
-            self.image_viewer.getView().removeItem(label)
+            self.image_view.removeItem(label)
