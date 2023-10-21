@@ -1,5 +1,6 @@
 import json
 import os
+import warnings
 from multiprocessing import Pool, cpu_count
 from typing import Any, Optional
 
@@ -7,6 +8,7 @@ import cv2
 import numpy as np
 from natsort import natsorted
 
+from ..tools import log
 from .tools import (adjust_ratio_for_memory, create_info_image,
                     is_image_grayscale, resize_and_convert,
                     resize_and_convert_to_8_bit)
@@ -56,12 +58,13 @@ def from_file(
                 ram_size,
             )
         else:
-            print(f"Unsupported or unknown file type!\n {filepath}")
+            warnings.warn(
+                f"Unsupported or unknown file type: {filepath}",
+                UserWarning,
+            )
             data, metadata = create_info_image(message="Filetype unsupported.")
 
     data = np.swapaxes(data, 1, 2)
-    data_size_MB = data.nbytes / 2**20
-    print(f"Final Size of Dataset: {data_size_MB:.2f} MB")
     return data, metadata
 
 
@@ -159,10 +162,7 @@ def _load_multiple_standard_images(
     ratio = min(ratio, adjusted_ratio)
     full_dataset_size = len(image_files)
     image_files = image_files[::int(np.ceil(1/ratio))]
-    print(
-        f"Loading {len(image_files)} images "
-        f"out of {full_dataset_size} images in total."
-    )
+    log(f"Loading {len(image_files)}/{full_dataset_size} images")
 
     load_format = (
         cv2.IMREAD_ANYDEPTH | cv2.IMREAD_GRAYSCALE
@@ -207,11 +207,11 @@ def _load_multiple_standard_images(
         images = np.stack([img for img, _ in valid_data_with_metadata])
         all_metadata = [meta for _, meta in valid_data_with_metadata]
     else:
-        print("Could not load any valid images.")
+        log("Could not load any valid images")
         images, all_metadata = create_info_image()
 
     if faulty_images:
-        print(f"Could not load {len(faulty_images)} images: {faulty_images}")
+        log(f"Could not load {len(faulty_images)} images: {faulty_images}")
 
     return images, all_metadata
 
@@ -236,10 +236,7 @@ def _load_numpy_array(
     ratio = min(ratio, adjusted_ratio)
     full_dataset_size = len(array_files)
     array_files = array_files[::int(np.ceil(1/ratio))]
-    print(
-        f"Loading {len(array_files)} arrays "
-        f"out of {full_dataset_size} arrays in total."
-    )
+    log(f"Loading {len(array_files)}/{full_dataset_size} arrays")
 
     matrix_list = []
     metadata_list = []

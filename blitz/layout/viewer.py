@@ -4,7 +4,6 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QDropEvent, QMouseEvent
-from PyQt5.QtWidgets import QLabel
 from pyqtgraph import RectROI, mkPen
 
 from ..data.image import ImageData
@@ -14,25 +13,29 @@ from ..tools import format_pixel_value, wrap_text
 
 class ImageViewer(pg.ImageView):
 
+    AVAILABLE_OPERATIONS = {
+        "All Images": "org",
+        "Minimum": "min",
+        "Maximum": "max",
+        "Mean": "mean",
+        "Standard Deviation": "std",
+    }
+
     file_dropped = pyqtSignal(str)
 
     def __init__(
-        self, dock,
+        self,
         h_plot: pg.PlotWidget,
         v_plot: pg.PlotWidget,
-        info_label: QLabel,
-        roi_height: float,
     ) -> None:
         view = pg.PlotItem()
         view.showGrid(x=True, y=True, alpha=0.4)
         super().__init__(view=view)
-        dock.addWidget(self)
         self.ui.graphicsView.setBackground(pg.mkBrush(20, 20, 20))
 
         self.ui.roiBtn.setChecked(True)
         self.roiClicked()
         self.ui.histogram.setMinimumWidth(220)
-        self.ui.roiPlot.setFixedHeight(roi_height)
         self.ui.roiPlot.plotItem.showGrid(  # type: ignore
             x=True, y=True, alpha=0.6,
         )
@@ -44,7 +47,6 @@ class ImageViewer(pg.ImageView):
         self.mask: None | RectROI = None
         self.pixel_value: Optional[np.ndarray] = None
 
-        self.info_label = info_label
         self.h_plot = h_plot
         self.v_plot = v_plot
 
@@ -61,8 +63,6 @@ class ImageViewer(pg.ImageView):
         self.crosshair_state = False
         self.toggle_crosshair()
 
-        self.scene.sigMouseMoved.connect(self.mouseMovedScene)
-        self.timeLine.sigPositionChanged.connect(self.update_position_label)
         self.ui.roiPlot.mousePressEvent = self.on_roi_plot_clicked
         self.roi.sigRegionChanged.connect(
             lambda: self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
@@ -70,7 +70,6 @@ class ImageViewer(pg.ImageView):
         self.setAcceptDrops(True)
 
     def dragEnterEvent(self, e: QDropEvent):
-        print("Hello")
         if e.mimeData().hasUrls():
             e.accept()
         else:
@@ -94,6 +93,8 @@ class ImageViewer(pg.ImageView):
         width = self.data.image.shape[1]
         self.crosshair_vline.setPos(width / 2)
         self.crosshair_hline.setPos(height / 2)
+        self.roi.setSize((.25*width, .25*height))
+        self.roi.setPos((width*3/8, height*3/8))
 
     def manipulation(self, operation: str) -> None:
         match operation:
@@ -153,16 +154,28 @@ class ImageViewer(pg.ImageView):
         self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
         self.setImage(image, **kwargs)
 
-    def mouseMovedScene(self, pos: tuple[float, float]) -> None:
+    def get_position_info(
+        self,
+        pos: tuple[int, int],
+    ) -> tuple[float, float, str | None]:
         img_coords = self.view.vb.mapSceneToView(pos)
-        self.x_, self.y_ = int(img_coords.x()), int(img_coords.y())
-
-        if (0 <= self.x_ < self.data.image.shape[0]
-                and 0 <= self.y_ < self.data.image.shape[1]):
-            self.pixel_value = self.data.image[self.x_, self.y_]
+        x, y = int(img_coords.x()), int(img_coords.y())
+        if (0 <= x < self.data.image.shape[1]
+                and 0 <= y < self.data.image.shape[2]):
+            pixel_value = self.data.image[self.currentIndex, x, y]
         else:
-            self.pixel_value = None
-        self.update_position_label()
+            pixel_value = None
+        return x, y, format_pixel_value(pixel_value)
+
+    def get_frame_info(self) -> tuple[int, int, str]:
+        current_image = int(self.currentIndex)
+        name = wrap_text(
+            self.data.meta[self.currentIndex].get(
+                'file_name', str(current_image)
+            ),
+            max_length=40,
+        )
+        return current_image, self.data.image.shape[0]-1, name
 
     def on_roi_plot_clicked(self, ev) -> None:
         if isinstance(ev, QMouseEvent):
@@ -175,24 +188,6 @@ class ImageViewer(pg.ImageView):
                 self.setCurrentIndex(index)
             else:
                 pg.PlotWidget.mousePressEvent(self.ui.roiPlot, ev)
-
-    def update_position_label(self) -> None:
-        self.current_image = int(self.currentIndex)
-        self.current_image_name = self.data.meta[self.current_image].get(
-            'file_name', str(self.current_image)
-        )
-        pixel_text = format_pixel_value(self.pixel_value)
-        current_image_name_wrapped = wrap_text(self.current_image_name, 40)
-
-        text = (
-            f"|X:{self.x_:4d} Y:{self.y_:4d}|\n"
-            f"|{pixel_text}|\n"
-            f"|Frame:{self.current_image:4d}"
-            f"/{self.data.image.shape[0]-1:4d}|\n"
-            f"|Name: {current_image_name_wrapped}|"
-        )
-
-        self.info_label.setText(text)
 
     def setup_connections(self) -> None:
         self.crosshair_vline.sigPositionChanged.connect(self.update_plots)
@@ -277,8 +272,8 @@ class MeasureROI(pg.PolyLineROI):
         self.sigRegionChanged.connect(self.update_labels)
         self.view = view
 
-        self.n_px = 1
-        self.px_in_mm = 1
+        self.n_px: int = 1
+        self.px_in_mm: float = 1
         self.show_in_mm = False
 
         self.line_labels = []

@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (QDialog, QLabel, QMainWindow, QTextEdit,
 
 
 class LoadingDialog:
+
     def __init__(self, main_window: QMainWindow, message: str) -> None:
         self.main_window = main_window
         self.dialog = QDialog()
@@ -19,6 +20,7 @@ class LoadingDialog:
 
 
 class WindowedPlot(QMainWindow):
+
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
 
@@ -41,12 +43,11 @@ class WindowedPlot(QMainWindow):
 
 
 class LoggingTextEdit(QTextEdit):
-    def write(self, message: Any):
+
+    def log(self, message: Any):
         cursor = self.textCursor()
         cursor.movePosition(cursor.End)
-        cursor.insertText(str(message))
+        if message != "\n":
+            cursor.insertText(f"> {message}\n")
         self.setTextCursor(cursor)
         self.ensureCursorVisible()
-
-    def flush(self):
-        pass

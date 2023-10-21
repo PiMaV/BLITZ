@@ -1,19 +1,17 @@
 import os
-import sys
 from timeit import default_timer as clock
-from typing import Any, Optional
+from typing import Optional
 
 import pyqtgraph as pg
-from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QIcon
-from PyQt5.QtWidgets import (QApplication, QFileDialog, QLabel, QMainWindow,
-                             QMenu, QMenuBar, QSizePolicy, QVBoxLayout,
+from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
+                             QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel,
+                             QMainWindow, QMenu, QMenuBar, QPushButton,
+                             QSpinBox, QStatusBar, QTabWidget, QVBoxLayout,
                              QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
-from pyqtgraph.parametertree import Parameter, ParameterTree
 
-from ..tools import get_available_ram, insert_line_breaks
-from .parameters import FILE_PARAMS, ROI_PARAMS
+from ..tools import get_available_ram, log, set_logger
 from .tof import TOFWindow
 from .viewer import ImageViewer
 from .widgets import LoadingDialog, LoggingTextEdit
@@ -28,7 +26,7 @@ class MainWindow(QMainWindow):
 
     def __init__(
         self,
-        window_ratio: float = .77,
+        window_ratio: float = .75,
         relative_size: float = .85,
     ) -> None:
         super().__init__()
@@ -45,15 +43,13 @@ class MainWindow(QMainWindow):
             height,
         )
         self.image_viewer_size = int(window_ratio * self.width())
-        self.border_size = int((1-window_ratio) * self.width() / 2)
+        self.border_size = int((1 - window_ratio) * self.width() / 2)
 
         self.dock_area = DockArea()
         self.setup_docks()
         self.setCentralWidget(self.dock_area)
 
-        self.parameters = {}
-        self.setup_parameter_trees()
-        self.setup_file_info_dock()
+        self.setup_logger()
         self.setup_image_and_line_viewers()
 
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -61,18 +57,20 @@ class MainWindow(QMainWindow):
         icon_path = os.path.join(script_dir, 'BLITZ.ico')
         self.setWindowIcon(QIcon(icon_path))
 
-        self.setup_menubar()
-        self.setup_connections()
-        sys.stdout = LoggingTextEdit(self.history)
+        self.setup_option_dock()
+        self.setup_menu_and_status_bar()
+        self.image_viewer.file_dropped.connect(self.load_images)
 
         self.tof_window: None | TOFWindow = None
 
-    def setup_docks(self) -> None:
-        viewer_height = self.height() - self.border_size
+        log("Welcome to BLITZ")
 
-        self.dock_config = Dock(
-            "Configurations",
-            size=(self.border_size, self.border_size),
+    def setup_docks(self) -> None:
+        viewer_height = self.height() - 2 * self.border_size
+
+        self.dock_option = Dock(
+            "Options",
+            size=(self.border_size, viewer_height),
             hideTitle=True,
         )
         self.dock_status = Dock(
@@ -82,7 +80,7 @@ class MainWindow(QMainWindow):
         )
         self.dock_v_plot = Dock(
             "V Plot",
-            size=(self.border_size, viewer_height - self.border_size),
+            size=(self.border_size, viewer_height),
             hideTitle=True,
         )
         self.dock_h_plot = Dock(
@@ -95,73 +93,26 @@ class MainWindow(QMainWindow):
             size=(self.image_viewer_size, viewer_height),
             hideTitle=True,
         )
+        self.dock_t_line = Dock(
+            "Timeline",
+            size=(self.image_viewer_size, self.border_size),
+            hideTitle=True,
+        )
 
-        self.dock_area.addDock(self.dock_viewer, 'bottom')
-        self.dock_area.addDock(self.dock_config, 'left')
+        self.dock_area.addDock(self.dock_t_line, 'bottom')
+        self.dock_area.addDock(self.dock_viewer, 'top', self.dock_t_line)
+        self.dock_area.addDock(self.dock_v_plot, 'left', self.dock_viewer)
+        self.dock_area.addDock(self.dock_option, 'right', self.dock_viewer)
         self.dock_area.addDock(self.dock_h_plot, 'top', self.dock_viewer)
-        self.dock_area.addDock(self.dock_v_plot, 'bottom', self.dock_config)
-        self.dock_area.addDock(self.dock_status, 'bottom', self.dock_v_plot)
+        self.dock_area.addDock(self.dock_status, 'top', self.dock_v_plot)
 
-    def setup_menubar(self) -> None:
+    def setup_menu_and_status_bar(self) -> None:
         menubar = QMenuBar()
 
         file_menu = QMenu("File", self)
         file_menu.addAction("Open...").triggered.connect(self.browse_file)
         file_menu.addAction("Load TOF").triggered.connect(self.browse_tof)
-        file_menu.addAction("Show Config").triggered.connect(
-            lambda: self.switch_parameter_tree("file")
-        )
         menubar.addMenu(file_menu)
-
-        op_menu = QMenu("Operations", self)
-        op_menu.addAction("Flip Horizontally").triggered.connect(
-            lambda: self.image_viewer.manipulation("flip_x")
-        )
-        op_menu.addAction("Flip Vertically").triggered.connect(
-            lambda: self.image_viewer.manipulation("flip_y")
-        )
-        op_menu.addAction("Transpose").triggered.connect(
-            lambda: self.image_viewer.manipulation("transpose")
-        )
-        all_action = op_menu.addAction("Show All")
-        all_action.triggered.connect(
-            lambda: self.image_viewer.manipulation("org")
-        )
-        op_menu.insertSection(all_action, "All")
-        op_menu.addAction("Minimum").triggered.connect(
-            lambda: self.image_viewer.manipulation("min")
-        )
-        op_menu.addAction("Maximum").triggered.connect(
-            lambda: self.image_viewer.manipulation("max")
-        )
-        op_menu.addAction("Mean").triggered.connect(
-            lambda: self.image_viewer.manipulation("mean")
-        )
-        op_menu.addAction("Standard Deviation").triggered.connect(
-            lambda: self.image_viewer.manipulation("std")
-        )
-        menubar.addMenu(op_menu)
-
-        mask_menu = QMenu("Mask", self)
-        mask_menu.addAction("Show / Hide").triggered.connect(
-            self.image_viewer.toggle_mask
-        )
-        mask_menu.addAction("Apply").triggered.connect(
-            self.image_viewer.apply_mask
-        )
-        mask_menu.addAction("Reset").triggered.connect(
-            self.image_viewer.reset
-        )
-        menubar.addMenu(mask_menu)
-
-        roi_menu = QMenu("ROI", self)
-        roi_menu.addAction("Show / Hide").triggered.connect(
-            self.image_viewer.measure_roi.toggle
-        )
-        roi_menu.addAction("Open Config").triggered.connect(
-            lambda: self.switch_parameter_tree("roi")
-        )
-        menubar.addMenu(roi_menu)
 
         view_menu = QMenu("View", self)
         view_menu.addAction("Show / Hide Crosshair").triggered.connect(
@@ -171,66 +122,185 @@ class MainWindow(QMainWindow):
 
         self.setMenuBar(menubar)
 
-    def setup_parameter_trees(self) -> None:
-        self.create_parameter_tree(FILE_PARAMS, "file")
-        self.create_parameter_tree(ROI_PARAMS, "roi")
+        statusbar = QStatusBar()
+        self.position_label = QLabel("")
+        statusbar.addPermanentWidget(self.position_label)
+        self.frame_label = QLabel("")
+        statusbar.addWidget(self.frame_label)
+        self.file_label = QLabel("")
+        statusbar.addWidget(self.file_label)
 
-        title_label = QLabel("BLITZ")
-        font = QFont("Courier New", 32)
-        font.setBold(True)
-        title_label.setFont(font)
-        title_label.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Expanding,
+        self.setStatusBar(statusbar)
+
+    def setup_option_dock(self) -> None:
+        self.option_tabwidget = QTabWidget()
+
+        font_heading = QFont()
+        font_heading.setBold(True)
+        font_heading.setPointSize(14)
+        style_heading = (
+            "background-color: rgb(70, 70, 100);"
+            "qproperty-alignment: AlignCenter;"
         )
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout = QVBoxLayout()
-        layout.addWidget(title_label)
-        self.title_widget = QWidget()
-        self.title_widget.setLayout(layout)
-        self.dock_config.addWidget(self.title_widget, 0, 0)
 
-    def create_parameter_tree(
-        self,
-        params: list[dict[str, Any]],
-        name: str,
-    ) -> None:
-        tree = ParameterTree()
-        param = Parameter.create(name=name, type='group', children=params)
-        tree.setParameters(param, showTop=False)
-        layout = QVBoxLayout()
-        layout.addWidget(tree)
-        container = QWidget()
-        container.setLayout(layout)
-        self.parameters[name] = (param, container)
-        self.dock_config.addWidget(container, 0, 0)
-        container.setVisible(False)
+        lut_container = QWidget(self)
+        lut_layout = QVBoxLayout()
+        lut_container.setLayout(lut_layout)
+        self.image_viewer.ui.histogram.setParent(None)
+        lut_layout.addWidget(self.image_viewer.ui.histogram)
 
-    def switch_parameter_tree(self, name: Optional[str] = None) -> None:
-        for name_ in self.parameters:
-            self.parameters[name_][1].setVisible(False)
-        self.title_widget.setVisible(False)
-        if name is None:
-            self.title_widget.setVisible(True)
-        self.parameters[name][1].setVisible(True)
+        file_container = QWidget(self)
+        file_layout = QVBoxLayout()
+        file_container.setLayout(file_layout)
+        load_label = QLabel("Load File")
+        load_label.setFont(font_heading)
+        load_label.setStyleSheet(style_heading)
+        file_layout.addWidget(load_label)
+        self.load_8bit_checkbox = QCheckBox("8 bit")
+        file_layout.addWidget(self.load_8bit_checkbox)
+        self.size_ratio_spinbox = QDoubleSpinBox()
+        self.size_ratio_spinbox.setRange(0, 1)
+        self.size_ratio_spinbox.setValue(1)
+        self.size_ratio_spinbox.setSingleStep(0.1)
+        self.size_ratio_spinbox.setPrefix("Size-ratio: ")
+        file_layout.addWidget(self.size_ratio_spinbox)
+        self.subset_ratio_spinbox = QDoubleSpinBox()
+        self.subset_ratio_spinbox.setRange(0, 1)
+        self.subset_ratio_spinbox.setValue(1)
+        self.subset_ratio_spinbox.setSingleStep(0.1)
+        self.subset_ratio_spinbox.setPrefix("Subset-ratio: ")
+        file_layout.addWidget(self.subset_ratio_spinbox)
+        self.max_ram_spinbox = QDoubleSpinBox()
+        self.max_ram_spinbox.setRange(.1, .8 * get_available_ram())
+        self.max_ram_spinbox.setValue(1)
+        self.max_ram_spinbox.setSingleStep(0.1)
+        self.max_ram_spinbox.setPrefix("Max. RAM: ")
+        file_layout.addWidget(self.max_ram_spinbox)
+        load_btn = QPushButton("Open")
+        load_btn.pressed.connect(self.browse_file)
+        file_layout.addWidget(load_btn)
+        save_label = QLabel("Save")
+        save_label.setFont(font_heading)
+        save_label.setStyleSheet(style_heading)
+        file_layout.addWidget(save_label)
+        export_btn = QPushButton("Export")
+        export_btn.pressed.connect(self.image_viewer.exportClicked)
+        file_layout.addWidget(export_btn)
+        file_layout.addStretch()
 
-    def setup_file_info_dock(self) -> None:
+        option_container = QWidget(self)
+        option_layout = QVBoxLayout()
+        option_container.setLayout(option_layout)
+        view_label = QLabel("View")
+        view_label.setFont(font_heading)
+        view_label.setStyleSheet(style_heading)
+        option_layout.addWidget(view_label)
+        flip_x = QCheckBox("Flip x")
+        flip_x.stateChanged.connect(
+            lambda: self.image_viewer.manipulation("flip_x")
+        )
+        option_layout.addWidget(flip_x)
+        flip_y = QCheckBox("Flip y")
+        flip_y.stateChanged.connect(
+            lambda: self.image_viewer.manipulation("flip_y")
+        )
+        option_layout.addWidget(flip_y)
+        transpose = QCheckBox("Transpose")
+        transpose.stateChanged.connect(
+            lambda: self.image_viewer.manipulation("transpose")
+        )
+        option_layout.addWidget(transpose)
+
+        timeline_label = QLabel("Timeline Operation")
+        timeline_label.setFont(font_heading)
+        timeline_label.setStyleSheet(style_heading)
+        option_layout.addWidget(timeline_label)
+        self.op_combobox = QComboBox()
+        for op in self.image_viewer.AVAILABLE_OPERATIONS:
+            self.op_combobox.addItem(op)
+        self.op_combobox.currentIndexChanged.connect(self.operation_changed)
+        option_layout.addWidget(self.op_combobox)
+        norm_label = QLabel("Normalization")
+        norm_label.setFont(font_heading)
+        norm_label.setStyleSheet(style_heading)
+        option_layout.addWidget(norm_label)
+        norm_checkbox = QCheckBox("Open Toolbox")
+        norm_checkbox.stateChanged.connect(self.image_viewer.normToggled)
+        option_layout.addWidget(norm_checkbox)
+        option_layout.addStretch()
+
+        tools_container = QWidget(self)
+        tools_layout = QVBoxLayout()
+        tools_container.setLayout(tools_layout)
+        roi_label = QLabel("ROI")
+        roi_label.setFont(font_heading)
+        roi_label.setStyleSheet(style_heading)
+        tools_layout.addWidget(roi_label)
+        self.image_viewer.ui.roiBtn.setParent(None)
+        self.image_viewer.ui.roiBtn = QCheckBox("ROI")
+        self.image_viewer.ui.roiBtn.setChecked(True)
+        self.image_viewer.ui.roiBtn.stateChanged.connect(
+            self.image_viewer.roiClicked
+        )
+        tools_layout.addWidget(self.image_viewer.ui.roiBtn)
+
+        mask_label = QLabel("Mask")
+        mask_label.setFont(font_heading)
+        mask_label.setStyleSheet(style_heading)
+        tools_layout.addWidget(mask_label)
+        mask_checkbox = QCheckBox("Show")
+        mask_checkbox.clicked.connect(self.image_viewer.toggle_mask)
+        tools_layout.addWidget(mask_checkbox)
+        apply_btn = QPushButton("Apply")
+        apply_btn.pressed.connect(self.image_viewer.apply_mask)
+        apply_btn.pressed.connect(lambda: mask_checkbox.setChecked(False))
+        tools_layout.addWidget(apply_btn)
+        reset_btn = QPushButton("Reset")
+        reset_btn.pressed.connect(self.image_viewer.reset)
+        tools_layout.addWidget(reset_btn)
+
+        roi_label = QLabel("Measure Tool")
+        roi_label.setFont(font_heading)
+        roi_label.setStyleSheet(style_heading)
+        tools_layout.addWidget(roi_label)
+        self.measure_checkbox = QCheckBox("Show")
+        self.measure_checkbox.stateChanged.connect(
+            self.image_viewer.measure_roi.toggle
+        )
+        tools_layout.addWidget(self.measure_checkbox)
+        self.mm_checkbox = QCheckBox("Display in mm")
+        self.mm_checkbox.stateChanged.connect(self.update_roi_settings)
+        tools_layout.addWidget(self.mm_checkbox)
+        self.pixel_spinbox = QSpinBox()
+        self.pixel_spinbox.setPrefix("Pixels: ")
+        self.pixel_spinbox.setMinimum(1)
+        self.pixel_spinbox.valueChanged.connect(self.update_roi_settings)
+        converter_layout = QHBoxLayout()
+        converter_layout.addWidget(self.pixel_spinbox)
+        self.mm_spinbox = QDoubleSpinBox()
+        self.mm_spinbox.setPrefix("in mm: ")
+        self.mm_spinbox.setValue(1.0)
+        self.mm_spinbox.valueChanged.connect(self.update_roi_settings)
+        converter_layout.addWidget(self.mm_spinbox)
+        tools_layout.addLayout(converter_layout)
+        tools_layout.addStretch()
+
+        self.option_tabwidget.addTab(lut_container, "LUT")
+        self.option_tabwidget.addTab(file_container, "File")
+        self.option_tabwidget.addTab(option_container, "Manipulation")
+        self.option_tabwidget.addTab(tools_container, "Tools")
+
+        self.dock_option.addWidget(self.option_tabwidget)
+
+    def setup_logger(self) -> None:
         file_info_widget = QWidget()
         layout = QVBoxLayout()
-        font = QFont()
-        font.setPointSize(10)
 
-        self.info_label = QLabel("Info: Not Available")
-        self.info_label.setFont(font)
-        layout.addWidget(self.info_label)
+        self.logger = LoggingTextEdit()
+        self.logger.setReadOnly(True)
+        layout.addWidget(self.logger)
+        set_logger(self.logger)
 
-        self.history = LoggingTextEdit(f"")
-        self.history.setReadOnly(True)
-        layout.addWidget(self.history)
-
-        # Set height ratios: 1/3 for info_label and 2/3 for history
-        layout.setStretch(0, 1)
-        layout.setStretch(1, 2)
         file_info_widget.setLayout(layout)
         self.dock_status.addWidget(file_info_widget)
 
@@ -250,33 +320,43 @@ class MainWindow(QMainWindow):
         self.dock_h_plot.addWidget(self.h_plot)
 
         self.image_viewer = ImageViewer(
-            self.dock_viewer,
             h_plot=self.h_plot,
             v_plot=self.v_plot,
-            info_label=self.info_label,
-            roi_height=self.border_size,
         )
         self.dock_viewer.addWidget(self.image_viewer)
+
+        # relocate the roiPlot to the timeline dock
+        timeline_container = QWidget()
+        timeline_layout = QVBoxLayout()
+        timeline_layout.setContentsMargins(0, 0, 0, 0)
+        timeline_container.setLayout(timeline_layout)
+        self.roi_plot = self.image_viewer.ui.roiPlot
+        self.roi_plot.setParent(None)
+        # timeline_layout.addWidget(self.roi_plot)
+        # this decoy prevents an error being thrown in the ImageView
+        timeline_decoy = pg.PlotWidget(self.image_viewer.ui.splitter)
+        timeline_decoy.hide()
+        self.dock_t_line.addWidget(self.roi_plot)
+        self.image_viewer.ui.menuBtn.setParent(None)
+
+        self.image_viewer.scene.sigMouseMoved.connect(
+            self.update_statusbar_position
+        )
+        self.image_viewer.timeLine.sigPositionChanged.connect(
+            self.update_statusbar_frame
+        )
 
         self.v_plot.setYLink(self.image_viewer.getView())
         self.h_plot.setXLink(self.image_viewer.getView())
 
-    def setup_connections(self) -> None:
-        self.image_viewer.file_dropped.connect(self.load_images)
+    def update_statusbar_position(self, pos: tuple[int, int]) -> None:
+        x, y, value = self.image_viewer.get_position_info(pos)
+        self.position_label.setText(f"X: {x} | Y: {y} | Value: {value}")
 
-        self.parameters["roi"][0].param(
-            'show in mm'
-        ).sigValueChanged.connect(self.update_roi_settings)
-        self.parameters["roi"][0].param(
-            'Pixels'
-        ).sigValueChanged.connect(self.update_roi_settings)
-        self.parameters["roi"][0].param(
-            'in mm'
-        ).sigValueChanged.connect(self.update_roi_settings)
-
-        self.parameters["file"][0].param(
-            'max. RAM (GB)'
-        ).setLimits((.1, .8 * get_available_ram()))
+    def update_statusbar_frame(self) -> None:
+        frame, max_frame, name = self.image_viewer.get_frame_info()
+        self.frame_label.setText(f"Frame: {frame} / {max_frame}")
+        self.file_label.setText(f"File: {name}")
 
     def browse_tof(self) -> None:
         path, _ = QFileDialog.getOpenFileName()
@@ -296,46 +376,42 @@ class MainWindow(QMainWindow):
         )
         if file_path:
             self.last_filepath = os.path.dirname(file_path)
-            string_temp = insert_line_breaks(self.last_filepath)
-            print(f"Loading file: {string_temp}")
             self.load_images(file_path)
 
     def load_images(self, file_path: Optional[str] = None) -> None:
         start_time = clock()
-        dialog = self.show_loading_dialog()
-        size = self.parameters["file"][0].param('Size ratio').value()
-        ratio = self.parameters["file"][0].param('Subset ratio').value()
-        convert_to_8_bit = self.parameters["file"][0].param(
-            'Load as 8 bit'
-        ).value()
-        ram_size = self.parameters["file"][0].param('max. RAM (GB)').value()
+        dialog = self.show_loading_dialog(
+            f"Loading from file: {'...' if file_path is None else file_path}"
+        )
 
         self.image_viewer.load_data(
             file_path,
-            size=size,
-            ratio=ratio,
-            convert_to_8_bit=convert_to_8_bit,
-            ram_size=ram_size,
+            size=self.size_ratio_spinbox.value(),
+            ratio=self.subset_ratio_spinbox.value(),
+            convert_to_8_bit=self.load_8bit_checkbox.isChecked(),
+            ram_size=self.max_ram_spinbox.value(),
         )
 
-        print(f"Available RAM: {get_available_ram():.2f} GB")
         self.close_loading_dialog(dialog)
-        print(f"Time taken to load_data: {clock() - start_time:.2f} seconds")
+        if file_path is not None:
+            data_size_MB = self.image_viewer.data.image.nbytes / 2**20
+            log(f"Loaded {data_size_MB:.2f} MB")
+            log(f"Available RAM: {get_available_ram():.2f} GB")
+            log(f"Seconds needed: {clock() - start_time:.2f}")
+            self.update_statusbar_frame()
 
-    def on_operation_changed(self) -> None:
-        operation = self.parameters["roi"][0].param(
-            'Calculations', 'Operation'
-        ).value().lower()
-
+    def operation_changed(self) -> None:
         start_time = clock()
         dialog = self.show_loading_dialog(message="Calculating statistics...")
-        print(f"Available RAM: {get_available_ram():.2f} GB")
+        log(f"Available RAM: {get_available_ram():.2f} GB")
 
-        self.image_viewer.manipulation(operation)
+        self.image_viewer.manipulation(self.image_viewer.AVAILABLE_OPERATIONS[
+            self.op_combobox.currentText()
+        ])
 
         self.close_loading_dialog(dialog)
-        print(f"Time taken to calculate: {clock() - start_time:.2f} seconds")
-        print(f"Available RAM: {get_available_ram():.2f} GB")
+        log(f"Seconds needed: {clock() - start_time:.2f}")
+        log(f"Available RAM: {get_available_ram():.2f} GB")
 
     def show_loading_dialog(
         self,
@@ -350,13 +426,9 @@ class MainWindow(QMainWindow):
         dialog.accept()
 
     def update_roi_settings(self) -> None:
-        self.image_viewer.measure_roi.show_in_mm = (
-            self.parameters["roi"][0].param('show in mm').value()
-        )
-        self.image_viewer.measure_roi.n_px = (
-            self.parameters["roi"][0].param('Pixels').value()
-        )
-        self.image_viewer.measure_roi.px_in_mm = (
-            self.parameters["roi"][0].param('in mm').value()
-        )
+        self.image_viewer.measure_roi.show_in_mm = self.mm_checkbox.isChecked()
+        self.image_viewer.measure_roi.n_px = self.pixel_spinbox.value()
+        self.image_viewer.measure_roi.px_in_mm = self.mm_spinbox.value()
+        if not self.measure_checkbox.isChecked():
+            return
         self.image_viewer.measure_roi.update_labels()
