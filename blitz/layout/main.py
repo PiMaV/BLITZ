@@ -4,7 +4,7 @@ from typing import Optional
 
 import pyqtgraph as pg
 from PyQt5.QtGui import QFont, QIcon
-from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
+from PyQt5.QtWidgets import (QApplication, QButtonGroup, QCheckBox, QComboBox,
                              QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel,
                              QMainWindow, QMenu, QMenuBar, QPushButton,
                              QSpinBox, QStatusBar, QTabWidget, QVBoxLayout,
@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
 from pyqtgraph.dockarea import Dock, DockArea
 
 from ..tools import get_available_ram, log, set_logger
-from .tof import TOFWindow
+from .tof import TOFAdapter
 from .viewer import ImageViewer
 from .widgets import LoadingDialog, LoggingTextEdit
 
@@ -60,8 +60,6 @@ class MainWindow(QMainWindow):
         self.setup_option_dock()
         self.setup_menu_and_status_bar()
         self.image_viewer.file_dropped.connect(self.load_images)
-
-        self.tof_window: None | TOFWindow = None
 
         log("Welcome to BLITZ")
 
@@ -141,6 +139,7 @@ class MainWindow(QMainWindow):
         style_heading = (
             "background-color: rgb(70, 70, 100);"
             "qproperty-alignment: AlignCenter;"
+            "border: 3px solid rgb(10, 10, 40);"
         )
 
         lut_container = QWidget(self)
@@ -232,18 +231,6 @@ class MainWindow(QMainWindow):
         tools_container = QWidget(self)
         tools_layout = QVBoxLayout()
         tools_container.setLayout(tools_layout)
-        roi_label = QLabel("ROI")
-        roi_label.setFont(font_heading)
-        roi_label.setStyleSheet(style_heading)
-        tools_layout.addWidget(roi_label)
-        self.image_viewer.ui.roiBtn.setParent(None)
-        self.image_viewer.ui.roiBtn = QCheckBox("ROI")
-        self.image_viewer.ui.roiBtn.setChecked(True)
-        self.image_viewer.ui.roiBtn.stateChanged.connect(
-            self.image_viewer.roiClicked
-        )
-        tools_layout.addWidget(self.image_viewer.ui.roiBtn)
-
         mask_label = QLabel("Mask")
         mask_label.setFont(font_heading)
         mask_label.setStyleSheet(style_heading)
@@ -284,6 +271,42 @@ class MainWindow(QMainWindow):
         converter_layout.addWidget(self.mm_spinbox)
         tools_layout.addLayout(converter_layout)
         tools_layout.addStretch()
+
+        roi_label = QLabel("Timeline")
+        roi_label.setFont(font_heading)
+        roi_label.setStyleSheet(style_heading)
+        tools_layout.addWidget(roi_label)
+        self.image_viewer.ui.roiBtn.setParent(None)
+        self.roi_button: QPushButton = self.image_viewer.ui.roiBtn
+        self.roi_button.clicked.connect(
+            lambda: self.tof_adapter.toggle_plot(set_off=True)
+        )
+        tools_layout.addWidget(self.roi_button)
+        self.tof_button = QPushButton("TOF")
+        self.tof_button.setCheckable(True)
+        # NOTE: the order of connection here matters
+        # roiClicked shows the plot again
+        self.tof_button.clicked.connect(self.image_viewer.roiClicked)
+        self.tof_button.clicked.connect(
+            lambda: self.tof_adapter.toggle_plot(set_off=False)
+        )
+        self.off_button = QPushButton("OFF")
+        self.off_button.setCheckable(True)
+        self.off_button.clicked.connect(self.image_viewer.roiClicked)
+        self.off_button.clicked.connect(
+            lambda: self.tof_adapter.toggle_plot(set_off=True)
+        )
+        self.button_group = QButtonGroup()
+        self.button_group.addButton(self.roi_button)
+        self.button_group.addButton(self.tof_button)
+        self.button_group.addButton(self.off_button)
+        self.button_group.buttonClicked.connect(self.button_group_clicked)
+        self.button_group.setExclusive(True)
+        button_layout = QHBoxLayout()
+        button_layout.addWidget(self.roi_button)
+        button_layout.addWidget(self.tof_button)
+        button_layout.addWidget(self.off_button)
+        tools_layout.addLayout(button_layout)
 
         self.option_tabwidget.addTab(lut_container, "LUT")
         self.option_tabwidget.addTab(file_container, "File")
@@ -326,18 +349,15 @@ class MainWindow(QMainWindow):
         self.dock_viewer.addWidget(self.image_viewer)
 
         # relocate the roiPlot to the timeline dock
-        timeline_container = QWidget()
-        timeline_layout = QVBoxLayout()
-        timeline_layout.setContentsMargins(0, 0, 0, 0)
-        timeline_container.setLayout(timeline_layout)
         self.roi_plot = self.image_viewer.ui.roiPlot
         self.roi_plot.setParent(None)
-        # timeline_layout.addWidget(self.roi_plot)
         # this decoy prevents an error being thrown in the ImageView
         timeline_decoy = pg.PlotWidget(self.image_viewer.ui.splitter)
         timeline_decoy.hide()
         self.dock_t_line.addWidget(self.roi_plot)
         self.image_viewer.ui.menuBtn.setParent(None)
+
+        self.tof_adapter = TOFAdapter(self.roi_plot)
 
         self.image_viewer.scene.sigMouseMoved.connect(
             self.update_statusbar_position
@@ -358,17 +378,17 @@ class MainWindow(QMainWindow):
         self.frame_label.setText(f"Frame: {frame} / {max_frame}")
         self.file_label.setText(f"File: {name}")
 
+    def button_group_clicked(self, button: QPushButton) -> None:
+        for btn in self.button_group.buttons():
+            btn.setEnabled(True)
+        button.setEnabled(False)
+
     def browse_tof(self) -> None:
         path, _ = QFileDialog.getOpenFileName()
         if not path:
             return
-        if self.tof_window is None:
-            self.tof_window = TOFWindow(
-                self, path, self.image_viewer.data.meta,
-            )
-        else:
-            self.tof_window.update_plot(path)
-            self.tof_window.show()
+        self.tof_adapter.set_data(path, self.image_viewer.data.meta)
+        self.tof_button.click()
 
     def browse_file(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(

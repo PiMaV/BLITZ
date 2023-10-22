@@ -306,14 +306,17 @@ def _load_video(
     fourcc_str = "".join([chr((codec >> 8 * i) & 0xFF) for i in range(4)])
     cap.release()
 
-    # memory estimation
     memory_estimate = width * height * 3 * frame_count
+    log(f"Estimated size to load: {memory_estimate / 2**20:.2f} MB")
     adjusted_ratio = adjust_ratio_for_memory(memory_estimate, ram_size)
 
-    # use the smaller ratio
     ratio = min(ratio, adjusted_ratio)
+    if ratio == 1:
+        log("No adjustment to ratio required, loading the full dataset")
+    else:
+        log(f"Adjusted ratio for subset extraction: {ratio:.4f}")
 
-    skip_frames = int(1/ratio) - 1
+    skip_frames = int(1 / ratio) - 1
 
     video = cv2.VideoCapture(filepath)
     frames = []

@@ -80,11 +80,7 @@ class ImageViewer(pg.ImageView):
         self.file_dropped.emit(file_path)
 
     def load_data(self, filepath: Optional[str] = None, **kwargs) -> None:
-        if filepath is None:
-            self.data.set(*from_file())
-        else:
-            self.data.set(*from_file(filepath, **kwargs))
-
+        self.data.set(*from_file(filepath, **kwargs))
         self.show_image(self.data.image)
         self.init_roi_and_crosshair()
 
