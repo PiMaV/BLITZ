@@ -67,6 +67,9 @@ class ImageViewer(pg.ImageView):
         self.roi.sigRegionChanged.connect(
             lambda: self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
         )
+        self.roi.sigRegionChangeFinished.connect(
+            lambda: self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
+        )
         self.setAcceptDrops(True)
 
     def dragEnterEvent(self, e: QDropEvent):
@@ -89,8 +92,13 @@ class ImageViewer(pg.ImageView):
         width = self.data.image.shape[1]
         self.crosshair_vline.setPos(width / 2)
         self.crosshair_hline.setPos(height / 2)
-        self.roi.setSize((.25*width, .25*height))
-        self.roi.setPos((width*3/8, height*3/8))
+        self.roi.setSize((.1*width, .1*height))
+        self.roi.setPos((width*9/20, height*9/20))
+        self.measure_roi.toggle()
+        self.measure_roi.setPoints(
+            [[0, 0], [0, 0.5*height], [0.5*width, 0.25*height]]
+        )
+        self.measure_roi.toggle()
 
     def manipulation(self, operation: str) -> None:
         match operation:
@@ -144,6 +152,20 @@ class ImageViewer(pg.ImageView):
         else:
             self.view.removeItem(self.mask)
             self.mask = None
+
+    def toogle_roi_update_frequency(self) -> None:
+        if self.roi.receivers(self.roi.sigRegionChanged) > 1:
+            self.roi.sigRegionChanged.disconnect()
+            self.roi.sigRegionChangeFinished.connect(self.roiChanged)
+            self.roi.sigRegionChangeFinished.connect(
+                lambda: self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
+            )
+        elif self.roi.receivers(self.roi.sigRegionChangeFinished) > 1:
+            self.roi.sigRegionChangeFinished.disconnect()
+            self.roi.sigRegionChanged.connect(self.roiChanged)
+            self.roi.sigRegionChanged.connect(
+                lambda: self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
+            )
 
     def show_image(self, image: np.ndarray, **kwargs) -> None:
         self.image = image
@@ -263,7 +285,7 @@ class ImageViewer(pg.ImageView):
 
 class MeasureROI(pg.PolyLineROI):
 
-    def __init__(self, view):
+    def __init__(self, view: pg.ViewBox):
         super().__init__([[0, 0], [0, 20], [10, 10]], closed=True)
         self.sigRegionChanged.connect(self.update_labels)
         self.view = view

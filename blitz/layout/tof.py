@@ -83,10 +83,9 @@ class TOFAdapter:
         )
         self.smoothed_data = (x_smooth, y_smooth)
 
-    def toggle_plot(self, set_off: bool = False) -> None:
+    def toggle_plot(self) -> None:
         if self.data is None:
-            if not set_off:
-                log("Error: No TOF data loaded")
+            log("Error: No TOF data loaded")
             return
         if self._plot is not None:
             self.plot_item.removeItem(self._plot)
@@ -94,7 +93,7 @@ class TOFAdapter:
             if self._smoothed_plot is not None:
                 self.plot_item.removeItem(self._smoothed_plot)
             self._smoothed_plot = None
-        elif not set_off:
+        else:
             self._plot = self.plot_item.plot(
                 *self.data,
                 pen="gray",
