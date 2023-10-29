@@ -1,7 +1,7 @@
 # BLITZ
 **B**ulk **L**oading and **I**nteractive **T**ime series **Z**onal analysis
 
-[![Screenshot](https://github.com/CodeSchmiedeHGW/BLITZ/tree/refactoring/resources/public/screenshot_01.png)]
+![Screenshot](resources/public/screenshot_01.png)
 
 This project is being built at the [INP Greifswald](https://www.inp-greifswald.de/).
 
@@ -33,4 +33,4 @@ $ pyinstaller --onefile --windowed --icon=resources/icon/blitz.ico blitz.py
 ## License
 
 BLITZ is licensed under the terms of the GNU General Public License version 3 (GPL-3.0). Details
-can be found in the [LICENSE](https://github.com/CodeSchmiedeHGW/BLITZ/blob/refactoring/LICENSE) file.
+can be found in the [LICENSE](LICENSE) file.
