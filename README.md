@@ -24,7 +24,7 @@ $ poetry install
 $ poetry run BLITZ
 ```
 
-Build a portable executable using `pyinstaller`:
+You can also build your own portable executable using `pyinstaller`:
 
 ```shell
 $ pyinstaller --onefile --windowed --icon=resources/icon/blitz.ico blitz.py
