@@ -1,9 +1,9 @@
 [tool.poetry]
 name = "blitz"
-version = "0.1.0"
-description = "Bulk Loading & Interactive Time-series Zonal-analysis"
+version = "1.0.0"
+description = "Bulk Loading and Interactive Time series Zonal analysis"
 authors = [
-    "alienkrieg <alienkrieg@gmail.com>",
+    "Richard Krieg <alienkrieg@gmail.com>",
     "Philipp Mattern <philipp.mattern@inp-greifswald.de>"
 ]
 

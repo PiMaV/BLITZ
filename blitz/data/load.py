@@ -1,5 +1,6 @@
 import json
 import os
+import warnings
 from multiprocessing import Pool, cpu_count
 from typing import Any, Optional
 
@@ -7,6 +8,7 @@ import cv2
 import numpy as np
 from natsort import natsorted
 
+from ..tools import log
 from .tools import (adjust_ratio_for_memory, create_info_image,
                     is_image_grayscale, resize_and_convert,
                     resize_and_convert_to_8_bit)
@@ -23,7 +25,7 @@ def from_file(
     ratio: int = 1,
     convert_to_8_bit: bool = False,
     ram_size: int = 1,
-) -> tuple[np.ndarray, list[dict[str, Any]] | dict[str, Any]]:
+) -> tuple[np.ndarray, list[dict[str, Any]]]:
     if filepath is None:
         data, metadata = create_info_image(
             message="No data",
@@ -56,12 +58,13 @@ def from_file(
                 ram_size,
             )
         else:
-            print(f"Unsupported or unknown file type!\n {filepath}")
+            warnings.warn(
+                f"Unsupported or unknown file type: {filepath}",
+                UserWarning,
+            )
             data, metadata = create_info_image(message="Filetype unsupported.")
 
     data = np.swapaxes(data, 1, 2)
-    data_size_MB = data.nbytes / 2**20
-    print(f"Final Size of Dataset: {data_size_MB:.2f} MB")
     return data, metadata
 
 
@@ -159,10 +162,7 @@ def _load_multiple_standard_images(
     ratio = min(ratio, adjusted_ratio)
     full_dataset_size = len(image_files)
     image_files = image_files[::int(np.ceil(1/ratio))]
-    print(
-        f"Loading {len(image_files)} images "
-        f"out of {full_dataset_size} images in total."
-    )
+    log(f"Loading {len(image_files)}/{full_dataset_size} images")
 
     load_format = (
         cv2.IMREAD_ANYDEPTH | cv2.IMREAD_GRAYSCALE
@@ -207,11 +207,11 @@ def _load_multiple_standard_images(
         images = np.stack([img for img, _ in valid_data_with_metadata])
         all_metadata = [meta for _, meta in valid_data_with_metadata]
     else:
-        print("Could not load any valid images.")
+        log("Could not load any valid images")
         images, all_metadata = create_info_image()
 
     if faulty_images:
-        print(f"Could not load {len(faulty_images)} images: {faulty_images}")
+        log(f"Could not load {len(faulty_images)} images: {faulty_images}")
 
     return images, all_metadata
 
@@ -222,7 +222,7 @@ def _load_numpy_array(
     ratio,
     convert_to_8_bit,
     ram_size,
-) -> tuple[np.ndarray, dict[str, Any]]:
+) -> tuple[np.ndarray, list[dict[str, Any]]]:
     array_files = [f for f in os.listdir(folder_path) if f.endswith('.npy')]
 
     first_array = np.load(os.path.join(folder_path, array_files[0]))
@@ -236,10 +236,7 @@ def _load_numpy_array(
     ratio = min(ratio, adjusted_ratio)
     full_dataset_size = len(array_files)
     array_files = array_files[::int(np.ceil(1/ratio))]
-    print(
-        f"Loading {len(array_files)} arrays "
-        f"out of {full_dataset_size} arrays in total."
-    )
+    log(f"Loading {len(array_files)}/{full_dataset_size} arrays")
 
     matrix_list = []
     metadata_list = []
@@ -274,7 +271,7 @@ def _load_numpy_array(
             metadata_list.append(metadata)
 
     matrix = np.stack(matrix_list)  # type: ignore
-    return matrix, metadata_list  # type: ignore
+    return matrix, metadata_list
 
 
 def _load_and_process_file(
@@ -309,14 +306,17 @@ def _load_video(
     fourcc_str = "".join([chr((codec >> 8 * i) & 0xFF) for i in range(4)])
     cap.release()
 
-    # memory estimation
     memory_estimate = width * height * 3 * frame_count
+    log(f"Estimated size to load: {memory_estimate / 2**20:.2f} MB")
     adjusted_ratio = adjust_ratio_for_memory(memory_estimate, ram_size)
 
-    # use the smaller ratio
     ratio = min(ratio, adjusted_ratio)
+    if ratio == 1:
+        log("No adjustment to ratio required, loading the full dataset")
+    else:
+        log(f"Adjusted ratio for subset extraction: {ratio:.4f}")
 
-    skip_frames = int(1/ratio) - 1
+    skip_frames = int(1 / ratio) - 1
 
     video = cv2.VideoCapture(filepath)
     frames = []
@@ -356,7 +356,7 @@ def _load_video(
     return np.stack(frames), metadata
 
 
-def from_tof(file_path: str) -> np.ndarray:
+def tof_from_json(file_path: str) -> np.ndarray:
     with open(file_path, 'r') as file:
         raw_data = json.load(file)
 

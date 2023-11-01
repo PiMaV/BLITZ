@@ -1,693 +1,455 @@
 import os
-import sys
 from timeit import default_timer as clock
-from typing import Any, Optional
+from typing import Optional
 
-import numpy as np
 import pyqtgraph as pg
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont, QIcon, QMouseEvent
-from PyQt5.QtWidgets import (QApplication, QFileDialog, QHeaderView, QLabel,
-                             QMainWindow, QPushButton, QVBoxLayout, QWidget)
-from pyqtgraph import RectROI, mkPen
+from PyQt5.QtGui import QFont, QIcon, QKeySequence
+from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
+                             QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel,
+                             QMainWindow, QMenu, QMenuBar, QPushButton,
+                             QShortcut, QSpinBox, QStatusBar, QTabWidget,
+                             QVBoxLayout, QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
-from pyqtgraph.parametertree import Parameter, ParameterTree
 
-from ..data.load import from_file, from_tof
-from ..data.tools import smoothen
-from ..stats import Stats
-from ..tools import (format_pixel_value, get_available_ram, insert_line_breaks,
-                     wrap_text)
-from .parameters import EDIT_PARAMS, FILE_PARAMS
-from .widgets import (DragDropButton, DraggableCrosshair, LoadingDialog,
-                      LoggingTextEdit, PlotterWindow)
+from .. import resources
+from ..tools import get_available_ram, log, set_logger
+from .tof import TOFAdapter
+from .viewer import ImageViewer
+from .widgets import LoadingDialog, LoggingTextEdit
 
 TITLE = (
-    "BLITZ V 1.5.2 : Bulk Loading & Interactive Time-series Zonal-analysis "
-    "from INP Greifswald"
+    "BLITZ: Bulk Loading and Interactive Time series Zonal analysis "
+    "(INP Greifswald)"
 )
 
 
 class MainWindow(QMainWindow):
 
-    def __init__(self) -> None:
-        super().__init__()
-
-        area = DockArea()
-        self.setCentralWidget(area)
-        self.setWindowTitle(TITLE)
-        self.set_default_geometry()
-
-        self.window_ratio = .77
-
-        self.crosshair_pen = mkPen(
-            color=(200, 200, 200, 140),
-            style=Qt.PenStyle.DashDotDotLine,
-            width=1,
-        )
-
-        self.setup_docks(area)
-        self.setup_parameter_tree()
-        self.setup_file_info_dock()
-        self.setup_image_and_line_viewers()
-
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        icon_path = os.path.join(script_dir, 'BLITZ.ico')
-        self.setWindowIcon(QIcon(icon_path))
-        self.crosshair = DraggableCrosshair(self)
-        self.default_filepath = script_dir
-        self.rect_roi_positions = {}
-        # self.x_, self.y_ = 0, 0
-        pg.setConfigOptions(useNumba=True)
-        self.last_rotate = False
-        self.last_flip_x = False
-        self.last_flip_y = False
-        self.stats = Stats()
-        self.pixel_value: Optional[np.ndarray] = None
-        self.message_count = 0
-        self.tof_window = 3
-        self.line_labels = []
-        self.angle_labels = []
-        self.setup_connections()
-        sys.stdout = LoggingTextEdit(self.history)
-        self.setup_mouse_events()
-        self.add_line_labels()
-        self.toggle_roi()
-
-    def setup_docks(self, area: DockArea) -> None:
-        image_viewer_width = int(self.window_ratio* self.width())
-        self.common_size = int((self.width() - image_viewer_width) / 2)
-        h_line_height = self.common_size*1.1
-        h_viewer_height = self.height() - h_line_height
-
-        self.dock_load_data = self.create_dock(
-            "Load Data",
-            self.common_size,
-            h_line_height,
-        )
-        self.dock_edit_data = self.create_dock(
-            "Edit Data",
-            self.common_size*1.2,
-            h_line_height,
-        )
-        self.dock_file_metadata = self.create_dock(
-            "File Metadata",
-            self.common_size,
-            int(h_line_height),
-        )
-        self.dock_v_line = self.create_dock(
-            "V Line",
-            self.common_size,
-            h_viewer_height - int(h_line_height / 2),
-        )
-        self.dock_h_line = self.create_dock(
-            "H Line",
-            image_viewer_width,
-            h_line_height,
-        )
-        self.dock_image_viewer = self.create_dock(
-            "Image Viewer",
-            image_viewer_width,
-            h_viewer_height,
-        )
-
-        area.addDock(self.dock_image_viewer, 'bottom')
-        area.addDock(self.dock_load_data, 'left')
-        area.addDock(self.dock_h_line, 'top', self.dock_image_viewer)
-        area.addDock(self.dock_edit_data, 'right', self.dock_h_line)
-        area.addDock(self.dock_v_line, 'bottom', self.dock_load_data)
-        area.addDock(self.dock_file_metadata, 'bottom', self.dock_v_line)
-
-    def create_dock(self, name: str, width: float, height: float) -> Dock:
-        dock = Dock(name, size=(width, height))
-        dock.hideTitleBar()
-        return dock
-
-    def setup_parameter_tree(self) -> None:
-        self.paramTreeEdit, self.rootParamEdit = self.create_parameter_tree(
-            EDIT_PARAMS,
-            "edit_params",
-        )
-        self.paramTreeEdit.setHeaderLabels(['Edit Data', 'Options'])
-        layout = QVBoxLayout()
-        layout.addWidget(self.paramTreeEdit)
-        self.reset_button = QPushButton("Reset View")
-        self.reset_button.setFixedSize(int(self.common_size*.9) , 20)
-        layout.addWidget(self.reset_button, 0, Qt.AlignmentFlag.AlignCenter)
-        container = QWidget()
-        container.setLayout(layout)
-        self.dock_edit_data.addWidget(container)
-
-        self.paramTreeFile, self.rootParamFile = self.create_parameter_tree(
-            FILE_PARAMS,
-            "file_params",
-        )
-        self.paramTreeFile.setHeaderLabels(['Loading Data', 'Options'])
-        layout = QVBoxLayout()
-        layout.addWidget(self.paramTreeFile)
-        self.browse_button = DragDropButton(
-            "Click to browse or\nDrag and Drop file here"
-        )
-        self.browse_button.setFixedSize(int(self.common_size*.9) , 50)
-        layout.addStretch(1)
-        layout.addWidget(self.browse_button, 0, Qt.AlignmentFlag.AlignCenter)
-        layout.addStretch(1)
-        container = QWidget()
-        container.setLayout(layout)
-        self.dock_load_data.addWidget(container)
-
-    def create_parameter_tree(
+    def __init__(
         self,
-        params: list[dict[str, Any]],
-        name: str,
-    ) -> tuple[ParameterTree, Parameter]:
-        tree = ParameterTree()
-        param = Parameter.create(name=name, type='group', children=params)
-        tree.setParameters(param, showTop=False)
-        header = tree.header()
-        header.setStretchLastSection(False)
-        header.setSectionResizeMode(0, QHeaderView.Interactive)
-        header.setSectionResizeMode(1, QHeaderView.Stretch)
-        header.resizeSection(0, 150)
-        return tree, param
+        window_ratio: float = .75,
+        relative_size: float = .85,
+    ) -> None:
+        super().__init__()
+        self.setWindowTitle(TITLE)
+        self.setWindowIcon(QIcon(":/icon/blitz.ico"))
 
-    def setup_file_info_dock(self) -> None:
-        file_info_widget = QWidget()
-        layout = QVBoxLayout()
-        font = QFont()
-        font.setPointSize(10)
-
-        self.info_label = QLabel("Info: Not Available")
-        self.info_label.setFont(font)
-        layout.addWidget(self.info_label)
-
-        self.history = LoggingTextEdit(f"")
-        self.history.setReadOnly(True)
-        layout.addWidget(self.history)
-
-        # Set height ratios: 1/3 for info_label and 2/3 for history
-        layout.setStretch(0, 1)
-        layout.setStretch(1, 2)
-        file_info_widget.setLayout(layout)
-        self.dock_file_metadata.addWidget(file_info_widget)
-
-    def setup_image_and_line_viewers(self) -> None:
-        v_line_viewbox = pg.ViewBox()
-        v_line_viewbox.invertX(True)
-        v_line_viewbox.invertY(True)
-        v_line_item = pg.PlotItem(viewBox=v_line_viewbox)
-        v_line_item.showGrid(x=True, y=True, alpha=0.4)
-        self.v_line = pg.PlotWidget(plotItem=v_line_item)
-        self.dock_v_line.addWidget(self.v_line)
-
-        h_line_viewbox = pg.ViewBox()
-        h_line_viewbox.invertX(True)
-        h_line_viewbox.invertY(True)
-        h_line_item = pg.PlotItem(viewBox=h_line_viewbox)
-        h_line_item.showGrid(x=True, y=True, alpha=0.4)
-        self.h_line = pg.PlotWidget(plotItem=h_line_item)
-        self.dock_h_line.addWidget(self.h_line)
-
-        view = pg.PlotItem()
-        view.showGrid(x=True, y=True, alpha=0.4)
-        self.imageView = pg.ImageView(view=view)
-        self.imageView.ui.graphicsView.setBackground(pg.mkBrush(20, 20, 20))
-        self.dock_image_viewer.addWidget(self.imageView)
-
-        self.imageView.ui.roiBtn.setChecked(True)
-        self.imageView.roiClicked()
-        self.imageView.roi.setPen(self.crosshair_pen)
-        self.imageView.ui.histogram.setMinimumWidth(220)
-        self.imageView.ui.roiPlot.setFixedHeight(self.common_size)
-        self.imageView.ui.roiPlot.plotItem.showGrid(  # type: ignore
-            x=True, y=True, alpha=0.6,
-        )
-        self.imageView.ui.histogram.gradient.loadPreset('greyclip')
-
-        self.poly_roi = pg.PolyLineROI([[0,0], [0,20], [10, 10]], closed=True)
-        self.poly_roi.setPen(color=(128, 128, 0, 100),width = 3)
-        self.imageView.getView().addItem(self.poly_roi)
-        self.v_line.setYLink(self.imageView.getView())
-        self.h_line.setXLink(self.imageView.getView())
-
-    def set_default_geometry(self, size_factor: float = 0.85) -> None:
+        self.window_ratio = window_ratio
         screen_geometry = QApplication.primaryScreen().availableGeometry()
-        width = int(screen_geometry.width() * size_factor)
-        height = int(screen_geometry.height() * size_factor)
+        width = int(screen_geometry.width() * relative_size)
+        height = int(screen_geometry.height() * relative_size)
         self.setGeometry(
             (screen_geometry.width() - width) // 2,
             (screen_geometry.height() - height) // 2,
             width,
             height,
         )
+        self.image_viewer_size = int(window_ratio * self.width())
+        self.border_size = int((1 - window_ratio) * self.width() / 2)
 
-    def setup_connections(self) -> None:
-        self.browse_button.clicked.connect(self.browse_file)
-        self.browse_button.file_dropped.connect(self.load_from_filepath)
-        self.imageView.timeLine.sigPositionChanged.connect(
-            self.crosshair.update_plots
+        self.dock_area = DockArea()
+        self.setup_docks()
+        self.setCentralWidget(self.dock_area)
+
+        self.setup_logger()
+        self.setup_image_and_line_viewers()
+
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        self.last_file_dir = script_dir
+
+        self.setup_option_dock()
+        self.setup_menu_and_status_bar()
+        self.image_viewer.file_dropped.connect(self.load_images)
+
+        self.shortcut_copy = QShortcut(QKeySequence("Ctrl+C"), self)
+        self.shortcut_copy.activated.connect(self.on_strgC)
+
+        log("Welcome to BLITZ")
+
+    def setup_docks(self) -> None:
+        viewer_height = self.height() - 2 * self.border_size
+
+        self.dock_option = Dock(
+            "Options",
+            size=(self.border_size, viewer_height),
+            hideTitle=True,
         )
-        self.reset_button.clicked.connect(self.reset_view)
-        self.poly_roi.sigRegionChanged.connect(
-            self.update_line_labels_and_angles
+        self.dock_status = Dock(
+            "File Metadata",
+            size=(self.border_size, self.border_size),
+            hideTitle=True,
+        )
+        self.dock_v_plot = Dock(
+            "V Plot",
+            size=(self.border_size, viewer_height),
+            hideTitle=True,
+        )
+        self.dock_h_plot = Dock(
+            "H Plot",
+            size=(self.image_viewer_size, self.border_size),
+            hideTitle=True,
+        )
+        self.dock_viewer = Dock(
+            "Image Viewer",
+            size=(self.image_viewer_size, viewer_height),
+            hideTitle=True,
+        )
+        self.dock_t_line = Dock(
+            "Timeline",
+            size=(self.image_viewer_size, self.border_size),
+            hideTitle=True,
         )
 
-        self.rootParamFile.param(
-            'Load Additional Data', 'Browse'
-        ).sigActivated.connect(self.browse_add_file)
+        self.dock_area.addDock(self.dock_t_line, 'bottom')
+        self.dock_area.addDock(self.dock_viewer, 'top', self.dock_t_line)
+        self.dock_area.addDock(self.dock_v_plot, 'left', self.dock_viewer)
+        self.dock_area.addDock(self.dock_option, 'right', self.dock_viewer)
+        self.dock_area.addDock(self.dock_h_plot, 'top', self.dock_viewer)
+        self.dock_area.addDock(self.dock_status, 'top', self.dock_v_plot)
 
-        self.rootParamEdit.param(
-            'Calculations', 'Operation'
-        ).sigValueChanged.connect(self.on_operation_changed)
-        self.rootParamFile.param(
-            'Load Additional Data', 'Show'
-        ).sigValueChanged.connect(self.plot_additional_data)
-        self.rootParamEdit.param(
-            'Manipulations', 'Rotate CCW'
-        ).sigValueChanged.connect(self.checkbox_changed)
-        self.rootParamEdit.param(
-            'Manipulations', 'Flip X'
-        ).sigValueChanged.connect(self.checkbox_changed)
-        self.rootParamEdit.param(
-            'Manipulations', 'Flip Y'
-        ).sigValueChanged.connect(self.checkbox_changed)
-        self.rootParamEdit.param(
-            'Mask', 'Mask'
-        ).sigValueChanged.connect(self.toggle_mask)
-        self.rootParamEdit.param(
-            'Mask','Apply Mask'
-        ).sigActivated.connect(self.apply_mask)
-        self.rootParamEdit.param(
-            'ROI','Enable'
-        ).sigValueChanged.connect(self.toggle_roi)
-        self.rootParamEdit.param(
-            'ROI','show in mm'
-        ).sigValueChanged.connect(self.update_line_labels_and_angles)
-        self.rootParamEdit.param(
-            'ROI','Pixels'
-        ).sigValueChanged.connect(self.update_line_labels_and_angles)
-        self.rootParamEdit.param(
-            'Visualisations', 'Crosshair'
-        ).sigValueChanged.connect(self.crosshair.toggle_crosshair)
+    def setup_menu_and_status_bar(self) -> None:
+        menubar = QMenuBar()
 
-        self.rootParamFile.param(
-            'Loading Pars', 'max. RAM (GB)'
-        ).setLimits((0.1, .8*get_available_ram()))
+        file_menu = QMenu("File", self)
+        file_menu.addAction("Open...").triggered.connect(self.browse_file)
+        file_menu.addAction("Load TOF").triggered.connect(self.browse_tof)
+        menubar.addMenu(file_menu)
 
-    def toggle_mask(self) -> None:
-        if self.rootParamEdit.param('Mask', 'Mask').value():
-            img = self.imageView.getImageItem().image
-            width, height = img.shape[0], img.shape[1]  # type: ignore
-            rectRoi = RectROI([0, 0], [width, height], pen=(0,9))
-            rectRoi.addScaleHandle([0, 0], [1, 1])
-            rectRoi.addScaleHandle([1, 1], [0, 0])
-            rectRoi.addScaleHandle([0, 1], [1, 0])
-            rectRoi.addScaleHandle([1, 0], [0, 1])
-            self.rect_roi_positions['rect_roi'] = rectRoi
-            self.imageView.addItem(self.rect_roi_positions['rect_roi'])
-        else:
-            self.imageView.removeItem(self.rect_roi_positions['rect_roi'])
-            self.masked_data = self.data
-            self.last_rotate = False
-            self.last_flip_x = False
-            self.last_flip_y = False
-            self.update_data_manipulations()
-            self.show_image(self.masked_data, autoRange=True)
+        view_menu = QMenu("View", self)
+        view_menu.addAction("Show / Hide Crosshair").triggered.connect(
+            self.image_viewer.toggle_crosshair
+        )
+        menubar.addMenu(view_menu)
 
-    def apply_mask(self) -> None:
-        self.mask_data(self.rect_roi_positions['rect_roi'])
-        self.imageView.removeItem(self.rect_roi_positions['rect_roi'])
-        self.show_image(self.masked_data, autoRange=True)
-        self.stats.clear()
+        self.setMenuBar(menubar)
 
-    def mask_data(self, roi: pg.ROI) -> None:
-        pos = roi.pos()
-        size = roi.size()
-        data_shape = self.masked_data.shape
-        x_start = max(0, int(pos[0]))
-        y_start = max(0, int(pos[1]))
-        x_end = min(data_shape[1], int(pos[0] + size[0]))
-        y_end = min(data_shape[2], int(pos[1] + size[1]))
-        self.masked_data = self.masked_data[:, x_start:x_end, y_start:y_end]
-        # Mask calculations:
-        # self.compute_statistics_and_normalizations(self.masked_data)
-        # Update roi and crosshair:
-        self.init_roi_and_crosshair()
-        # set Operation to Original:
-        self.rootParamEdit.param('Calculations', 'Operation').setValue('Org')
+        font_status = QFont()
+        font_status.setPointSize(9)
 
-    def browse_add_file(self) -> None:
-        self.add_filepath, _ = QFileDialog.getOpenFileName()
-        if self.add_filepath:
-            self.load_add_data()
-            self.rootParamFile.param(
-                'Load Additional Data', 'Show'
-            ).setOpts(enabled=True, value=True)
-            self.plot_additional_data()
+        statusbar = QStatusBar()
+        self.position_label = QLabel("")
+        self.position_label.setFont(font_status)
+        statusbar.addPermanentWidget(self.position_label)
+        self.frame_label = QLabel("")
+        self.frame_label.setFont(font_status)
+        statusbar.addWidget(self.frame_label)
+        self.file_label = QLabel("")
+        self.file_label.setFont(font_status)
+        statusbar.addWidget(self.file_label)
+
+        self.setStatusBar(statusbar)
+
+    def setup_option_dock(self) -> None:
+        self.option_tabwidget = QTabWidget()
+
+        style_heading = (
+            "background-color: rgb(50, 50, 78);"
+            "qproperty-alignment: AlignCenter;"
+            "border-bottom: 5px solid rgb(13, 0, 26);"
+            "font-size: 14pt;"
+            "font: bold;"
+        )
+        style_options = (
+            "font-size: 9pt;"
+        )
+
+        self.option_tabwidget.setStyleSheet(style_options)
+
+        lut_container = QWidget(self)
+        lut_layout = QVBoxLayout()
+        lut_container.setLayout(lut_layout)
+        self.image_viewer.ui.histogram.setParent(None)
+        lut_layout.addWidget(self.image_viewer.ui.histogram)
+
+        file_container = QWidget(self)
+        file_layout = QVBoxLayout()
+        file_container.setLayout(file_layout)
+        load_label = QLabel("Load File")
+        load_label.setStyleSheet(style_heading)
+        file_layout.addWidget(load_label)
+        self.load_8bit_checkbox = QCheckBox("8 bit")
+        self.load_8bit_checkbox.setStyleSheet(style_options)
+        file_layout.addWidget(self.load_8bit_checkbox)
+        self.size_ratio_spinbox = QDoubleSpinBox()
+        self.size_ratio_spinbox.setRange(0, 1)
+        self.size_ratio_spinbox.setValue(1)
+        self.size_ratio_spinbox.setSingleStep(0.1)
+        self.size_ratio_spinbox.setPrefix("Size-ratio: ")
+        self.size_ratio_spinbox.setStyleSheet(style_options)
+        file_layout.addWidget(self.size_ratio_spinbox)
+        self.subset_ratio_spinbox = QDoubleSpinBox()
+        self.subset_ratio_spinbox.setRange(0, 1)
+        self.subset_ratio_spinbox.setValue(1)
+        self.subset_ratio_spinbox.setSingleStep(0.1)
+        self.subset_ratio_spinbox.setPrefix("Subset-ratio: ")
+        self.subset_ratio_spinbox.setStyleSheet(style_options)
+        file_layout.addWidget(self.subset_ratio_spinbox)
+        self.max_ram_spinbox = QDoubleSpinBox()
+        self.max_ram_spinbox.setRange(.1, .8 * get_available_ram())
+        self.max_ram_spinbox.setValue(1)
+        self.max_ram_spinbox.setSingleStep(0.1)
+        self.max_ram_spinbox.setPrefix("Max. RAM: ")
+        self.max_ram_spinbox.setStyleSheet(style_options)
+        file_layout.addWidget(self.max_ram_spinbox)
+        load_btn = QPushButton("Open")
+        load_btn.pressed.connect(self.browse_file)
+        load_btn.setStyleSheet(style_options)
+        file_layout.addWidget(load_btn)
+        save_label = QLabel("Save")
+        save_label.setStyleSheet(style_heading)
+        file_layout.addWidget(save_label)
+        export_btn = QPushButton("Export")
+        export_btn.pressed.connect(self.image_viewer.exportClicked)
+        export_btn.setStyleSheet(style_options)
+        file_layout.addWidget(export_btn)
+        file_layout.addStretch()
+
+        option_container = QWidget(self)
+        option_layout = QVBoxLayout()
+        option_container.setLayout(option_layout)
+        view_label = QLabel("View")
+        view_label.setStyleSheet(style_heading)
+        option_layout.addWidget(view_label)
+        flip_x = QCheckBox("Flip x")
+        flip_x.stateChanged.connect(
+            lambda: self.image_viewer.manipulation("flip_x")
+        )
+        flip_x.setStyleSheet(style_options)
+        option_layout.addWidget(flip_x)
+        flip_y = QCheckBox("Flip y")
+        flip_y.stateChanged.connect(
+            lambda: self.image_viewer.manipulation("flip_y")
+        )
+        flip_y.setStyleSheet(style_options)
+        option_layout.addWidget(flip_y)
+        transpose = QCheckBox("Transpose")
+        transpose.stateChanged.connect(
+            lambda: self.image_viewer.manipulation("transpose")
+        )
+        transpose.setStyleSheet(style_options)
+        option_layout.addWidget(transpose)
+
+        timeline_label = QLabel("Timeline Operation")
+        timeline_label.setStyleSheet(style_heading)
+        option_layout.addWidget(timeline_label)
+        self.op_combobox = QComboBox()
+        for op in self.image_viewer.AVAILABLE_OPERATIONS:
+            self.op_combobox.addItem(op)
+        self.op_combobox.currentIndexChanged.connect(self.operation_changed)
+        self.op_combobox.setStyleSheet(style_options)
+        option_layout.addWidget(self.op_combobox)
+        norm_label = QLabel("Normalization")
+        norm_label.setStyleSheet(style_heading)
+        option_layout.addWidget(norm_label)
+        norm_checkbox = QCheckBox("Open Toolbox")
+        norm_checkbox.stateChanged.connect(self.image_viewer.normToggled)
+        norm_checkbox.setStyleSheet(style_options)
+        option_layout.addWidget(norm_checkbox)
+        option_layout.addStretch()
+
+        tools_container = QWidget(self)
+        tools_layout = QVBoxLayout()
+        tools_container.setLayout(tools_layout)
+        mask_label = QLabel("Mask")
+        mask_label.setStyleSheet(style_heading)
+        tools_layout.addWidget(mask_label)
+        mask_checkbox = QCheckBox("Show")
+        mask_checkbox.clicked.connect(self.image_viewer.toggle_mask)
+        mask_checkbox.setStyleSheet(style_options)
+        tools_layout.addWidget(mask_checkbox)
+        apply_btn = QPushButton("Apply")
+        apply_btn.pressed.connect(self.image_viewer.apply_mask)
+        apply_btn.pressed.connect(lambda: mask_checkbox.setChecked(False))
+        apply_btn.setStyleSheet(style_options)
+        tools_layout.addWidget(apply_btn)
+        reset_btn = QPushButton("Reset")
+        reset_btn.pressed.connect(self.image_viewer.reset)
+        reset_btn.setStyleSheet(style_options)
+        tools_layout.addWidget(reset_btn)
+
+        roi_label = QLabel("Measure Tool")
+        roi_label.setStyleSheet(style_heading)
+        tools_layout.addWidget(roi_label)
+        self.measure_checkbox = QCheckBox("Show")
+        self.measure_checkbox.stateChanged.connect(
+            self.image_viewer.measure_roi.toggle
+        )
+        self.measure_checkbox.setStyleSheet(style_options)
+        tools_layout.addWidget(self.measure_checkbox)
+        self.mm_checkbox = QCheckBox("Display in mm")
+        self.mm_checkbox.stateChanged.connect(self.update_roi_settings)
+        self.mm_checkbox.setStyleSheet(style_options)
+        tools_layout.addWidget(self.mm_checkbox)
+        self.pixel_spinbox = QSpinBox()
+        self.pixel_spinbox.setPrefix("Pixels: ")
+        self.pixel_spinbox.setMinimum(1)
+        self.pixel_spinbox.valueChanged.connect(self.update_roi_settings)
+        converter_layout = QHBoxLayout()
+        self.pixel_spinbox.setStyleSheet(style_options)
+        converter_layout.addWidget(self.pixel_spinbox)
+        self.mm_spinbox = QDoubleSpinBox()
+        self.mm_spinbox.setPrefix("in mm: ")
+        self.mm_spinbox.setValue(1.0)
+        self.mm_spinbox.valueChanged.connect(self.update_roi_settings)
+        self.mm_spinbox.setStyleSheet(style_options)
+        converter_layout.addWidget(self.mm_spinbox)
+        tools_layout.addLayout(converter_layout)
+
+        roi_label = QLabel("Timeline")
+        roi_label.setStyleSheet(style_heading)
+        tools_layout.addWidget(roi_label)
+        self.image_viewer.ui.roiBtn.setParent(None)
+        self.image_viewer.ui.roiBtn = QCheckBox("ROI")
+        self.roi_checkbox = self.image_viewer.ui.roiBtn
+        self.roi_checkbox.stateChanged.connect(self.image_viewer.roiClicked)
+        self.roi_checkbox.setChecked(True)
+        self.tof_checkbox = QCheckBox("TOF")
+        # NOTE: the order of connection here matters
+        # roiClicked shows the plot again
+        self.tof_checkbox.stateChanged.connect(self.tof_adapter.toggle_plot)
+        self.tof_checkbox.setEnabled(False)
+        checkbox_layout = QHBoxLayout()
+        checkbox_layout.addStretch()
+        self.roi_checkbox.setStyleSheet(style_options)
+        checkbox_layout.addWidget(self.roi_checkbox)
+        checkbox_layout.addStretch()
+        self.tof_checkbox.setStyleSheet(style_options)
+        checkbox_layout.addWidget(self.tof_checkbox)
+        checkbox_layout.addStretch()
+        tools_layout.addLayout(checkbox_layout)
+        roi_drop_checkbox = QCheckBox("Update ROI only on Drop")
+        roi_drop_checkbox.stateChanged.connect(
+            self.image_viewer.toogle_roi_update_frequency
+        )
+        roi_drop_checkbox.setStyleSheet(style_options)
+        tools_layout.addWidget(roi_drop_checkbox)
+        tools_layout.addStretch()
+
+        self.option_tabwidget.addTab(lut_container, "LUT")
+        self.option_tabwidget.addTab(file_container, "File")
+        self.option_tabwidget.addTab(option_container, "Manipulation")
+        self.option_tabwidget.addTab(tools_container, "Tools")
+
+        self.dock_option.addWidget(self.option_tabwidget)
+
+    def setup_logger(self) -> None:
+        file_info_widget = QWidget()
+        layout = QVBoxLayout()
+
+        self.logger = LoggingTextEdit()
+        self.logger.setReadOnly(True)
+        layout.addWidget(self.logger)
+        set_logger(self.logger)
+
+        file_info_widget.setLayout(layout)
+        self.dock_status.addWidget(file_info_widget)
+
+    def setup_image_and_line_viewers(self) -> None:
+        v_plot_viewbox = pg.ViewBox()
+        v_plot_viewbox.invertX()
+        v_plot_viewbox.invertY()
+        v_plot_item = pg.PlotItem(viewBox=v_plot_viewbox)
+        v_plot_item.showGrid(x=True, y=True, alpha=0.4)
+        self.v_plot = pg.PlotWidget(plotItem=v_plot_item)
+        self.dock_v_plot.addWidget(self.v_plot)
+
+        h_plot_viewbox = pg.ViewBox()
+        h_plot_item = pg.PlotItem(viewBox=h_plot_viewbox)
+        h_plot_item.showGrid(x=True, y=True, alpha=0.4)
+        self.h_plot = pg.PlotWidget(plotItem=h_plot_item)
+        self.dock_h_plot.addWidget(self.h_plot)
+
+        self.image_viewer = ImageViewer(
+            h_plot=self.h_plot,
+            v_plot=self.v_plot,
+        )
+        self.dock_viewer.addWidget(self.image_viewer)
+
+        # relocate the roiPlot to the timeline dock
+        self.roi_plot = self.image_viewer.ui.roiPlot
+        self.roi_plot.setParent(None)
+        # this decoy prevents an error being thrown in the ImageView
+        timeline_decoy = pg.PlotWidget(self.image_viewer.ui.splitter)
+        timeline_decoy.hide()
+        self.dock_t_line.addWidget(self.roi_plot)
+        self.image_viewer.ui.menuBtn.setParent(None)
+
+        self.tof_adapter = TOFAdapter(self.roi_plot)
+
+        self.image_viewer.scene.sigMouseMoved.connect(
+            self.update_statusbar_position
+        )
+        self.image_viewer.timeLine.sigPositionChanged.connect(
+            self.update_statusbar_frame
+        )
+
+        self.v_plot.setYLink(self.image_viewer.getView())
+        self.h_plot.setXLink(self.image_viewer.getView())
+
+    def on_strgC(self) -> None:
+        cb = QApplication.clipboard()
+        cb.clear()
+        cb.setText(self.position_label.text())
+
+    def update_statusbar_position(self, pos: tuple[int, int]) -> None:
+        x, y, value = self.image_viewer.get_position_info(pos)
+        self.position_label.setText(f"X: {x} | Y: {y} | Value: {value}")
+
+    def update_statusbar_frame(self) -> None:
+        frame, max_frame, name = self.image_viewer.get_frame_info()
+        self.frame_label.setText(f"Frame: {frame} / {max_frame}")
+        self.file_label.setText(f"File: {name}")
+
+    def browse_tof(self) -> None:
+        path, _ = QFileDialog.getOpenFileName()
+        if not path:
+            return
+        self.tof_adapter.set_data(path, self.image_viewer.data.meta)
+        self.tof_checkbox.setEnabled(True)
+        self.tof_checkbox.setChecked(True)
 
     def browse_file(self) -> None:
-        if not hasattr(self, 'filepath') or not self.filepath:
-            initial_directory = self.default_filepath
-        else:
-            initial_directory = os.path.dirname(self.filepath)
-
-        self.filepath, _ = QFileDialog.getOpenFileName(
-            directory=initial_directory
+        file_path, _ = QFileDialog.getOpenFileName(
+            directory=self.last_file_dir
         )
-        self.load_from_filepath()
+        if file_path:
+            self.last_filepath = os.path.dirname(file_path)
+            self.load_images(file_path)
 
-    def load_from_filepath(self, filepath: Optional[str] = None) -> None:
-        self.filepath = filepath if filepath is not None else self.filepath
-        dirname = os.path.dirname(self.filepath)  # type: ignore
-        string_temp = insert_line_breaks(dirname)
-        print(f"Loading file: {string_temp}")
-        self.browse_button.setText(string_temp)
-        self.load_data(filepath=self.filepath)
-
-    def load_data(self, filepath: Optional[str] = None) -> None:
+    def load_images(self, file_path: Optional[str] = None) -> None:
         start_time = clock()
-        dialog = self.show_loading_dialog()
-        if filepath:
-            self.rootParamEdit.param(
-                'Calculations', 'Operation'
-            ).setValue('Org')
-            self.data, self.metadata = from_file(
-                filepath,
-                size=self.rootParamFile.param(
-                    'Loading Pars', 'Size ratio'
-                ).value(),
-                ratio=self.rootParamFile.param(
-                    'Loading Pars', 'Subset ratio'
-                ).value(),
-                convert_to_8_bit=self.rootParamFile.param(
-                    'Loading Pars', 'Load as 8 bit'
-                ).value(),
-                ram_size=self.rootParamFile.param(
-                    'Loading Pars', 'max. RAM (GB)'
-                ).value(),
-            )
-        else:
-            # If filepath is not provided, load random data
-            self.data, self.metadata = from_file()
+        dialog = self.show_loading_dialog(
+            f"Loading from file: {'...' if file_path is None else file_path}"
+        )
 
-        print(f"Available RAM: {get_available_ram():.2f} GB")
-        self.masked_data = self.data
-        self.rootParamEdit.param(
-            'Mask', 'Mask'
-        ).setOpts(enabled=True, value=False)
+        self.image_viewer.load_data(
+            file_path,
+            size=self.size_ratio_spinbox.value(),
+            ratio=self.subset_ratio_spinbox.value(),
+            convert_to_8_bit=self.load_8bit_checkbox.isChecked(),
+            ram_size=self.max_ram_spinbox.value(),
+        )
 
-        self.init_roi_and_crosshair()
-        self.stats.min_val = None
-        self.stats.max_val = None
-        self.stats.mean = None
-        self.stats.std = None
-        self.filepath = filepath
         self.close_loading_dialog(dialog)
-        print(f"Time taken to load_data: {clock() - start_time:.2f} seconds")
+        if file_path is not None:
+            data_size_MB = self.image_viewer.data.image.nbytes / 2**20
+            log(f"Loaded {data_size_MB:.2f} MB")
+            log(f"Available RAM: {get_available_ram():.2f} GB")
+            log(f"Seconds needed: {clock() - start_time:.2f}")
+            self.update_statusbar_frame()
 
-        self.show_image(
-            self.masked_data,
-            autoRange=True,
-            autoLevels=True,
-            autoHistogramRange=True,
-        )
-        self.imageView.ui.roiPlot.plotItem.vb.autoRange()
-
-    def load_add_data(self) -> None:
-        self.add_data = from_tof(self.add_filepath)
-        self.sync_tof_to_video()
-
-    def sync_tof_to_video(self) -> None:
-        # Calculate the duration of each frame in the ORIGINAL video in ms
-        original_frame_duration_ms = 1000 / self.metadata[0]['fps']
-
-        # Calculate the duration of each frame in the RESAMPLED video
-        resampled_frame_duration_ms = (
-            original_frame_duration_ms
-            * self.metadata[0]['frame_count']
-            / self.data.shape[0]
-        )
-
-        # Generate the times for each frame in the resampled video
-        resampled_frame_times = np.arange(
-            0,
-            self.data.shape[0] * resampled_frame_duration_ms,
-            resampled_frame_duration_ms,
-        )
-
-        # Create an array for synced data (frame number + sensor values)
-        synced_data = np.zeros((self.data.shape[0], self.add_data.shape[1]))
-
-        # Fill the first column with the frame numbers
-        synced_data[:, 0] = np.arange(self.data.shape[0])
-
-        # perform linear interpolation for the TOF data onto the
-        # resampled video's frame times
-        # TODO: This can be one off! Check if the first and last frame
-        # times are the same or such
-        for col in range(1, self.add_data.shape[1]):
-            synced_data[:, col] = np.interp(
-                resampled_frame_times,
-                self.add_data[:, 0],
-                self.add_data[:, col],
-            )
-
-        # store the synced data
-        self.synced_data = synced_data
-
-        min_tof = np.min(self.synced_data[:, 1])
-        max_tof = np.max(self.synced_data[:, 1])
-
-        self.synced_data[:, 1] = 200 - 200 * (
-            (self.synced_data[:, 1] - min_tof) / (max_tof - min_tof)
-        )
-
-    def compute_statistics_and_normalizations(self, data: np.ndarray) -> None:
+    def operation_changed(self) -> None:
+        start_time = clock()
         dialog = self.show_loading_dialog(message="Calculating statistics...")
-        print(f"Available RAM: {get_available_ram():.2f} GB")
-        start_time = clock()
+        log(f"Available RAM: {get_available_ram():.2f} GB")
 
-        self.stats.mean = np.mean(data, axis=0)
-        self.stats.std = np.std(data, axis=0)
-        self.stats.min_val = np.min(data, axis=0)
-        self.stats.max_val = np.max(data, axis=0)
+        self.image_viewer.manipulation(self.image_viewer.AVAILABLE_OPERATIONS[
+            self.op_combobox.currentText()
+        ])
 
         self.close_loading_dialog(dialog)
-        print(f"Time taken to calculate: {clock() - start_time:.2f} seconds")
-        print(f"Available RAM: {get_available_ram():.2f} GB")
-
-    def on_operation_changed(self) -> None:
-        operation = self.rootParamEdit.param(
-            'Calculations', 'Operation'
-        ).value()
-
-        if self.stats.mean is None or self.stats.std is None:
-            self.compute_statistics_and_normalizations(self.masked_data)
-
-        if operation == 'Min':
-            result = self.stats.min_val
-        elif operation == 'Max':
-            result = self.stats.max_val
-        elif operation == 'Mean':
-            result = self.stats.mean
-        elif operation == 'STD':
-            result = self.stats.std
-        elif operation == 'Org':
-            result = self.masked_data
-        else:
-            result = None
-            print("Operation not implemented")
-
-        self.show_image(
-            result,
-            autoRange=True,
-            autoLevels=True,
-            autoHistogramRange=True,
-        )
-
-    def show_image(
-        self,
-        data,
-        autoRange=False,
-        autoLevels=False,
-        autoHistogramRange=False,
-    ) -> None:
-        self.imageView.setImage(
-            data,
-            autoRange=autoRange,
-            autoLevels=autoLevels,
-            autoHistogramRange=autoHistogramRange,
-        )
-
-    def plot_additional_data(self) -> None:
-        show_data_state = self.rootParamFile.param(
-            'Load Additional Data', 'Show'
-        ).value()
-        roi_plot = self.imageView.getRoiPlot()
-
-        if show_data_state:
-            self.plot_or_update_roi(roi_plot)
-            self.plot_or_update_additional_window()
-        else:
-            self.remove_roi_plot(roi_plot)
-            self.close_additional_window()
-
-    def plot_or_update_roi(self, roi_plot: pg.PlotWidget) -> None:
-        x_sync = self.synced_data[:, 0]
-        y_sync = self.synced_data[:, 1]
-        x_smooth_sync, y_smooth_sync = smoothen(
-            x_sync,
-            y_sync,
-            window_size=self.tof_window,
-        )
-
-        # smoothed data for synced data
-        if not hasattr(self, 'smoothed_line'):
-            self.smoothed_line = roi_plot.plot(
-                x_smooth_sync,
-                y_smooth_sync,
-                pen="pink",
-                label=f"Smoothed Synced Data ({self.tof_window})",
-                width=2,
-            )
-        else:
-            self.smoothed_line.setData(x_smooth_sync, y_smooth_sync)
-
-    def remove_roi_plot(self, roi_plot: pg.PlotWidget) -> None:
-        if hasattr(self, 'smoothed_line'):
-            roi_plot.removeItem(self.smoothed_line)
-            del self.smoothed_line
-
-    def plot_or_update_additional_window(self) -> None:
-        x_data = self.add_data[:, 0]
-        y_data = self.add_data[:, 1]
-        y_data = y_data.max() - y_data
-
-        if not hasattr(self, 'additional_plot_window'):
-            self.additional_plot_window = PlotterWindow(self)
-            self.plot_data_in_window(x_data, y_data)
-            self.additional_plot_window.show()
-
-    def plot_data_in_window(
-        self,
-        x_data: np.ndarray,
-        y_data: np.ndarray,
-    ) -> None:
-        self.additional_plot_window.plot_data(
-            x_data,
-            y_data,
-            pen_color="gray",
-            label="Raw",
-        )
-        x_smooth, y_smooth = smoothen(
-            x_data,
-            y_data,
-            window_size=self.tof_window,
-        )
-        self.additional_plot_window.plot_data(
-            x_smooth,
-            y_smooth,
-            pen_color="green" if self.tof_window == 3 else "red",
-            label=f"Smoothed ({self.tof_window})",
-        )
-
-    def close_additional_window(self) -> None:
-        if hasattr(self, 'additional_plot_window'):
-            self.additional_plot_window.window.close()
-            del self.additional_plot_window
-
-    def checkbox_changed(self) -> None:
-        self.update_data_manipulations()
-        self.show_image(self.masked_data)
-
-    def update_data_manipulations(self) -> None:
-        # Check the checkboxes for the data manipulations:
-        rotate = self.rootParamEdit.param(
-            'Manipulations', 'Rotate CCW'
-        ).value()
-        flip_x = self.rootParamEdit.param('Manipulations', 'Flip X').value()
-        flip_y = self.rootParamEdit.param('Manipulations', 'Flip Y').value()
-
-        if rotate != self.last_rotate:
-            self.masked_data = np.swapaxes(self.masked_data, 1, 2)
-        if flip_x != self.last_flip_x:
-            self.masked_data = np.flip(self.masked_data, axis=2)
-        if flip_y != self.last_flip_y:
-            self.masked_data = np.flip(self.masked_data, axis=1)
-
-        self.last_rotate = rotate
-        self.last_flip_x = flip_x
-        self.last_flip_y = flip_y
-
-    def reset_view(self) -> None:
-        self.masked_data = self.data
-        self.imageView.autoRange()
-        self.imageView.autoLevels()
-        self.imageView.autoHistogramRange()
-        self.rootParamEdit.param('Manipulations', 'Rotate CCW').setValue(False)
-        self.rootParamEdit.param('Manipulations', 'Flip X').setValue(False)
-        self.rootParamEdit.param('Manipulations', 'Flip Y').setValue(False)
-        self.rootParamEdit.param('Mask', 'Mask').setValue(False)
-        self.last_rotate = False
-        self.last_flip_x = False
-        self.last_flip_y = False
-        self.init_roi_and_crosshair()
-        self.stats.clear()
-        if self.rect_roi_positions.get('rect_roi'):
-            self.imageView.removeItem(self.rect_roi_positions['rect_roi'])
-
-    def setup_mouse_events(self) -> None:
-        self.imageView.scene.sigMouseMoved.connect(self.mouseMovedScene)
-        self.imageView.timeLine.sigPositionChanged.connect(
-            self.mouse_moved_timeline
-        )
-        self.imageView.ui.roiPlot.mousePressEvent = self.on_roi_plot_clicked
-
-    def mouseMovedScene(self, pos: tuple[float, float]) -> None:
-        if not hasattr(self, 'masked_data'):
-            return
-        img_coords = self.imageView.getView().vb.mapSceneToView(pos)
-        self.x_, self.y_ = int(img_coords.x()), int(img_coords.y())
-
-        image_data: np.ndarray = self.imageView.imageItem.image  # type: ignore
-
-        if (0 <= self.x_ < image_data.shape[0]
-                and 0 <= self.y_ < image_data.shape[1]):
-            self.pixel_value = image_data[self.x_, self.y_]
-        else:
-            self.pixel_value = None
-
-        self.update_position_label()
-
-    def on_roi_plot_clicked(self, event) -> None:
-        if isinstance(event, QMouseEvent):
-            if event.button() == Qt.MouseButton.MiddleButton:
-                x_pos = self.imageView.ui.roiPlot.plotItem.vb.mapSceneToView(
-                    event.pos()
-                ).x()
-                index = int(x_pos)
-                index = max(0, min(index, self.masked_data.shape[0]-1))
-                self.imageView.setCurrentIndex(index)
-            else:
-                pg.PlotWidget.mousePressEvent(self.imageView.ui.roiPlot, event)
-
-    def mouse_moved_timeline(self) -> None:
-        if not hasattr(self, 'masked_data'):
-            return
-        self.update_position_label()
-
-    def init_roi_and_crosshair(self) -> None:
-        height = self.masked_data.shape[2]
-        width = self.masked_data.shape[1]
-        percentage = 0.02
-        roi_width = max(int(percentage * width),1)
-        roi_height = max(int(percentage * height),1)
-        x_pos = (width - roi_width) / 2
-        y_pos = (height - roi_height) / 2
-        self.imageView.roi.setPos([x_pos, y_pos])
-        self.imageView.roi.setSize([roi_width, roi_height])
-        self.crosshair.v_line_itself.setPos(width / 2)
-        self.crosshair.h_line_itself.setPos(height / 2)
+        log(f"Seconds needed: {clock() - start_time:.2f}")
+        log(f"Available RAM: {get_available_ram():.2f} GB")
 
     def show_loading_dialog(
         self,
@@ -701,139 +463,10 @@ class MainWindow(QMainWindow):
     def close_loading_dialog(self, dialog) -> None:
         dialog.accept()
 
-    def update_position_label(self) -> None:
-        self.current_image = int(self.imageView.currentIndex)
-
-        if (hasattr(self, 'metadata')
-                and 'file_name' in self.metadata[self.current_image]):
-            self.current_image_name = self.metadata[self.current_image].get(
-                'file_name',
-                str(self.current_image),
-            )
-        else:
-            self.current_image_name = str(self.current_image)
-
-
-        pixel_text = format_pixel_value(self.pixel_value)
-        current_image_name_wrapped = wrap_text(self.current_image_name, 40)
-
-        text = (
-            f"|X:{self.x_:4d} Y:{self.y_:4d}|\n"
-            f"|{pixel_text}|\n"
-            f"|Frame:{self.current_image:4d}"
-            f"/{self.masked_data.shape[0]-1:4d}|\n"
-            f"|Name: {current_image_name_wrapped}|"
-        )
-
-        self.info_label.setText(text)
-
-    def toggle_roi(self) -> None:
-        is_checked = self.rootParamEdit.param('ROI', 'Enable').value()
-        self.poly_roi.setVisible(is_checked)
-        for label in self.line_labels:
-            label.setVisible(is_checked)
-        for label in self.angle_labels:
-            label.setVisible(is_checked)
-        if is_checked:
-            self.update_line_labels_and_angles()
-
-    def convert_to_view_coords(self, point) -> pg.ViewBox:
-        return self.poly_roi.mapToView(point)  # type: ignore
-
-    def midpoint(self, p1, p2) -> tuple[float, float]:
-        view_coords_p1 = self.convert_to_view_coords(p1)
-        view_coords_p2 = self.convert_to_view_coords(p2)
-        return (
-            (view_coords_p1.x() + view_coords_p2.x()) / 2,
-            (view_coords_p1.y() + view_coords_p2.y()) / 2,
-        )
-
-    def add_line_labels(self) -> None:
-        self.line_labels = []
-        points = self.poly_roi.getHandles()
-        for i in range(len(points)):
-            self.create_label(i, points)
-
-    def create_label(self, i: int, points: list) -> None:
-        p1 = points[i].pos()
-        p2 = points[(i + 1) % len(points)].pos()
-        mid = self.midpoint(p1, p2)
-
-        # Calculate the length of the line segment
-        length = np.sqrt((p2.x() - p1.x())**2 + (p2.y() - p1.y())**2)
-
-        # Set the length as the text of the label
-        label = pg.TextItem("{:.2f}".format(length))
-
-        label.setPos(mid[0], mid[1])
-        self.imageView.getView().addItem(label)
-        self.line_labels.append(label)
-
-    def angle_between_lines(self, p0, p1, p2) -> float:
-        angle1 = np.arctan2(p1.y() - p0.y(), p1.x() - p0.x())
-        angle2 = np.arctan2(p2.y() - p0.y(), p2.x() - p0.x())
-        angle = np.degrees(angle1 - angle2)
-        angle = abs(angle) % 360
-        if angle > 180:
-            angle = 360 - angle
-        return angle
-
-    def update_line_labels_and_angles(self) -> None:
-        points = self.poly_roi.getHandles()
-        n = len(points)
-
-        if not hasattr(self, 'angle_labels'):
-            self.angle_labels = []
-        if not hasattr(self, 'angles'):
-            self.angles = []
-
-        for i in range(len(points)):
-            p1 = points[i].pos()
-            p2 = points[(i + 1) % len(points)].pos()
-            mid = self.midpoint(p1, p2)
-
-            # Recalculate the length of the line segment
-            length = np.sqrt((p2.x() - p1.x())**2 + (p2.y() - p1.y())**2)
-            is_checked = self.rootParamEdit.param('ROI', 'show in mm').value()
-            if is_checked:
-                length = self.convert_to_mm(length)
-            else:
-                length = length
-
-            if i < len(self.line_labels):
-                self.line_labels[i].setPos(mid[0], mid[1])
-                self.line_labels[i].setText("{:.2f}".format(length))
-            else:
-                self.create_label(i, points)
-
-        while len(self.line_labels) > len(points):
-            label = self.line_labels.pop()
-            self.imageView.getView().removeItem(label)
-
-        for i in range(n):
-            p0 = points[i].pos()
-            p1 = points[(i - 1) % n].pos()
-            p2 = points[(i + 1) % n].pos()
-
-            angle = self.angle_between_lines(p0, p1, p2)
-
-            if i < len(self.angle_labels):
-                self.angle_labels[i].setPos(((self.convert_to_view_coords(p0)).x()), (self.convert_to_view_coords(p0)).y())
-                self.angle_labels[i].setText(f"{angle:.2f}°")
-            else:
-                angle_label = pg.TextItem(f"{angle:.2f}°")
-                angle_label.setPos(p0.x(), p0.y())
-                self.imageView.getView().addItem(angle_label)
-                self.angle_labels.append(angle_label)
-
-            self.angles.append(angle)
-
-        while len(self.angle_labels) > n:
-            label = self.angle_labels.pop()
-            self.imageView.getView().removeItem(label)
-
-    def convert_to_mm(self, value_in_pixels: int) -> float:
-        conv_px = float(self.rootParamEdit.param('ROI', 'Pixels').value())
-        conv_mm = float(self.rootParamEdit.param('ROI', 'in mm').value())
-        value_in_mm = value_in_pixels * conv_mm / conv_px
-        return value_in_mm
+    def update_roi_settings(self) -> None:
+        self.image_viewer.measure_roi.show_in_mm = self.mm_checkbox.isChecked()
+        self.image_viewer.measure_roi.n_px = self.pixel_spinbox.value()
+        self.image_viewer.measure_roi.px_in_mm = self.mm_spinbox.value()
+        if not self.measure_checkbox.isChecked():
+            return
+        self.image_viewer.measure_roi.update_labels()

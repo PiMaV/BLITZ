@@ -1,22 +1,36 @@
 # BLITZ
-**B**ulk **L**oading & **I**nteractive **T**ime-series **Z**onal-analysis
+**B**ulk **L**oading and **I**nteractive **T**ime series **Z**onal analysis
+
+![Screenshot](resources/public/screenshot_01.png)
+
+This project is being built at the [INP Greifswald](https://www.inp-greifswald.de/).
 
 ## Quick Start
-It is recommended to create a virtual environment with all dependecies before executing the
-application. You can use `poetry` to do this with:
 
-    $ poetry install
+### Portable Version
 
-As `pip` also supports `.toml` files, another option is to directly install all dependencies with:
+On Windows, BLITZ can directly be used with the already compiled program (.exe) in the [most recent
+release]().
 
-    $ pip install .
+### Compiling and Developing
 
-After a successful installation, you can start **BLITZ** by executing:
+It is recommended to use [poetry](https://python-poetry.org/) for local development. After cloning
+this repository, create a virtual environment, install all dependencies and run the application.
 
-    $ python -m blitz
+```shell
+$ git clone https://github.com/CodeSchmiedeHGW/BLITZ.git
+$ cd BLITZ
+$ poetry install
+$ poetry run BLITZ
+```
 
-It is also possible building the executable using the package `pyinstaller`:
+Build a portable executable using `pyinstaller`:
 
-    $ pyinstaller --noconsole --windowed blitz.py
+```shell
+$ pyinstaller --onefile --windowed --icon=resources/icon/blitz.ico blitz.py
+```
 
-Do not use --onefile; this collides with multicore-processing
+## License
+
+BLITZ is licensed under the terms of the GNU General Public License version 3 (GPL-3.0). Details
+can be found in the [LICENSE](LICENSE) file.

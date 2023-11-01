@@ -37,15 +37,9 @@ def resize_and_convert_to_8_bit(
 
 
 def adjust_ratio_for_memory(size_estimate: float, ram_size: float) -> float:
-    data_size_MB = size_estimate / 2**20
-    print(f"Estimated Size of full Dataset: {data_size_MB:.2f} MB")
-    if size_estimate <= ram_size*2**30:
-        print("No adjustment to ratio required, loading the full dataset.")
-        return 1  # No adjustment necessary
-
-    # Calculate the ratio required to fit in ram_size
-    adjusted_ratio = ram_size*2**30 / size_estimate
-    print(f"Adjusted ratio for subset extraction: {adjusted_ratio:.4f}")
+    if size_estimate <= 2**30 * ram_size:
+        return 1.0
+    adjusted_ratio = 2**30 * ram_size / size_estimate
     return adjusted_ratio
 
 

@@ -4,6 +4,5 @@ import sys
 
 from blitz import app
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(app.run())
