@@ -10,7 +10,7 @@ This project is being built at the [INP Greifswald](https://www.inp-greifswald.d
 ### Portable Version
 
 On Windows, BLITZ can directly be used with the already compiled program (.exe) in the [most recent
-release]().
+release](https://github.com/CodeSchmiedeHGW/BLITZ/releases/latest).
 
 ### Compiling and Developing
 
