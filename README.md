@@ -1,7 +1,7 @@
 # BLITZ
 **B**ulk **L**oading and **I**nteractive **T**ime series **Z**onal analysis
 
-![Screenshot](resources/public/screenshot_01.png)
+![Screenshot](resources/public/BLITZ_Short_Description.png)
 
 This project is being built at the [INP Greifswald](https://www.inp-greifswald.de/).
 
