@@ -25,6 +25,7 @@ def from_file(
     ratio: int = 1,
     convert_to_8_bit: bool = False,
     ram_size: int = 1,
+    grayscale: bool = False,
 ) -> tuple[np.ndarray, list[dict[str, Any]]]:
     if filepath is None:
         data, metadata = create_info_image(
@@ -41,6 +42,7 @@ def from_file(
                 ratio,
                 convert_to_8_bit,
                 ram_size,
+                grayscale,
             )
         elif file_extension in ARRAY_EXTENSIONS:
             data, metadata = _load_numpy_array(
@@ -49,13 +51,16 @@ def from_file(
                 ratio,
                 convert_to_8_bit,
                 ram_size,
+                grayscale,
             )
         elif file_extension in VIDEO_EXTENSIONS:
             data, metadata = _load_video(
                 filepath,
-                size, ratio,
+                size,
+                ratio,
                 convert_to_8_bit,
                 ram_size,
+                grayscale,
             )
         else:
             warnings.warn(
@@ -134,6 +139,7 @@ def _load_multiple_standard_images(
     ratio: float,
     convert_to_8_bit: bool,
     ram_size: int,
+    grayscale: bool,
     nr_img_to_go_multicore: int = 333,
 ) -> tuple[np.ndarray, list[dict[str, Any]]]:
     dirname = os.path.dirname(filepath)
@@ -145,16 +151,20 @@ def _load_multiple_standard_images(
     ]
     image_files = natsorted(image_files)
 
-    selected_image = cv2.imread(filepath, cv2.IMREAD_UNCHANGED)
-    if convert_to_8_bit:
-        # bit_depth = 8
-        avg_img_size = selected_image.size  # 8 bits = 1 byte per pixel
+    if grayscale:
+        selected_image = cv2.imread(
+            filepath,
+            cv2.IMREAD_ANYDEPTH | cv2.IMREAD_GRAYSCALE,
+        )
     else:
-        # bit_depth = selected_image.dtype.itemsize * 8  # in bits
-        avg_img_size = selected_image.nbytes  # in bytes
+        selected_image = cv2.imread(filepath, cv2.IMREAD_UNCHANGED)
 
+    selected_image = resize_and_convert(selected_image, size, convert_to_8_bit)
     is_grayscale = is_image_grayscale(selected_image)
-    total_size_estimate = avg_img_size * len(image_files) * size**2
+
+    total_size_estimate = len(image_files) * size**2 * (
+        selected_image.size if convert_to_8_bit else selected_image.nbytes
+    )
 
     adjusted_ratio = adjust_ratio_for_memory(total_size_estimate, ram_size)
 
@@ -169,16 +179,11 @@ def _load_multiple_standard_images(
         if is_grayscale else cv2.IMREAD_UNCHANGED
     )
 
-    if (len(image_files) > nr_img_to_go_multicore
-            or total_size_estimate > MULTICORE_THRESHOLD):
-        multiprocessing = True
-    else:
-        multiprocessing = False
-
     faulty_images = []
     valid_data_with_metadata = []
 
-    if multiprocessing:
+    if (len(image_files) > nr_img_to_go_multicore
+            or total_size_estimate > MULTICORE_THRESHOLD):
         pool = Pool(cpu_count())
         results = pool.starmap(
             _load_image_with_metadata,
@@ -222,7 +227,10 @@ def _load_numpy_array(
     ratio,
     convert_to_8_bit,
     ram_size,
+    grayscale,
 ) -> tuple[np.ndarray, list[dict[str, Any]]]:
+    if grayscale:
+        log("Warning: Grayscale not implemented for numpy arrays yet")
     array_files = [f for f in os.listdir(folder_path) if f.endswith('.npy')]
 
     first_array = np.load(os.path.join(folder_path, array_files[0]))
@@ -296,6 +304,7 @@ def _load_video(
     ratio: float,
     convert_to_8_bit: bool,
     ram_size: int,
+    grayscale: bool,
 ) -> tuple[np.ndarray, list[dict[str, Any]]]:
     cap = cv2.VideoCapture(filepath)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -329,7 +338,9 @@ def _load_video(
 
         frame_number = len(frames)  # current frame number starting from 0
         frames.append(resize_and_convert(
-            cv2.cvtColor(frame, cv2.COLOR_BGR2RGB),
+            cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) if not grayscale else (
+                cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            ),
             size,
             convert_to_8_bit
         ))

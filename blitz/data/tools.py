@@ -6,8 +6,8 @@ import numpy as np
 
 def resize_and_convert(
     image: np.ndarray,
-    size: int = 1,
-    convert_to_8_bit: bool = False,
+    size: int,
+    convert_to_8_bit: bool,
 ) -> np.ndarray:
     h, w = image.shape[:2]
     resized_image = cv2.resize(
@@ -16,9 +16,7 @@ def resize_and_convert(
         interpolation=cv2.INTER_AREA,
     )
     if convert_to_8_bit:
-        return (
-            resized_image / np.max(resized_image) * 255  # type: ignore
-        ).astype(np.uint8)
+        return (resized_image / resized_image.max() * 255).astype(np.uint8)
     return resized_image
 
 

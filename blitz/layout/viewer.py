@@ -8,10 +8,12 @@ from pyqtgraph import RectROI, mkPen
 
 from ..data.image import ImageData
 from ..data.load import from_file
-from ..tools import format_pixel_value, wrap_text
+from ..tools import format_pixel_value, log, wrap_text
 
 
 class ImageViewer(pg.ImageView):
+
+    image: np.ndarray
 
     AVAILABLE_OPERATIONS = {
         "All Images": "org",
@@ -84,12 +86,13 @@ class ImageViewer(pg.ImageView):
 
     def load_data(self, filepath: Optional[str] = None, **kwargs) -> None:
         self.data.set(*from_file(filepath, **kwargs))
-        self.show_image(self.data.image)
+        self.setImage(self.data.image)
         self.init_roi_and_crosshair()
+        self.update_profiles()
 
     def init_roi_and_crosshair(self) -> None:
-        height = self.data.image.shape[2]
-        width = self.data.image.shape[1]
+        height = self.image.shape[2]
+        width = self.image.shape[1]
         self.crosshair_vline.setPos(width / 2)
         self.crosshair_hline.setPos(height / 2)
         self.roi.setSize((.1*width, .1*height))
@@ -121,11 +124,13 @@ class ImageViewer(pg.ImageView):
                     autoHistogramRange=False,
                 )
             case _:
-                print("Operation not implemented")
+                log("Operation not implemented")
+        self.init_roi_and_crosshair()
+        self.update_profiles()
 
     def reset(self) -> None:
         self.data.reset()
-        self.show_image(self.data.image, autoRange=True)
+        self.setImage(self.data.image)
         self.autoRange()
         self.autoLevels()
         self.autoHistogramRange()
@@ -167,20 +172,14 @@ class ImageViewer(pg.ImageView):
                 lambda: self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
             )
 
-    def show_image(self, image: np.ndarray, **kwargs) -> None:
-        self.image = image
-        self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
-        self.setImage(image, **kwargs)
-
     def get_position_info(
         self,
         pos: tuple[int, int],
     ) -> tuple[float, float, str | None]:
         img_coords = self.view.vb.mapSceneToView(pos)
         x, y = int(img_coords.x()), int(img_coords.y())
-        if (0 <= x < self.data.image.shape[1]
-                and 0 <= y < self.data.image.shape[2]):
-            pixel_value = self.data.image[self.currentIndex, x, y]
+        if (0 <= x < self.image.shape[-2] and 0 <= y < self.image.shape[-1]):
+            pixel_value = self.image[self.currentIndex, x, y]
         else:
             pixel_value = None
         return x, y, format_pixel_value(pixel_value)
@@ -193,7 +192,7 @@ class ImageViewer(pg.ImageView):
             ),
             max_length=40,
         )
-        return current_image, self.data.image.shape[0]-1, name
+        return current_image, self.image.shape[0]-1, name
 
     def on_roi_plot_clicked(self, ev) -> None:
         if isinstance(ev, QMouseEvent):
@@ -202,17 +201,18 @@ class ImageViewer(pg.ImageView):
                     ev.pos()
                 ).x()
                 index = int(x)
-                index = max(0, min(index, self.data.image.shape[0]-1))
+                index = max(0, min(index, self.image.shape[0]-1))
                 self.setCurrentIndex(index)
             else:
                 pg.PlotWidget.mousePressEvent(self.ui.roiPlot, ev)
 
     def setup_connections(self) -> None:
-        self.crosshair_vline.sigPositionChanged.connect(self.update_plots)
-        self.crosshair_hline.sigPositionChanged.connect(self.update_plots)
+        self.crosshair_vline.sigPositionChanged.connect(self.update_profiles)
+        self.crosshair_hline.sigPositionChanged.connect(self.update_profiles)
+        self.timeLine.sigPositionChanged.connect(self.update_profiles)
         self.items_added = False
 
-    def toggle_crosshair(self):
+    def toggle_crosshair(self) -> None:
         self.crosshair_state = not self.crosshair_state
         if self.crosshair_state:
             if self.crosshair_vline not in self.view.items:
@@ -231,54 +231,48 @@ class ImageViewer(pg.ImageView):
             self.view.removeItem(self.crosshair_hline)
             self.view.removeItem(self.crosshair_vline)
 
-    def update_plots(self):
+    def update_profiles(self) -> None:
         x = int(self.crosshair_vline.getPos()[0])
         y = int(self.crosshair_hline.getPos()[1])
         frame_idx = int(self.timeLine.value())  # type: ignore
 
-        self.v_plot.clear()
-        self.h_plot.clear()
-        self.plot_data(frame_idx, x, y)
-
-    def plot_data(self, frame_idx: int, x: int, y: int) -> None:
-        frame_max = self.data.image.shape[0] - 1
-        x_max = self.data.image.shape[1] - 1
-        y_max = self.data.image.shape[2] - 1
-        if frame_idx > frame_max:
-            print("Frame index out of bounds, skipping plotting.")
+        if frame_idx > self.image.shape[0] - 1:
+            log("Frame index out of bounds, skipping plotting.")
             return
 
-        x_constrained = min(max(0, x), x_max)
-        y_constrained = min(max(0, y), y_max)
+        x_constrained = min(max(0, x), self.image.shape[1] - 1)
+        y_constrained = min(max(0, y), self.image.shape[2] - 1)
 
         if x_constrained != x or y_constrained != y:
-            print("Indices out of bounds, skipping plotting.")
             return
 
-        x_values = np.arange(self.data.image.shape[2])
+        x_values = np.arange(self.image.shape[2])
 
-        if (len(self.data.image.shape) == 4
-                and self.data.image.shape[3] == 3):
+        self.v_plot.clear()
+        self.h_plot.clear()
+
+        if (len(self.image.shape) == 4
+                and self.image.shape[3] == 3):
             # colored image
-            r_data_v = self.data.image[frame_idx, x, :, 0]
-            g_data_v = self.data.image[frame_idx, x, :, 1]
-            b_data_v = self.data.image[frame_idx, x, :, 2]
+            r_data_v = self.image[frame_idx, x, :, 0]
+            g_data_v = self.image[frame_idx, x, :, 1]
+            b_data_v = self.image[frame_idx, x, :, 2]
 
             self.v_plot.plot(r_data_v, x_values, pen='r')
             self.v_plot.plot(g_data_v, x_values, pen='g')
             self.v_plot.plot(b_data_v, x_values, pen='b')
 
-            r_data_h = self.data.image[frame_idx, :, y, 0]
-            g_data_h = self.data.image[frame_idx, :, y, 1]
-            b_data_h = self.data.image[frame_idx, :, y, 2]
+            r_data_h = self.image[frame_idx, :, y, 0]
+            g_data_h = self.image[frame_idx, :, y, 1]
+            b_data_h = self.image[frame_idx, :, y, 2]
 
             self.h_plot.plot(r_data_h, pen='r')
             self.h_plot.plot(g_data_h, pen='g')
             self.h_plot.plot(b_data_h, pen='b')
         else:
             # grayscale image
-            v_data = self.data.image[frame_idx, x, :]
-            h_data = self.data.image[frame_idx, :, y]
+            v_data = self.image[frame_idx, x, :]
+            h_data = self.image[frame_idx, :, y]
             self.v_plot.plot(v_data, x_values, pen='gray')
             self.h_plot.plot(h_data, pen='gray')
 
