@@ -49,25 +49,25 @@ class ImageData:
     @property
     def min(self) -> np.ndarray:
         if self._min is None:
-            self._min = np.min(self.image, axis=0)
+            self._min = np.expand_dims(np.min(self.image, axis=0), axis=0)
         return self._min
 
     @property
     def max(self) -> np.ndarray:
         if self._max is None:
-            self._max = np.max(self.image, axis=0)
+            self._max = np.expand_dims(np.max(self.image, axis=0), axis=0)
         return self._max
 
     @property
     def mean(self) -> np.ndarray:
         if self._mean is None:
-            self._mean = np.mean(self.image, axis=0)
+            self._mean = np.expand_dims(np.mean(self.image, axis=0), axis=0)
         return self._mean
 
     @property
     def std(self) -> np.ndarray:
         if self._std is None:
-            self._std = np.std(self.image, axis=0)
+            self._std = np.expand_dims(np.std(self.image, axis=0), axis=0)
         return self._std
 
     def mask(self, roi: pg.ROI) -> None:

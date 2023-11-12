@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
                              QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel,
                              QMainWindow, QMenu, QMenuBar, QPushButton,
                              QShortcut, QSpinBox, QStatusBar, QTabWidget,
-                             QVBoxLayout, QWidget)
+                             QVBoxLayout, QWidget, QSizePolicy)
 from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import resources
@@ -21,6 +21,7 @@ TITLE = (
     "BLITZ: Bulk Loading and Interactive Time series Zonal analysis "
     "(INP Greifswald)"
 )
+ROI_UPDATE_ON_DROP_MB_THRESHOLD = 1000
 
 
 class MainWindow(QMainWindow):
@@ -53,6 +54,7 @@ class MainWindow(QMainWindow):
 
         self.setup_logger()
         self.setup_image_and_line_viewers()
+        self.setup_lut_dock()
 
         script_dir = os.path.dirname(os.path.abspath(__file__))
         self.last_file_dir = script_dir
@@ -69,9 +71,14 @@ class MainWindow(QMainWindow):
     def setup_docks(self) -> None:
         viewer_height = self.height() - 2 * self.border_size
 
+        self.dock_lookup = Dock(
+            "LUT",
+            size=(self.border_size, 0.3*viewer_height),
+            hideTitle=True,
+        )
         self.dock_option = Dock(
             "Options",
-            size=(self.border_size, viewer_height),
+            size=(self.border_size, 0.7*viewer_height),
             hideTitle=True,
         )
         self.dock_status = Dock(
@@ -104,6 +111,7 @@ class MainWindow(QMainWindow):
         self.dock_area.addDock(self.dock_viewer, 'top', self.dock_t_line)
         self.dock_area.addDock(self.dock_v_plot, 'left', self.dock_viewer)
         self.dock_area.addDock(self.dock_option, 'right', self.dock_viewer)
+        self.dock_area.addDock(self.dock_lookup, 'top', self.dock_option)
         self.dock_area.addDock(self.dock_h_plot, 'top', self.dock_viewer)
         self.dock_area.addDock(self.dock_status, 'top', self.dock_v_plot)
 
@@ -113,6 +121,9 @@ class MainWindow(QMainWindow):
         file_menu = QMenu("File", self)
         file_menu.addAction("Open...").triggered.connect(self.browse_file)
         file_menu.addAction("Load TOF").triggered.connect(self.browse_tof)
+        file_menu.addAction("Export").triggered.connect(
+            self.image_viewer.exportClicked
+        )
         menubar.addMenu(file_menu)
 
         view_menu = QMenu("View", self)
@@ -139,6 +150,14 @@ class MainWindow(QMainWindow):
 
         self.setStatusBar(statusbar)
 
+    def setup_lut_dock(self) -> None:
+        # lut_container = QWidget(self)
+        # lut_layout = QVBoxLayout()
+        # lut_container.setLayout(lut_layout)
+        self.image_viewer.ui.histogram.setParent(None)
+        self.dock_lookup.addWidget(self.image_viewer.ui.histogram)
+        # self.option_tabwidget.addTab(lut_container, "LUT")
+
     def setup_option_dock(self) -> None:
         self.option_tabwidget = QTabWidget()
 
@@ -155,21 +174,24 @@ class MainWindow(QMainWindow):
 
         self.option_tabwidget.setStyleSheet(style_options)
 
-        lut_container = QWidget(self)
-        lut_layout = QVBoxLayout()
-        lut_container.setLayout(lut_layout)
-        self.image_viewer.ui.histogram.setParent(None)
-        lut_layout.addWidget(self.image_viewer.ui.histogram)
-
         file_container = QWidget(self)
         file_layout = QVBoxLayout()
         file_container.setLayout(file_layout)
-        load_label = QLabel("Load File")
+        load_label = QLabel("Load Options")
         load_label.setStyleSheet(style_heading)
         file_layout.addWidget(load_label)
+        load_hlay = QHBoxLayout()
         self.load_8bit_checkbox = QCheckBox("8 bit")
         self.load_8bit_checkbox.setStyleSheet(style_options)
-        file_layout.addWidget(self.load_8bit_checkbox)
+        load_hlay.addWidget(self.load_8bit_checkbox)
+        self.load_grayscale_checkbox = QCheckBox("Grayscale")
+        self.load_grayscale_checkbox.setStyleSheet(style_options)
+        load_hlay.addWidget(self.load_grayscale_checkbox)
+        load_btn = QPushButton("Open ...")
+        load_btn.pressed.connect(self.browse_file)
+        load_btn.setStyleSheet(style_options)
+        load_hlay.addWidget(load_btn)
+        file_layout.addLayout(load_hlay)
         self.size_ratio_spinbox = QDoubleSpinBox()
         self.size_ratio_spinbox.setRange(0, 1)
         self.size_ratio_spinbox.setValue(1)
@@ -191,43 +213,52 @@ class MainWindow(QMainWindow):
         self.max_ram_spinbox.setPrefix("Max. RAM: ")
         self.max_ram_spinbox.setStyleSheet(style_options)
         file_layout.addWidget(self.max_ram_spinbox)
-        load_btn = QPushButton("Open")
-        load_btn.pressed.connect(self.browse_file)
-        load_btn.setStyleSheet(style_options)
-        file_layout.addWidget(load_btn)
-        save_label = QLabel("Save")
-        save_label.setStyleSheet(style_heading)
-        file_layout.addWidget(save_label)
-        export_btn = QPushButton("Export")
-        export_btn.pressed.connect(self.image_viewer.exportClicked)
-        export_btn.setStyleSheet(style_options)
-        file_layout.addWidget(export_btn)
-        file_layout.addStretch()
-
-        option_container = QWidget(self)
-        option_layout = QVBoxLayout()
-        option_container.setLayout(option_layout)
         view_label = QLabel("View")
         view_label.setStyleSheet(style_heading)
-        option_layout.addWidget(view_label)
+        file_layout.addWidget(view_label)
+        view_layout = QHBoxLayout()
         flip_x = QCheckBox("Flip x")
         flip_x.stateChanged.connect(
             lambda: self.image_viewer.manipulation("flip_x")
         )
         flip_x.setStyleSheet(style_options)
-        option_layout.addWidget(flip_x)
+        view_layout.addWidget(flip_x)
         flip_y = QCheckBox("Flip y")
         flip_y.stateChanged.connect(
             lambda: self.image_viewer.manipulation("flip_y")
         )
         flip_y.setStyleSheet(style_options)
-        option_layout.addWidget(flip_y)
+        view_layout.addWidget(flip_y)
         transpose = QCheckBox("Transpose")
         transpose.stateChanged.connect(
             lambda: self.image_viewer.manipulation("transpose")
         )
         transpose.setStyleSheet(style_options)
-        option_layout.addWidget(transpose)
+        view_layout.addWidget(transpose)
+        file_layout.addLayout(view_layout)
+        mask_label = QLabel("Mask")
+        mask_label.setStyleSheet(style_heading)
+        file_layout.addWidget(mask_label)
+        mask_checkbox = QCheckBox("Show")
+        mask_checkbox.clicked.connect(self.image_viewer.toggle_mask)
+        mask_checkbox.setStyleSheet(style_options)
+        file_layout.addWidget(mask_checkbox)
+        mask_holay = QHBoxLayout()
+        apply_btn = QPushButton("Apply")
+        apply_btn.pressed.connect(self.image_viewer.apply_mask)
+        apply_btn.pressed.connect(lambda: mask_checkbox.setChecked(False))
+        apply_btn.setStyleSheet(style_options)
+        mask_holay.addWidget(apply_btn)
+        reset_btn = QPushButton("Reset")
+        reset_btn.pressed.connect(self.image_viewer.reset)
+        reset_btn.setStyleSheet(style_options)
+        mask_holay.addWidget(reset_btn)
+        file_layout.addLayout(mask_holay)
+        file_layout.addStretch()
+
+        option_container = QWidget(self)
+        option_layout = QVBoxLayout()
+        option_container.setLayout(option_layout)
 
         timeline_label = QLabel("Timeline Operation")
         timeline_label.setStyleSheet(style_heading)
@@ -250,22 +281,6 @@ class MainWindow(QMainWindow):
         tools_container = QWidget(self)
         tools_layout = QVBoxLayout()
         tools_container.setLayout(tools_layout)
-        mask_label = QLabel("Mask")
-        mask_label.setStyleSheet(style_heading)
-        tools_layout.addWidget(mask_label)
-        mask_checkbox = QCheckBox("Show")
-        mask_checkbox.clicked.connect(self.image_viewer.toggle_mask)
-        mask_checkbox.setStyleSheet(style_options)
-        tools_layout.addWidget(mask_checkbox)
-        apply_btn = QPushButton("Apply")
-        apply_btn.pressed.connect(self.image_viewer.apply_mask)
-        apply_btn.pressed.connect(lambda: mask_checkbox.setChecked(False))
-        apply_btn.setStyleSheet(style_options)
-        tools_layout.addWidget(apply_btn)
-        reset_btn = QPushButton("Reset")
-        reset_btn.pressed.connect(self.image_viewer.reset)
-        reset_btn.setStyleSheet(style_options)
-        tools_layout.addWidget(reset_btn)
 
         roi_label = QLabel("Measure Tool")
         roi_label.setStyleSheet(style_heading)
@@ -317,15 +332,14 @@ class MainWindow(QMainWindow):
         checkbox_layout.addWidget(self.tof_checkbox)
         checkbox_layout.addStretch()
         tools_layout.addLayout(checkbox_layout)
-        roi_drop_checkbox = QCheckBox("Update ROI only on Drop")
-        roi_drop_checkbox.stateChanged.connect(
+        self.roi_drop_checkbox = QCheckBox("Update ROI only on Drop")
+        self.roi_drop_checkbox.stateChanged.connect(
             self.image_viewer.toogle_roi_update_frequency
         )
-        roi_drop_checkbox.setStyleSheet(style_options)
-        tools_layout.addWidget(roi_drop_checkbox)
+        self.roi_drop_checkbox.setStyleSheet(style_options)
+        tools_layout.addWidget(self.roi_drop_checkbox)
         tools_layout.addStretch()
 
-        self.option_tabwidget.addTab(lut_container, "LUT")
         self.option_tabwidget.addTab(file_container, "File")
         self.option_tabwidget.addTab(option_container, "Manipulation")
         self.option_tabwidget.addTab(tools_container, "Tools")
@@ -382,9 +396,15 @@ class MainWindow(QMainWindow):
         self.image_viewer.timeLine.sigPositionChanged.connect(
             self.update_statusbar_frame
         )
+        self.roi_plot.keyPressEvent = self.override_timeline_keyPressEvent
+        self.roi_plot.keyReleaseEvent = self.image_viewer.keyReleaseEvent
 
         self.v_plot.setYLink(self.image_viewer.getView())
         self.h_plot.setXLink(self.image_viewer.getView())
+
+    def override_timeline_keyPressEvent(self, ev) -> None:
+        self.roi_plot.scene().keyPressEvent(ev)
+        self.image_viewer.keyPressEvent(ev)
 
     def on_strgC(self) -> None:
         cb = QApplication.clipboard()
@@ -428,6 +448,7 @@ class MainWindow(QMainWindow):
             ratio=self.subset_ratio_spinbox.value(),
             convert_to_8_bit=self.load_8bit_checkbox.isChecked(),
             ram_size=self.max_ram_spinbox.value(),
+            grayscale=self.load_grayscale_checkbox.isChecked(),
         )
 
         self.close_loading_dialog(dialog)
@@ -437,6 +458,10 @@ class MainWindow(QMainWindow):
             log(f"Available RAM: {get_available_ram():.2f} GB")
             log(f"Seconds needed: {clock() - start_time:.2f}")
             self.update_statusbar_frame()
+            if data_size_MB > ROI_UPDATE_ON_DROP_MB_THRESHOLD:
+                self.roi_drop_checkbox.setChecked(True)
+            else:
+                self.roi_drop_checkbox.setChecked(False)
 
     def operation_changed(self) -> None:
         start_time = clock()
