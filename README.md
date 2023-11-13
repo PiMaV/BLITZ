@@ -3,6 +3,8 @@
 
 ![Screenshot](resources/public/BLITZ_Short_Description.png)
 
+![GIF_Animation](resources/public/BLITZ_Record.gif)
+
 This project is being built at the [INP Greifswald](https://www.inp-greifswald.de/).
 
 ## Quick Start
