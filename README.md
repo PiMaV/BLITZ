@@ -2,7 +2,7 @@
 **B**ulk **L**oading and **I**nteractive **T**ime series **Z**onal analysis
 
 ## Download compiled program (.exe) of the latest release for Windows
-[most recent
+- [Most recent
 release](https://github.com/CodeSchmiedeHGW/BLITZ/releases/latest).
 
 ### GIF Animation:
