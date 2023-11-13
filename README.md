@@ -25,12 +25,6 @@ $ poetry install
 $ poetry run BLITZ
 ```
 
-You can also build your own portable executable using `pyinstaller`:
-
-```shell
-$ pyinstaller --onefile --windowed --icon=resources/icon/blitz.ico blitz.py
-```
-
 ## License
 
 BLITZ is licensed under the terms of the GNU General Public License version 3 (GPL-3.0). Details
