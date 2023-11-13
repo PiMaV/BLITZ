@@ -1,8 +1,6 @@
 # BLITZ
 **B**ulk **L**oading and **I**nteractive **T**ime series **Z**onal analysis
 
-#![Screenshot](resources/public/BLITZ_Short_Description.png)
-
 (Click if animation is not playing)
 ![GIF_Animation](resources/public/BLITZ_Record.gif)
 
