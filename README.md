@@ -1,15 +1,20 @@
-# BLITZ
-**B**ulk **L**oading and **I**nteractive **T**ime series **Z**onal analysis
+# BLITZ 
+BLITZ is an open-source image viewer specifically designed for "**B**ulk **L**oading and **I**nteractive **T**ime series **Z**onal analysis," developed at the [INP Greifswald](https://www.inp-greifswald.de). It is optimized for handling extensive image series, a common challenge in diagnostic imaging and process control. Programmed primarily in Python and utilizing QT and PyQTGraph.
+BLITZ offers:
+- rapid loading of large image series
+- efficient performance scaling
+- versatile data handling options
+- user-friendly GUI
+- stable lookup tables for visual consistency
+- powerful matrix-based image processing capabilities, allowing for instant statistical calculations and image manipulations. 
 
-## Download compiled program (.exe) of the latest release for Windows
-- [Most recent
-release](https://github.com/CodeSchmiedeHGW/BLITZ/releases/latest).
+## Download the Latest Release for Windows
+[Most recent
+release](https://github.com/CodeSchmiedeHGW/BLITZ/releases/latest)
 
-### GIF Animation:
+## GIF Animation showing the key features of BLITZ
 (Click if animation is not playing)
 ![GIF_Animation](resources/public/BLITZ_Record.gif)
-
-This project is being built at the [INP Greifswald](https://www.inp-greifswald.de/).
 
 ## Compiling and Developing
 
@@ -26,8 +31,7 @@ $ poetry run BLITZ
 ## Additional Resources
 
 - Visit [INPTDAT](https://www.inptdat.de) for additional images or publishing your own.
-- You can find the original [Example Dataset] (https://www.inptdat.de/dataset/fast-framing-images-kinpen-science-example-set-images-testing-blitz-image-viewer) at INPTDAT as well.
-
+- You can find the original [Example Dataset](https://www.inptdat.de/dataset/fast-framing-images-kinpen-science-example-set-images-testing-blitz-image-viewer) at INPTDAT as well.
 
 ## License
 
