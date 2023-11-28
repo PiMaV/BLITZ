@@ -1,20 +1,6 @@
 from typing import Any
 
-from PyQt5.QtWidgets import (QDialog, QLabel, QMainWindow, QTextEdit,
-                             QVBoxLayout)
-
-
-class LoadingDialog:
-
-    def __init__(self, main_window: QMainWindow, message: str) -> None:
-        self.main_window = main_window
-        self.dialog = QDialog()
-        self.dialog.setWindowTitle(message)
-        layout = QVBoxLayout()
-        label = QLabel(message)
-        layout.addWidget(label)
-        self.dialog.setLayout(layout)
-        self.dialog.setModal(True)
+from PyQt5.QtWidgets import QTextEdit
 
 
 class LoggingTextEdit(QTextEdit):

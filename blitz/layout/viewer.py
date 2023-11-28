@@ -10,6 +10,8 @@ from ..data.image import ImageData
 from ..data.load import from_file
 from ..tools import format_pixel_value, log, wrap_text
 
+ROI_ON_DROP_THRESHOLD = 500_000
+
 
 class ImageViewer(pg.ImageView):
 
@@ -89,6 +91,7 @@ class ImageViewer(pg.ImageView):
         self.setImage(self.data.image)
         self.init_roi_and_crosshair()
         self.update_profiles()
+        self.autoRange()
 
     def init_roi_and_crosshair(self) -> None:
         height = self.image.shape[2]
@@ -102,6 +105,11 @@ class ImageViewer(pg.ImageView):
             [[0, 0], [0, 0.5*height], [0.5*width, 0.25*height]]
         )
         self.measure_roi.toggle()
+        on_drop_roi_update = (
+            self.data.image.shape[0] * np.prod(self.roi.size())
+            > ROI_ON_DROP_THRESHOLD
+        )
+        self.toggle_roi_update_frequency(on_drop_roi_update)
 
     def manipulation(self, operation: str) -> None:
         match operation:
@@ -149,6 +157,7 @@ class ImageViewer(pg.ImageView):
             img = self.getImageItem().image
             width, height = img.shape[0], img.shape[1]  # type: ignore
             self.mask = RectROI((0, 0), (width, height), pen=(0, 9))
+            self.mask.handleSize = 10
             self.mask.addScaleHandle((0, 0), (1, 1))
             self.mask.addScaleHandle((1, 1), (0, 0))
             self.mask.addScaleHandle((0, 1), (1, 0))
@@ -158,19 +167,29 @@ class ImageViewer(pg.ImageView):
             self.view.removeItem(self.mask)
             self.mask = None
 
-    def toogle_roi_update_frequency(self) -> None:
-        if self.roi.receivers(self.roi.sigRegionChanged) > 1:
+    def toggle_roi_update_frequency(
+        self,
+        on_drop: Optional[bool] = None,
+    ) -> None:
+        if self.roi.receivers(self.roi.sigRegionChanged) > 1 and (
+            (on_drop is not None and on_drop) or (on_drop is None)
+        ):
             self.roi.sigRegionChanged.disconnect()
             self.roi.sigRegionChangeFinished.connect(self.roiChanged)
             self.roi.sigRegionChangeFinished.connect(
                 lambda: self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
             )
-        elif self.roi.receivers(self.roi.sigRegionChangeFinished) > 1:
+        elif self.roi.receivers(self.roi.sigRegionChangeFinished) > 1 and (
+            (on_drop is not None and not on_drop) or (on_drop is None)
+        ):
             self.roi.sigRegionChangeFinished.disconnect()
             self.roi.sigRegionChanged.connect(self.roiChanged)
             self.roi.sigRegionChanged.connect(
                 lambda: self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
             )
+
+    def is_roi_on_drop_update(self) -> bool:
+        return self.roi.receivers(self.roi.sigRegionChangeFinished) > 1
 
     def get_position_info(
         self,
@@ -281,6 +300,7 @@ class MeasureROI(pg.PolyLineROI):
 
     def __init__(self, view: pg.ViewBox):
         super().__init__([[0, 0], [0, 20], [10, 10]], closed=True)
+        self.handleSize = 10
         self.sigRegionChanged.connect(self.update_labels)
         self.view = view
 

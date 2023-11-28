@@ -1,27 +1,28 @@
 import os
-from timeit import default_timer as clock
 from typing import Optional
 
 import pyqtgraph as pg
-from PyQt5.QtGui import QFont, QIcon, QKeySequence
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QColor, QFont, QIcon, QKeySequence
 from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
                              QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel,
                              QMainWindow, QMenu, QMenuBar, QPushButton,
-                             QShortcut, QSpinBox, QStatusBar, QTabWidget,
-                             QVBoxLayout, QWidget, QSizePolicy)
+                             QScrollArea, QShortcut, QSpinBox, QStatusBar,
+                             QTabWidget, QVBoxLayout, QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
+from pyqtspinner import WaitingSpinner
 
 from .. import resources
-from ..tools import get_available_ram, log, set_logger
+from ..tools import (LoadingManager, get_available_ram, log,
+                     setup_loading_widgets, setup_logger)
 from .tof import TOFAdapter
 from .viewer import ImageViewer
-from .widgets import LoadingDialog, LoggingTextEdit
+from .widgets import LoggingTextEdit
 
 TITLE = (
     "BLITZ: Bulk Loading and Interactive Time series Zonal analysis "
     "(INP Greifswald)"
 )
-ROI_UPDATE_ON_DROP_MB_THRESHOLD = 1000
 
 
 class MainWindow(QMainWindow):
@@ -63,6 +64,9 @@ class MainWindow(QMainWindow):
         self.setup_menu_and_status_bar()
         self.image_viewer.file_dropped.connect(self.load_images)
 
+        setup_logger(self.logger)
+        setup_loading_widgets(self.loading_label, self.spinner)
+
         self.shortcut_copy = QShortcut(QKeySequence("Ctrl+C"), self)
         self.shortcut_copy.activated.connect(self.on_strgC)
 
@@ -73,12 +77,12 @@ class MainWindow(QMainWindow):
 
         self.dock_lookup = Dock(
             "LUT",
-            size=(self.border_size, 0.3*viewer_height),
+            size=(self.border_size, 0.7*viewer_height),
             hideTitle=True,
         )
         self.dock_option = Dock(
             "Options",
-            size=(self.border_size, 0.7*viewer_height),
+            size=(self.border_size, 0.3*viewer_height),
             hideTitle=True,
         )
         self.dock_status = Dock(
@@ -110,8 +114,8 @@ class MainWindow(QMainWindow):
         self.dock_area.addDock(self.dock_t_line, 'bottom')
         self.dock_area.addDock(self.dock_viewer, 'top', self.dock_t_line)
         self.dock_area.addDock(self.dock_v_plot, 'left', self.dock_viewer)
-        self.dock_area.addDock(self.dock_option, 'right', self.dock_viewer)
-        self.dock_area.addDock(self.dock_lookup, 'top', self.dock_option)
+        self.dock_area.addDock(self.dock_lookup, 'right', self.dock_viewer)
+        self.dock_area.addDock(self.dock_option, 'top', self.dock_lookup)
         self.dock_area.addDock(self.dock_h_plot, 'top', self.dock_viewer)
         self.dock_area.addDock(self.dock_status, 'top', self.dock_v_plot)
 
@@ -147,6 +151,9 @@ class MainWindow(QMainWindow):
         self.file_label = QLabel("")
         self.file_label.setFont(font_status)
         statusbar.addWidget(self.file_label)
+        self.loading_label = QLabel("")
+        self.loading_label.setFont(font_status)
+        statusbar.addWidget(self.loading_label)
 
         self.setStatusBar(statusbar)
 
@@ -174,9 +181,7 @@ class MainWindow(QMainWindow):
 
         self.option_tabwidget.setStyleSheet(style_options)
 
-        file_container = QWidget(self)
         file_layout = QVBoxLayout()
-        file_container.setLayout(file_layout)
         load_label = QLabel("Load Options")
         load_label.setStyleSheet(style_heading)
         file_layout.addWidget(load_label)
@@ -213,6 +218,24 @@ class MainWindow(QMainWindow):
         self.max_ram_spinbox.setPrefix("Max. RAM: ")
         self.max_ram_spinbox.setStyleSheet(style_options)
         file_layout.addWidget(self.max_ram_spinbox)
+        mask_label = QLabel("Mask")
+        mask_label.setStyleSheet(style_heading)
+        file_layout.addWidget(mask_label)
+        mask_checkbox = QCheckBox("Show")
+        mask_checkbox.clicked.connect(self.image_viewer.toggle_mask)
+        mask_checkbox.setStyleSheet(style_options)
+        file_layout.addWidget(mask_checkbox)
+        mask_holay = QHBoxLayout()
+        apply_btn = QPushButton("Apply")
+        apply_btn.pressed.connect(self.image_viewer.apply_mask)
+        apply_btn.pressed.connect(lambda: mask_checkbox.setChecked(False))
+        apply_btn.setStyleSheet(style_options)
+        mask_holay.addWidget(apply_btn)
+        reset_btn = QPushButton("Reset")
+        reset_btn.pressed.connect(self.image_viewer.reset)
+        reset_btn.setStyleSheet(style_options)
+        mask_holay.addWidget(reset_btn)
+        file_layout.addLayout(mask_holay)
         view_label = QLabel("View")
         view_label.setStyleSheet(style_heading)
         file_layout.addWidget(view_label)
@@ -236,29 +259,9 @@ class MainWindow(QMainWindow):
         transpose.setStyleSheet(style_options)
         view_layout.addWidget(transpose)
         file_layout.addLayout(view_layout)
-        mask_label = QLabel("Mask")
-        mask_label.setStyleSheet(style_heading)
-        file_layout.addWidget(mask_label)
-        mask_checkbox = QCheckBox("Show")
-        mask_checkbox.clicked.connect(self.image_viewer.toggle_mask)
-        mask_checkbox.setStyleSheet(style_options)
-        file_layout.addWidget(mask_checkbox)
-        mask_holay = QHBoxLayout()
-        apply_btn = QPushButton("Apply")
-        apply_btn.pressed.connect(self.image_viewer.apply_mask)
-        apply_btn.pressed.connect(lambda: mask_checkbox.setChecked(False))
-        apply_btn.setStyleSheet(style_options)
-        mask_holay.addWidget(apply_btn)
-        reset_btn = QPushButton("Reset")
-        reset_btn.pressed.connect(self.image_viewer.reset)
-        reset_btn.setStyleSheet(style_options)
-        mask_holay.addWidget(reset_btn)
-        file_layout.addLayout(mask_holay)
         file_layout.addStretch()
 
-        option_container = QWidget(self)
         option_layout = QVBoxLayout()
-        option_container.setLayout(option_layout)
 
         timeline_label = QLabel("Timeline Operation")
         timeline_label.setStyleSheet(style_heading)
@@ -278,9 +281,7 @@ class MainWindow(QMainWindow):
         option_layout.addWidget(norm_checkbox)
         option_layout.addStretch()
 
-        tools_container = QWidget(self)
         tools_layout = QVBoxLayout()
-        tools_container.setLayout(tools_layout)
 
         roi_label = QLabel("Measure Tool")
         roi_label.setStyleSheet(style_heading)
@@ -334,27 +335,80 @@ class MainWindow(QMainWindow):
         tools_layout.addLayout(checkbox_layout)
         self.roi_drop_checkbox = QCheckBox("Update ROI only on Drop")
         self.roi_drop_checkbox.stateChanged.connect(
-            self.image_viewer.toogle_roi_update_frequency
+            lambda: self.image_viewer.toggle_roi_update_frequency(
+                self.roi_drop_checkbox.isChecked()
+            )
         )
         self.roi_drop_checkbox.setStyleSheet(style_options)
         tools_layout.addWidget(self.roi_drop_checkbox)
         tools_layout.addStretch()
 
-        self.option_tabwidget.addTab(file_container, "File")
-        self.option_tabwidget.addTab(option_container, "Manipulation")
-        self.option_tabwidget.addTab(tools_container, "Tools")
+        option_scrollarea = QScrollArea()
+        option_scrollarea.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        option_scrollarea.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        tools_scrollarea = QScrollArea()
+        tools_scrollarea.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        tools_scrollarea.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+
+        file_scrollarea = QScrollArea()
+        file_scrollarea.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        file_scrollarea.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+
+        file_container = QWidget()
+        file_container.setLayout(file_layout)
+        file_scrollarea.setWidget(file_container)
+        file_scrollarea.setWidgetResizable(True)
+
+        option_container = QWidget()
+        option_container.setLayout(option_layout)
+        option_scrollarea.setWidget(option_container)
+        option_scrollarea.setWidgetResizable(True)
+
+        tools_container = QWidget()
+        tools_container.setLayout(tools_layout)
+        tools_scrollarea.setWidget(tools_container)
+        tools_scrollarea.setWidgetResizable(True)
+
+        self.option_tabwidget.addTab(file_scrollarea, "File")
+        self.option_tabwidget.addTab(option_scrollarea, "Manipulation")
+        self.option_tabwidget.addTab(tools_scrollarea, "Tools")
 
         self.dock_option.addWidget(self.option_tabwidget)
 
     def setup_logger(self) -> None:
-        file_info_widget = QWidget()
-        layout = QVBoxLayout()
-
         self.logger = LoggingTextEdit()
         self.logger.setReadOnly(True)
-        layout.addWidget(self.logger)
-        set_logger(self.logger)
 
+        self.spinner = WaitingSpinner(
+            self.logger,
+            roundness=100.0,
+            fade=80.0,
+            radius=11,
+            lines=15,
+            line_length=11,
+            line_width=5,
+            speed=2.0,
+            color=QColor(119, 51, 255),
+        )
+
+        file_info_widget = QWidget()
+        layout = QVBoxLayout()
+        layout.addWidget(self.logger)
+        layout_spinner = QHBoxLayout()
+        layout_spinner.addWidget(self.spinner)
+        self.logger.setLayout(layout_spinner)
         file_info_widget.setLayout(layout)
         self.dock_status.addWidget(file_info_widget)
 
@@ -410,6 +464,7 @@ class MainWindow(QMainWindow):
         cb = QApplication.clipboard()
         cb.clear()
         cb.setText(self.position_label.text())
+        self.spinner.start()
 
     def update_statusbar_position(self, pos: tuple[int, int]) -> None:
         x, y, value = self.image_viewer.get_position_info(pos)
@@ -424,7 +479,8 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName()
         if not path:
             return
-        self.tof_adapter.set_data(path, self.image_viewer.data.meta)
+        with LoadingManager("Loading TOF data..."):
+            self.tof_adapter.set_data(path, self.image_viewer.data.meta)
         self.tof_checkbox.setEnabled(True)
         self.tof_checkbox.setChecked(True)
 
@@ -433,60 +489,40 @@ class MainWindow(QMainWindow):
             directory=self.last_file_dir
         )
         if file_path:
-            self.last_filepath = os.path.dirname(file_path)
+            self.last_file_dir = os.path.dirname(file_path)
             self.load_images(file_path)
 
     def load_images(self, file_path: Optional[str] = None) -> None:
-        start_time = clock()
-        dialog = self.show_loading_dialog(
-            f"Loading from file: {'...' if file_path is None else file_path}"
-        )
-
-        self.image_viewer.load_data(
-            file_path,
-            size=self.size_ratio_spinbox.value(),
-            ratio=self.subset_ratio_spinbox.value(),
-            convert_to_8_bit=self.load_8bit_checkbox.isChecked(),
-            ram_size=self.max_ram_spinbox.value(),
-            grayscale=self.load_grayscale_checkbox.isChecked(),
-        )
-
-        self.close_loading_dialog(dialog)
+        text = f"Loading {'...' if file_path is None else file_path}"
+        with LoadingManager(text) as lm:
+            self.image_viewer.load_data(
+                file_path,
+                size=self.size_ratio_spinbox.value(),
+                ratio=self.subset_ratio_spinbox.value(),
+                convert_to_8_bit=self.load_8bit_checkbox.isChecked(),
+                ram_size=self.max_ram_spinbox.value(),
+                grayscale=self.load_grayscale_checkbox.isChecked(),
+            )
         if file_path is not None:
             data_size_MB = self.image_viewer.data.image.nbytes / 2**20
             log(f"Loaded {data_size_MB:.2f} MB")
             log(f"Available RAM: {get_available_ram():.2f} GB")
-            log(f"Seconds needed: {clock() - start_time:.2f}")
+            log(f"Seconds needed: {lm.duration:.2f}")
             self.update_statusbar_frame()
-            if data_size_MB > ROI_UPDATE_ON_DROP_MB_THRESHOLD:
-                self.roi_drop_checkbox.setChecked(True)
-            else:
-                self.roi_drop_checkbox.setChecked(False)
+            self.roi_drop_checkbox.setChecked(
+                self.image_viewer.is_roi_on_drop_update()
+            )
 
     def operation_changed(self) -> None:
-        start_time = clock()
-        dialog = self.show_loading_dialog(message="Calculating statistics...")
         log(f"Available RAM: {get_available_ram():.2f} GB")
-
-        self.image_viewer.manipulation(self.image_viewer.AVAILABLE_OPERATIONS[
-            self.op_combobox.currentText()
-        ])
-
-        self.close_loading_dialog(dialog)
-        log(f"Seconds needed: {clock() - start_time:.2f}")
+        with LoadingManager("Calculating statistics...") as lm:
+            self.image_viewer.manipulation(
+                self.image_viewer.AVAILABLE_OPERATIONS[
+                    self.op_combobox.currentText()
+                ]
+            )
+        log(f"Seconds needed: {lm.duration:.2f}")
         log(f"Available RAM: {get_available_ram():.2f} GB")
-
-    def show_loading_dialog(
-        self,
-        message: str = "Loading images...",
-    ) -> LoadingDialog:
-        self.loading_dialog = LoadingDialog(self, message)
-        self.loading_dialog.dialog.show()
-        QApplication.processEvents()
-        return self.loading_dialog.dialog
-
-    def close_loading_dialog(self, dialog) -> None:
-        dialog.accept()
 
     def update_roi_settings(self) -> None:
         self.image_viewer.measure_roi.show_in_mm = self.mm_checkbox.isChecked()
