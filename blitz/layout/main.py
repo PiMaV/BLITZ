@@ -3,21 +3,19 @@ from typing import Optional
 
 import pyqtgraph as pg
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QColor, QFont, QIcon, QKeySequence
+from PyQt5.QtGui import QFont, QIcon, QKeySequence
 from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
                              QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel,
                              QMainWindow, QMenu, QMenuBar, QPushButton,
                              QScrollArea, QShortcut, QSpinBox, QStatusBar,
                              QTabWidget, QVBoxLayout, QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
-from pyqtspinner import WaitingSpinner
 
 from .. import resources
-from ..tools import (LoadingManager, get_available_ram, log,
-                     setup_loading_widgets, setup_logger)
+from ..tools import (LoadingManager, LoggingTextEdit, get_available_ram, log,
+                     setup_logger)
 from .tof import TOFAdapter
 from .viewer import ImageViewer
-from .widgets import LoggingTextEdit
 
 TITLE = (
     "BLITZ: Bulk Loading and Interactive Time series Zonal analysis "
@@ -63,9 +61,6 @@ class MainWindow(QMainWindow):
         self.setup_option_dock()
         self.setup_menu_and_status_bar()
         self.image_viewer.file_dropped.connect(self.load_images)
-
-        setup_logger(self.logger)
-        setup_loading_widgets(self.loading_label, self.spinner)
 
         self.shortcut_copy = QShortcut(QKeySequence("Ctrl+C"), self)
         self.shortcut_copy.activated.connect(self.on_strgC)
@@ -391,26 +386,12 @@ class MainWindow(QMainWindow):
         self.logger = LoggingTextEdit()
         self.logger.setReadOnly(True)
 
-        self.spinner = WaitingSpinner(
-            self.logger,
-            roundness=100.0,
-            fade=80.0,
-            radius=11,
-            lines=15,
-            line_length=11,
-            line_width=5,
-            speed=2.0,
-            color=QColor(119, 51, 255),
-        )
-
         file_info_widget = QWidget()
         layout = QVBoxLayout()
         layout.addWidget(self.logger)
-        layout_spinner = QHBoxLayout()
-        layout_spinner.addWidget(self.spinner)
-        self.logger.setLayout(layout_spinner)
         file_info_widget.setLayout(layout)
         self.dock_status.addWidget(file_info_widget)
+        setup_logger(self.logger)
 
     def setup_image_and_line_viewers(self) -> None:
         v_plot_viewbox = pg.ViewBox()
@@ -479,7 +460,7 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName()
         if not path:
             return
-        with LoadingManager("Loading TOF data..."):
+        with LoadingManager(self, "Loading TOF data..."):
             self.tof_adapter.set_data(path, self.image_viewer.data.meta)
         self.tof_checkbox.setEnabled(True)
         self.tof_checkbox.setChecked(True)
@@ -494,7 +475,7 @@ class MainWindow(QMainWindow):
 
     def load_images(self, file_path: Optional[str] = None) -> None:
         text = f"Loading {'...' if file_path is None else file_path}"
-        with LoadingManager(text) as lm:
+        with LoadingManager(self, text) as lm:
             self.image_viewer.load_data(
                 file_path,
                 size=self.size_ratio_spinbox.value(),
@@ -515,7 +496,7 @@ class MainWindow(QMainWindow):
 
     def operation_changed(self) -> None:
         log(f"Available RAM: {get_available_ram():.2f} GB")
-        with LoadingManager("Calculating statistics...") as lm:
+        with LoadingManager(self, "Calculating statistics...") as lm:
             self.image_viewer.manipulation(
                 self.image_viewer.AVAILABLE_OPERATIONS[
                     self.op_combobox.currentText()
