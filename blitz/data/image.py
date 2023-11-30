@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import pyqtgraph as pg
@@ -19,6 +19,7 @@ class ImageData:
         self._transposed = False
         self._flipped_x = False
         self._flipped_y = False
+        self._operation_active = None
 
     def set(
         self,
@@ -31,9 +32,20 @@ class ImageData:
 
     @property
     def image(self) -> np.ndarray:
-        image = self._image
+        image: np.ndarray
+        match self._operation_active:
+            case 'min':
+                image = self._min  # type: ignore
+            case 'max':
+                image = self._max  # type: ignore
+            case 'mean':
+                image = self._mean  # type: ignore
+            case 'std':
+                image = self._std  # type: ignore
+            case _:
+                image = self._image
         if self._mask is not None:
-            image = self._image[self._mask]
+            image = image[self._mask]
         if self._transposed:
             image = np.swapaxes(image, 1, 2)
         if self._flipped_x:
@@ -43,32 +55,31 @@ class ImageData:
         return image
 
     @property
+    def n_images(self) -> int:
+        return self._image.shape[0]
+
+    @property
     def meta(self) -> list[dict[str, Any]]:
         return self._meta
 
-    @property
-    def min(self) -> np.ndarray:
-        if self._min is None:
-            self._min = np.expand_dims(np.min(self.image, axis=0), axis=0)
-        return self._min
+    def reduce(self, operation: Literal['min', 'max', 'mean', 'std']) -> None:
+        match operation:
+            case 'min':
+                if self._min is None:
+                    self._min = np.expand_dims(self._image.min(0), axis=0)
+            case 'max':
+                if self._max is None:
+                    self._max = np.expand_dims(self._image.max(0), axis=0)
+            case 'mean':
+                if self._mean is None:
+                    self._mean = np.expand_dims(self._image.mean(0), axis=0)
+            case 'std':
+                if self._std is None:
+                    self._std = np.expand_dims(self._image.std(0), axis=0)
+        self._operation_active = operation
 
-    @property
-    def max(self) -> np.ndarray:
-        if self._max is None:
-            self._max = np.expand_dims(np.max(self.image, axis=0), axis=0)
-        return self._max
-
-    @property
-    def mean(self) -> np.ndarray:
-        if self._mean is None:
-            self._mean = np.expand_dims(np.mean(self.image, axis=0), axis=0)
-        return self._mean
-
-    @property
-    def std(self) -> np.ndarray:
-        if self._std is None:
-            self._std = np.expand_dims(np.std(self.image, axis=0), axis=0)
-        return self._std
+    def unravel(self) -> None:
+        self._operation_active = None
 
     def mask(self, roi: pg.ROI) -> None:
         if self._transposed or self._flipped_x or self._flipped_y:
@@ -85,7 +96,9 @@ class ImageData:
             x_stop += self._mask[1].start
             y_start += self._mask[2].start
             y_stop += self._mask[2].start
+        op = self._operation_active
         self.reset()
+        self.reduce(op)  # type: ignore
         self._mask = (
             slice(None, None), slice(x_start, x_stop), slice(y_start, y_stop),
         )

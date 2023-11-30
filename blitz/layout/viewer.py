@@ -106,42 +106,38 @@ class ImageViewer(pg.ImageView):
         )
         self.measure_roi.toggle()
         on_drop_roi_update = (
-            self.data.image.shape[0] * np.prod(self.roi.size())
+            self.data.n_images * np.prod(self.roi.size())
             > ROI_ON_DROP_THRESHOLD
         )
         self.toggle_roi_update_frequency(on_drop_roi_update)
 
     def manipulation(self, operation: str) -> None:
         match operation:
-            case 'min':
-                self.setImage(self.data.min)
-            case 'max':
-                self.setImage(self.data.max)
-            case 'mean':
-                self.setImage(self.data.mean)
-            case 'std':
-                self.setImage(self.data.std)
+            case 'min' | 'max' | 'mean' | 'std':
+                self.data.reduce(operation)
             case 'org':
-                self.setImage(self.data.image)
+                self.data.unravel()
             case 'transpose' | 'flip_x' | 'flip_y':
                 getattr(self.data, operation)()
-                self.setImage(
-                    self.data.image,
-                    autoRange=False,
-                    autoLevels=False,
-                    autoHistogramRange=False,
-                )
             case _:
                 log("Operation not implemented")
+        self.setImage(
+            self.data.image,
+            autoRange=False,
+            autoLevels=True,
+            autoHistogramRange=False,
+        )
         self.init_roi_and_crosshair()
         self.update_profiles()
 
     def reset(self) -> None:
         self.data.reset()
-        self.setImage(self.data.image)
-        self.autoRange()
-        self.autoLevels()
-        self.autoHistogramRange()
+        self.setImage(
+            self.data.image,
+            autoRange=True,
+            autoLevels=True,
+            autoHistogramRange=True,
+        )
         self.init_roi_and_crosshair()
 
     def apply_mask(self) -> None:
@@ -149,7 +145,12 @@ class ImageViewer(pg.ImageView):
             return
         self.data.mask(self.mask)
         self.toggle_mask()
-        self.setImage(self.data.image, autoRange=True)
+        self.setImage(
+            self.data.image,
+            autoRange=True,
+            autoLevels=False,
+            autoHistogramRange=False,
+        )
         self.init_roi_and_crosshair()
 
     def toggle_mask(self) -> None:
