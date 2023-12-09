@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
                              QTabWidget, QVBoxLayout, QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
 
-from .. import resources
+from .. import resources, settings
 from ..tools import (LoadingManager, LoggingTextEdit, get_available_ram, log,
                      setup_logger)
 from .tof import TOFAdapter
@@ -25,17 +25,13 @@ TITLE = (
 
 class MainWindow(QMainWindow):
 
-    def __init__(
-        self,
-        window_ratio: float = .75,
-        relative_size: float = .85,
-    ) -> None:
+    def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(TITLE)
         self.setWindowIcon(QIcon(":/icon/blitz.ico"))
 
-        self.window_ratio = window_ratio
         screen_geometry = QApplication.primaryScreen().availableGeometry()
+        relative_size = settings.get("window/relative_size")
         width = int(screen_geometry.width() * relative_size)
         height = int(screen_geometry.height() * relative_size)
         self.setGeometry(
@@ -44,6 +40,7 @@ class MainWindow(QMainWindow):
             width,
             height,
         )
+        window_ratio = settings.get("window/ratio")
         self.image_viewer_size = int(window_ratio * self.width())
         self.border_size = int((1 - window_ratio) * self.width() / 2)
 
@@ -70,14 +67,15 @@ class MainWindow(QMainWindow):
     def setup_docks(self) -> None:
         viewer_height = self.height() - 2 * self.border_size
 
+        lut_ratio = settings.get("window/LUT_vertical_ratio")
         self.dock_lookup = Dock(
             "LUT",
-            size=(self.border_size, 0.7*viewer_height),
+            size=(self.border_size, lut_ratio*viewer_height),
             hideTitle=True,
         )
         self.dock_option = Dock(
             "Options",
-            size=(self.border_size, 0.3*viewer_height),
+            size=(self.border_size, (1-lut_ratio)*viewer_height),
             hideTitle=True,
         )
         self.dock_status = Dock(
@@ -496,11 +494,10 @@ class MainWindow(QMainWindow):
 
     def operation_changed(self) -> None:
         log(f"Available RAM: {get_available_ram():.2f} GB")
-        with LoadingManager(self, "Calculating statistics...") as lm:
+        text = self.op_combobox.currentText()
+        with LoadingManager(self, f"Loading {text}...") as lm:
             self.image_viewer.manipulation(
-                self.image_viewer.AVAILABLE_OPERATIONS[
-                    self.op_combobox.currentText()
-                ]
+                self.image_viewer.AVAILABLE_OPERATIONS[text]
             )
         log(f"Seconds needed: {lm.duration:.2f}")
         log(f"Available RAM: {get_available_ram():.2f} GB")

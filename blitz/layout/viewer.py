@@ -6,11 +6,10 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QDropEvent, QMouseEvent
 from pyqtgraph import RectROI, mkPen
 
+from .. import settings
 from ..data.image import ImageData
 from ..data.load import from_file
 from ..tools import format_pixel_value, log, wrap_text
-
-ROI_ON_DROP_THRESHOLD = 500_000
 
 
 class ImageViewer(pg.ImageView):
@@ -34,7 +33,11 @@ class ImageViewer(pg.ImageView):
     ) -> None:
         view = pg.PlotItem()
         view.showGrid(x=True, y=True, alpha=0.4)
-        super().__init__(view=view)
+        roi = pg.ROI(pos=(0, 0), size=10)  # type: ignore
+        roi.handleSize = 9
+        roi.addScaleHandle([1, 1], [0, 0])
+        roi.addRotateHandle([0, 0], [0.5, 0.5])
+        super().__init__(view=view, roi=roi)
         self.ui.graphicsView.setBackground(pg.mkBrush(20, 20, 20))
 
         self.ui.roiBtn.setChecked(True)
@@ -107,7 +110,7 @@ class ImageViewer(pg.ImageView):
         self.measure_roi.toggle()
         on_drop_roi_update = (
             self.data.n_images * np.prod(self.roi.size())
-            > ROI_ON_DROP_THRESHOLD
+            > settings.get("viewer/ROI_on_drop_threshold")
         )
         self.toggle_roi_update_frequency(on_drop_roi_update)
 
@@ -164,6 +167,8 @@ class ImageViewer(pg.ImageView):
             self.mask.addScaleHandle((0, 1), (1, 0))
             self.mask.addScaleHandle((1, 0), (0, 1))
             self.view.addItem(self.mask)
+            # removeHandle has to be called after adding mask to view
+            self.mask.removeHandle(0)
         else:
             self.view.removeItem(self.mask)
             self.mask = None
