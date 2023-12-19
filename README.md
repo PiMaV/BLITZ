@@ -1,4 +1,4 @@
-# BLITZ 
+# BLITZ
 BLITZ is an open-source image viewer specifically designed for "**B**ulk **L**oading and **I**nteractive **T**ime series **Z**onal analysis," developed at the [INP Greifswald](https://www.inp-greifswald.de). It is optimized for handling extensive image series, a common challenge in diagnostic imaging and process control. Programmed primarily in Python and utilizing QT and PyQTGraph.
 BLITZ offers:
 - rapid loading of large image series
@@ -6,7 +6,7 @@ BLITZ offers:
 - versatile data handling options
 - user-friendly GUI
 - stable lookup tables for visual consistency
-- powerful matrix-based image processing capabilities, allowing for instant statistical calculations and image manipulations. 
+- powerful matrix-based image processing capabilities, allowing for instant statistical calculations and image manipulations.
 
 ## Download the Latest Release for Windows
 [Most recent
@@ -25,7 +25,7 @@ this repository, create a virtual environment, install all dependencies and run 
 $ git clone https://github.com/CodeSchmiedeHGW/BLITZ.git
 $ cd BLITZ
 $ poetry install
-$ poetry run BLITZ
+$ poetry run python -m blitz
 ```
 
 ## Additional Resources
