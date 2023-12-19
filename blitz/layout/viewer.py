@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 import pyqtgraph as pg
@@ -6,6 +6,7 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QDropEvent, QMouseEvent
 from pyqtgraph import RectROI, mkPen
 
+from .. import settings
 from ..data.image import ImageData
 from ..data.load import from_file
 from ..tools import format_pixel_value, log, wrap_text
@@ -32,7 +33,11 @@ class ImageViewer(pg.ImageView):
     ) -> None:
         view = pg.PlotItem()
         view.showGrid(x=True, y=True, alpha=0.4)
-        super().__init__(view=view)
+        roi = pg.ROI(pos=(0, 0), size=10)  # type: ignore
+        roi.handleSize = 9
+        roi.addScaleHandle([1, 1], [0, 0])
+        roi.addRotateHandle([0, 0], [0.5, 0.5])
+        super().__init__(view=view, roi=roi)
         self.ui.graphicsView.setBackground(pg.mkBrush(20, 20, 20))
 
         self.ui.roiBtn.setChecked(True)
@@ -89,6 +94,7 @@ class ImageViewer(pg.ImageView):
         self.setImage(self.data.image)
         self.init_roi_and_crosshair()
         self.update_profiles()
+        self.autoRange()
 
     def init_roi_and_crosshair(self) -> None:
         height = self.image.shape[2]
@@ -102,38 +108,48 @@ class ImageViewer(pg.ImageView):
             [[0, 0], [0, 0.5*height], [0.5*width, 0.25*height]]
         )
         self.measure_roi.toggle()
+        on_drop_roi_update = (
+            self.data.n_images * np.prod(self.roi.size())
+            > settings.get("viewer/ROI_on_drop_threshold")
+        )
+        self.toggle_roi_update_frequency(on_drop_roi_update)
 
-    def manipulation(self, operation: str) -> None:
+    def manipulation(
+        self,
+        operation: str,
+        auto_range: bool = False,
+        auto_levels: bool = True,
+        auto_histogram_range: bool = False,
+    ) -> None:
         match operation:
-            case 'min':
-                self.setImage(self.data.min)
-            case 'max':
-                self.setImage(self.data.max)
-            case 'mean':
-                self.setImage(self.data.mean)
-            case 'std':
-                self.setImage(self.data.std)
+            case 'min' | 'max' | 'mean' | 'std':
+                self.data.reduce(operation)
             case 'org':
-                self.setImage(self.data.image)
+                self.data.unravel()
             case 'transpose' | 'flip_x' | 'flip_y':
                 getattr(self.data, operation)()
-                self.setImage(
-                    self.data.image,
-                    autoRange=False,
-                    autoLevels=False,
-                    autoHistogramRange=False,
-                )
             case _:
                 log("Operation not implemented")
+        self.setImage(
+            self.data.image,
+            autoRange=auto_range,
+            autoLevels=auto_levels,
+            autoHistogramRange=auto_histogram_range,
+        )
         self.init_roi_and_crosshair()
         self.update_profiles()
 
+    def auto_histogram_range(self) -> None:
+        self.ui.histogram.setHistogramRange(self.levelMin, self.levelMax)
+
     def reset(self) -> None:
         self.data.reset()
-        self.setImage(self.data.image)
-        self.autoRange()
-        self.autoLevels()
-        self.autoHistogramRange()
+        self.setImage(
+            self.data.image,
+            autoRange=True,
+            autoLevels=False,
+            autoHistogramRange=False,
+        )
         self.init_roi_and_crosshair()
 
     def apply_mask(self) -> None:
@@ -141,7 +157,12 @@ class ImageViewer(pg.ImageView):
             return
         self.data.mask(self.mask)
         self.toggle_mask()
-        self.setImage(self.data.image, autoRange=True)
+        self.setImage(
+            self.data.image,
+            autoRange=True,
+            autoLevels=False,
+            autoHistogramRange=False,
+        )
         self.init_roi_and_crosshair()
 
     def toggle_mask(self) -> None:
@@ -149,28 +170,41 @@ class ImageViewer(pg.ImageView):
             img = self.getImageItem().image
             width, height = img.shape[0], img.shape[1]  # type: ignore
             self.mask = RectROI((0, 0), (width, height), pen=(0, 9))
+            self.mask.handleSize = 10
             self.mask.addScaleHandle((0, 0), (1, 1))
             self.mask.addScaleHandle((1, 1), (0, 0))
             self.mask.addScaleHandle((0, 1), (1, 0))
             self.mask.addScaleHandle((1, 0), (0, 1))
             self.view.addItem(self.mask)
+            # removeHandle has to be called after adding mask to view
+            self.mask.removeHandle(0)
         else:
             self.view.removeItem(self.mask)
             self.mask = None
 
-    def toogle_roi_update_frequency(self) -> None:
-        if self.roi.receivers(self.roi.sigRegionChanged) > 1:
+    def toggle_roi_update_frequency(
+        self,
+        on_drop: Optional[bool] = None,
+    ) -> None:
+        if self.roi.receivers(self.roi.sigRegionChanged) > 1 and (
+            (on_drop is not None and on_drop) or (on_drop is None)
+        ):
             self.roi.sigRegionChanged.disconnect()
             self.roi.sigRegionChangeFinished.connect(self.roiChanged)
             self.roi.sigRegionChangeFinished.connect(
                 lambda: self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
             )
-        elif self.roi.receivers(self.roi.sigRegionChangeFinished) > 1:
+        elif self.roi.receivers(self.roi.sigRegionChangeFinished) > 1 and (
+            (on_drop is not None and not on_drop) or (on_drop is None)
+        ):
             self.roi.sigRegionChangeFinished.disconnect()
             self.roi.sigRegionChanged.connect(self.roiChanged)
             self.roi.sigRegionChanged.connect(
                 lambda: self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
             )
+
+    def is_roi_on_drop_update(self) -> bool:
+        return self.roi.receivers(self.roi.sigRegionChangeFinished) > 1
 
     def get_position_info(
         self,
@@ -205,6 +239,12 @@ class ImageViewer(pg.ImageView):
                 self.setCurrentIndex(index)
             else:
                 pg.PlotWidget.mousePressEvent(self.ui.roiPlot, ev)
+
+    def load_lut_config(self, lut: dict[str, Any]) -> None:
+        self.ui.histogram.restoreState(lut)
+
+    def get_lut_config(self) -> dict[str, Any]:
+        return self.ui.histogram.saveState()
 
     def setup_connections(self) -> None:
         self.crosshair_vline.sigPositionChanged.connect(self.update_profiles)
@@ -281,6 +321,7 @@ class MeasureROI(pg.PolyLineROI):
 
     def __init__(self, view: pg.ViewBox):
         super().__init__([[0, 0], [0, 20], [10, 10]], closed=True)
+        self.handleSize = 10
         self.sigRegionChanged.connect(self.update_labels)
         self.view = view
 

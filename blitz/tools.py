@@ -1,8 +1,13 @@
 import textwrap
-from typing import Any, Sequence
+from timeit import default_timer as clock
+from types import TracebackType
+from typing import Any, Optional, Self, Sequence
 
 import numpy as np
 import psutil
+from PyQt5.QtWidgets import (QApplication, QDialog, QLabel, QTextEdit,
+                             QVBoxLayout)
+
 
 LOGGER: Any = None
 
@@ -14,9 +19,67 @@ def log(message: str) -> None:
         LOGGER.log(message)
 
 
-def set_logger(logger: Any) -> None:
+def setup_logger(logger: Any) -> None:
     global LOGGER
     LOGGER = logger
+
+
+class LoadingDialog(QDialog):
+
+    def __init__(self, parent, message: str = "Loading ...") -> None:
+        super().__init__(parent)
+        self.setWindowTitle(message)
+        layout = QVBoxLayout()
+        label = QLabel(message)
+        layout.addWidget(label)
+        self.setLayout(layout)
+        self.setModal(True)
+
+
+class LoggingTextEdit(QTextEdit):
+
+    def log(self, message: Any):
+        cursor = self.textCursor()
+        cursor.movePosition(cursor.End)
+        if message != "\n":
+            cursor.insertText(f"> {message}\n")
+        self.setTextCursor(cursor)
+        self.ensureCursorVisible()
+
+
+class LoadingManager:
+
+    def __init__(self, parent, text: str = "Loading ...") -> None:
+        self.text = text
+        self.parent = parent
+        self._start_time = 0
+        self._time_needed = 0
+
+    @property
+    def time(self) -> float:
+        return clock() - self._start_time
+
+    @property
+    def duration(self) -> float:
+        return self._time_needed
+
+    def __enter__(self) -> Self:
+        self._dialog = LoadingDialog(self.parent, self.text)
+        self._dialog.show()
+        QApplication.processEvents()
+        self._start_time = clock()
+        return self
+
+    def __exit__(
+        self,
+        exctype: Optional[type[BaseException]],
+        excinst: Optional[BaseException],
+        exctb: Optional[TracebackType],
+    ) -> bool:
+        self._dialog.accept()
+        del self._dialog
+        self._time_needed = clock() - self._start_time
+        return False
 
 
 def get_available_ram() -> float:

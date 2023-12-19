@@ -1,1 +1,1 @@
-from . import main, widgets
+from . import main
