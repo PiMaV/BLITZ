@@ -2,7 +2,7 @@ import os
 from typing import Optional
 
 import pyqtgraph as pg
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QCoreApplication, Qt
 from PyQt5.QtGui import QFont, QIcon, QKeySequence
 from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
                              QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel,
@@ -21,6 +21,10 @@ TITLE = (
     "BLITZ: Bulk Loading and Interactive Time series Zonal analysis "
     "(INP Greifswald)"
 )
+
+
+def restart(self) -> None:
+    QCoreApplication.exit(settings.get("app/restart_exit_code"))
 
 
 class MainWindow(QMainWindow):
@@ -63,6 +67,7 @@ class MainWindow(QMainWindow):
         self.shortcut_copy.activated.connect(self.on_strgC)
 
         log("Welcome to BLITZ")
+        self.load_images()
 
     def setup_docks(self) -> None:
         viewer_height = self.height() - 2 * self.border_size
@@ -121,6 +126,11 @@ class MainWindow(QMainWindow):
         file_menu.addAction("Export").triggered.connect(
             self.image_viewer.exportClicked
         )
+        file_menu.addSeparator()
+        file_menu.addAction("Write .ini").triggered.connect(settings.export)
+        file_menu.addAction("Select .ini").triggered.connect(settings.select)
+        file_menu.addSeparator()
+        file_menu.addAction("Restart").triggered.connect(restart)
         menubar.addMenu(file_menu)
 
         view_menu = QMenu("View", self)
@@ -265,6 +275,19 @@ class MainWindow(QMainWindow):
         self.op_combobox.currentIndexChanged.connect(self.operation_changed)
         self.op_combobox.setStyleSheet(style_options)
         option_layout.addWidget(self.op_combobox)
+        auto_layout = QHBoxLayout()
+        label_auto = QLabel("LUT auto:")
+        label_auto.setStyleSheet(style_options)
+        self.auto_levels_checkbox = QCheckBox("Levels")
+        self.auto_levels_checkbox.setStyleSheet(style_options)
+        self.auto_levels_checkbox.setChecked(True)
+        self.auto_range_checkbox = QCheckBox("Range")
+        self.auto_range_checkbox.setStyleSheet(style_options)
+        self.auto_range_checkbox.setChecked(True)
+        auto_layout.addWidget(label_auto)
+        auto_layout.addWidget(self.auto_levels_checkbox)
+        auto_layout.addWidget(self.auto_range_checkbox)
+        option_layout.addLayout(auto_layout)
         norm_label = QLabel("Normalization")
         norm_label.setStyleSheet(style_heading)
         option_layout.addWidget(norm_label)
@@ -497,7 +520,9 @@ class MainWindow(QMainWindow):
         text = self.op_combobox.currentText()
         with LoadingManager(self, f"Loading {text}...") as lm:
             self.image_viewer.manipulation(
-                self.image_viewer.AVAILABLE_OPERATIONS[text]
+                self.image_viewer.AVAILABLE_OPERATIONS[text],
+                auto_levels=self.auto_levels_checkbox.isChecked(),
+                auto_histogram_range=self.auto_range_checkbox.isChecked(),
             )
         log(f"Seconds needed: {lm.duration:.2f}")
         log(f"Available RAM: {get_available_ram():.2f} GB")

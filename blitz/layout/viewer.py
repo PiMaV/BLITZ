@@ -114,7 +114,13 @@ class ImageViewer(pg.ImageView):
         )
         self.toggle_roi_update_frequency(on_drop_roi_update)
 
-    def manipulation(self, operation: str) -> None:
+    def manipulation(
+        self,
+        operation: str,
+        auto_range: bool = False,
+        auto_levels: bool = True,
+        auto_histogram_range: bool = False,
+    ) -> None:
         match operation:
             case 'min' | 'max' | 'mean' | 'std':
                 self.data.reduce(operation)
@@ -126,9 +132,9 @@ class ImageViewer(pg.ImageView):
                 log("Operation not implemented")
         self.setImage(
             self.data.image,
-            autoRange=False,
-            autoLevels=True,
-            autoHistogramRange=False,
+            autoRange=auto_range,
+            autoLevels=auto_levels,
+            autoHistogramRange=auto_histogram_range,
         )
         self.init_roi_and_crosshair()
         self.update_profiles()
