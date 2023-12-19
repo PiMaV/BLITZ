@@ -1,14 +1,15 @@
-import os
+import json
+from pathlib import Path
 from typing import Optional
 
 import pyqtgraph as pg
 from PyQt5.QtCore import QCoreApplication, Qt
 from PyQt5.QtGui import QFont, QIcon, QKeySequence
 from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
-                             QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel,
-                             QMainWindow, QMenu, QMenuBar, QPushButton,
-                             QScrollArea, QShortcut, QSpinBox, QStatusBar,
-                             QTabWidget, QVBoxLayout, QWidget)
+                             QDoubleSpinBox, QFileDialog, QGridLayout,
+                             QHBoxLayout, QLabel, QMainWindow, QMenu, QMenuBar,
+                             QPushButton, QScrollArea, QShortcut, QSpinBox,
+                             QStatusBar, QTabWidget, QVBoxLayout, QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import resources, settings
@@ -56,8 +57,7 @@ class MainWindow(QMainWindow):
         self.setup_image_and_line_viewers()
         self.setup_lut_dock()
 
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        self.last_file_dir = script_dir
+        self.last_file_dir = Path.cwd()
 
         self.setup_option_dock()
         self.setup_menu_and_status_bar()
@@ -161,12 +161,24 @@ class MainWindow(QMainWindow):
         self.setStatusBar(statusbar)
 
     def setup_lut_dock(self) -> None:
-        # lut_container = QWidget(self)
-        # lut_layout = QVBoxLayout()
-        # lut_container.setLayout(lut_layout)
         self.image_viewer.ui.histogram.setParent(None)
         self.dock_lookup.addWidget(self.image_viewer.ui.histogram)
-        # self.option_tabwidget.addTab(lut_container, "LUT")
+        levels_button = QPushButton("Fit Levels")
+        levels_button.pressed.connect(self.image_viewer.autoLevels)
+        range_button = QPushButton("Show Full Range")
+        range_button.pressed.connect(self.image_viewer.auto_histogram_range)
+        lut_button_container = QWidget(self)
+        lut_button_layout = QGridLayout()
+        lut_button_layout.addWidget(levels_button, 0, 0)
+        lut_button_layout.addWidget(range_button, 0, 1)
+        load_button = QPushButton("Load")
+        load_button.pressed.connect(self.browse_lut)
+        export_button = QPushButton("Export")
+        export_button.pressed.connect(self.save_lut)
+        lut_button_layout.addWidget(load_button, 1, 0)
+        lut_button_layout.addWidget(export_button, 1, 1)
+        lut_button_container.setLayout(lut_button_layout)
+        self.dock_lookup.addWidget(lut_button_container)
 
     def setup_option_dock(self) -> None:
         self.option_tabwidget = QTabWidget()
@@ -276,12 +288,12 @@ class MainWindow(QMainWindow):
         self.op_combobox.setStyleSheet(style_options)
         option_layout.addWidget(self.op_combobox)
         auto_layout = QHBoxLayout()
-        label_auto = QLabel("LUT auto:")
+        label_auto = QLabel("LUT:")
         label_auto.setStyleSheet(style_options)
-        self.auto_levels_checkbox = QCheckBox("Levels")
+        self.auto_levels_checkbox = QCheckBox("Fit Levels")
         self.auto_levels_checkbox.setStyleSheet(style_options)
         self.auto_levels_checkbox.setChecked(True)
-        self.auto_range_checkbox = QCheckBox("Range")
+        self.auto_range_checkbox = QCheckBox("Total Range")
         self.auto_range_checkbox.setStyleSheet(style_options)
         self.auto_range_checkbox.setChecked(True)
         auto_layout.addWidget(label_auto)
@@ -488,11 +500,42 @@ class MainWindow(QMainWindow):
 
     def browse_file(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
-            directory=self.last_file_dir
+            directory=str(self.last_file_dir),
         )
         if file_path:
-            self.last_file_dir = os.path.dirname(file_path)
+            self.last_file_dir = Path(file_path).parent
             self.load_images(file_path)
+
+    def browse_lut(self) -> None:
+        file, _ = QFileDialog.getOpenFileName(
+            caption="Choose LUT File",
+            directory=str(self.last_file_dir),
+            filter="JSON (*.json)",
+        )
+        if file:
+            try:
+                with open(file, "r", encoding="utf-8") as f:
+                    lut_config = json.load(f)
+                self.image_viewer.load_lut_config(lut_config)
+            except:
+                log("LUT could not be loaded. Make sure it is an "
+                    "appropriately structured '.json' file.")
+
+    def save_lut(self) -> None:
+        path = QFileDialog.getExistingDirectory(
+            caption="Choose LUT File Location",
+            directory=str(self.last_file_dir),
+        )
+        if path:
+            lut_config = self.image_viewer.get_lut_config()
+            file = Path(path) / "lut_config.json"
+            with open(file, "w", encoding="utf-8") as f:
+                lut_config = json.dump(
+                    lut_config,
+                    f,
+                    ensure_ascii=False,
+                    indent=4,
+                )
 
     def load_images(self, file_path: Optional[str] = None) -> None:
         text = f"Loading {'...' if file_path is None else file_path}"

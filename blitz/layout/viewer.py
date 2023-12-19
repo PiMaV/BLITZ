@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 import pyqtgraph as pg
@@ -139,13 +139,16 @@ class ImageViewer(pg.ImageView):
         self.init_roi_and_crosshair()
         self.update_profiles()
 
+    def auto_histogram_range(self) -> None:
+        self.ui.histogram.setHistogramRange(self.levelMin, self.levelMax)
+
     def reset(self) -> None:
         self.data.reset()
         self.setImage(
             self.data.image,
             autoRange=True,
-            autoLevels=True,
-            autoHistogramRange=True,
+            autoLevels=False,
+            autoHistogramRange=False,
         )
         self.init_roi_and_crosshair()
 
@@ -236,6 +239,12 @@ class ImageViewer(pg.ImageView):
                 self.setCurrentIndex(index)
             else:
                 pg.PlotWidget.mousePressEvent(self.ui.roiPlot, ev)
+
+    def load_lut_config(self, lut: dict[str, Any]) -> None:
+        self.ui.histogram.restoreState(lut)
+
+    def get_lut_config(self) -> dict[str, Any]:
+        return self.ui.histogram.saveState()
 
     def setup_connections(self) -> None:
         self.crosshair_vline.sigPositionChanged.connect(self.update_profiles)
