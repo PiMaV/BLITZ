@@ -303,10 +303,61 @@ class MainWindow(QMainWindow):
         norm_label = QLabel("Normalization")
         norm_label.setStyleSheet(style_heading)
         option_layout.addWidget(norm_label)
-        norm_checkbox = QCheckBox("Open Toolbox")
-        norm_checkbox.stateChanged.connect(self.image_viewer.normToggled)
-        norm_checkbox.setStyleSheet(style_options)
-        option_layout.addWidget(norm_checkbox)
+        self.norm_range_start = QSpinBox()
+        self.norm_range_start.setPrefix("Start ")
+        self.norm_range_start.setMinimum(0)
+        self.norm_range_end = QSpinBox()
+        self.norm_range_end.setPrefix("End ")
+        self.norm_range_end.setMinimum(1)
+        self.norm_range_start.valueChanged.connect(self.update_norm_range)
+        self.norm_range_end.valueChanged.connect(self.update_norm_range)
+        norm_range_checkbox = QCheckBox("Select")
+        norm_range_checkbox.setStyleSheet(style_options)
+        norm_range_checkbox.stateChanged.connect(self.toggle_norm_range_select)
+        range_layout = QHBoxLayout()
+        range_layout.addWidget(self.norm_range_start)
+        range_layout.addWidget(self.norm_range_end)
+        range_layout.addWidget(norm_range_checkbox)
+        option_layout.addLayout(range_layout)
+        self.norm_range = pg.LinearRegionItem()
+        self.norm_range.sigRegionChanged.connect(self.update_norm_range_labels)
+        self.norm_range.setZValue(0)
+        self.roi_plot.addItem(self.norm_range)
+        self.norm_range.hide()
+        norm_subtract_beta = QDoubleSpinBox()
+        norm_subtract_beta.setPrefix("beta: ")
+        norm_subtract_beta.setMinimum(0)
+        norm_subtract_beta.setMaximum(1)
+        norm_subtract_beta.setValue(1)
+        norm_subtract_beta.setSingleStep(0.01)
+        norm_subtract_box = QCheckBox("Subtract Mean")
+        norm_subtract_box.stateChanged.connect(
+            lambda: self.image_viewer.norm_subtract(
+                self.norm_range_start.value(), self.norm_range_end.value(),
+                norm_subtract_beta.value()
+            )
+        )
+        norm_subtract_layout = QHBoxLayout()
+        norm_subtract_layout.addWidget(norm_subtract_beta)
+        norm_subtract_layout.addWidget(norm_subtract_box)
+        option_layout.addLayout(norm_subtract_layout)
+        norm_divide_beta = QDoubleSpinBox()
+        norm_divide_beta.setPrefix("beta: ")
+        norm_divide_beta.setMinimum(0.0001)
+        norm_divide_beta.setMaximum(1)
+        norm_divide_beta.setValue(1)
+        norm_divide_beta.setSingleStep(0.01)
+        norm_divide_box = QCheckBox("Divide Mean")
+        norm_divide_box.stateChanged.connect(
+            lambda: self.image_viewer.norm_divide(
+                self.norm_range_start.value(), self.norm_range_end.value(),
+                norm_divide_beta.value()
+            )
+        )
+        norm_divide_layout = QHBoxLayout()
+        norm_divide_layout.addWidget(norm_divide_beta)
+        norm_divide_layout.addWidget(norm_divide_box)
+        option_layout.addLayout(norm_divide_layout)
         option_layout.addStretch()
 
         tools_layout = QVBoxLayout()
@@ -470,6 +521,22 @@ class MainWindow(QMainWindow):
         self.v_plot.setYLink(self.image_viewer.getView())
         self.h_plot.setXLink(self.image_viewer.getView())
 
+    def toggle_norm_range_select(self) -> None:
+        if self.norm_range.isVisible():
+            self.norm_range.hide()
+        else:
+            self.norm_range.show()
+
+    def update_norm_range_labels(self) -> None:
+        norm_range_ = self.norm_range.getRegion()
+        self.norm_range_start.setValue(int(norm_range_[0]))  # type: ignore
+        self.norm_range_end.setValue(int(norm_range_[1]))  # type: ignore
+
+    def update_norm_range(self) -> None:
+        self.norm_range.setRegion(
+            (self.norm_range_start.value(), self.norm_range_end.value())
+        )
+
     def override_timeline_keyPressEvent(self, ev) -> None:
         self.roi_plot.scene().keyPressEvent(ev)
         self.image_viewer.keyPressEvent(ev)
@@ -556,6 +623,12 @@ class MainWindow(QMainWindow):
             self.update_statusbar_frame()
             self.roi_drop_checkbox.setChecked(
                 self.image_viewer.is_roi_on_drop_update()
+            )
+            self.norm_range_start.setValue(0)
+            self.norm_range_start.setMaximum(self.image_viewer.data.n_images-1)
+            self.norm_range_end.setMaximum(self.image_viewer.data.n_images)
+            self.norm_range_end.setValue(
+                int(self.image_viewer.data.n_images / 2)
             )
 
     def operation_changed(self) -> None:

@@ -19,7 +19,9 @@ class ImageData:
         self._transposed = False
         self._flipped_x = False
         self._flipped_y = False
-        self._operation_active = None
+        self._reduce_operation = None
+        self._norm_subtract: np.ndarray | None = None
+        self._norm_divide: np.ndarray | None = None
 
     def set(
         self,
@@ -33,7 +35,7 @@ class ImageData:
     @property
     def image(self) -> np.ndarray:
         image: np.ndarray
-        match self._operation_active:
+        match self._reduce_operation:
             case 'min':
                 image = self._min  # type: ignore
             case 'max':
@@ -44,6 +46,10 @@ class ImageData:
                 image = self._std  # type: ignore
             case _:
                 image = self._image
+        if self._norm_subtract is not None:
+            image = self._norm_subtract
+        if self._norm_divide is not None:
+            image = self._norm_divide
         if self._mask is not None:
             image = image[self._mask]
         if self._transposed:
@@ -76,10 +82,34 @@ class ImageData:
             case 'std':
                 if self._std is None:
                     self._std = np.expand_dims(self._image.std(0), axis=0)
-        self._operation_active = operation
+        self._reduce_operation = operation
+
+    def normalize_subtract(self, left: int, right: int, beta: float) -> None:
+        if self._reduce_operation is not None:
+            log("Normalization not possible on reduced data")
+            return
+        if self._norm_subtract is not None:
+            self._norm_subtract = None
+            return
+        image = self.image
+        self._norm_subtract = image - beta * np.mean(image[left:right], axis=0)
+
+    def normalize_divide(self, left: int, right: int, beta: float) -> None:
+        if self._reduce_operation is not None:
+            log("Normalization not possible on reduced data")
+            return
+        if self._norm_divide is not None:
+            self._norm_divide = None
+            return
+        image = self.image
+        self._norm_divide = image / (beta * np.mean(image[left:right], axis=0))
 
     def unravel(self) -> None:
-        self._operation_active = None
+        self._reduce_operation = None
+
+    def unnormalize(self) -> None:
+        self._norm_operation = None
+        self._normalized = None
 
     def mask(self, roi: pg.ROI) -> None:
         if self._transposed or self._flipped_x or self._flipped_y:
@@ -96,7 +126,7 @@ class ImageData:
             x_stop += self._mask[1].start
             y_start += self._mask[2].start
             y_stop += self._mask[2].start
-        op = self._operation_active
+        op = self._reduce_operation
         self.reset()
         self.reduce(op)  # type: ignore
         self._mask = (
@@ -109,6 +139,7 @@ class ImageData:
         self._max = None
         self._mean = None
         self._std = None
+        self._normalized = None
 
     def transpose(self) -> None:
         self._transposed = not self._transposed
