@@ -20,8 +20,8 @@ class ImageData:
         self._flipped_x = False
         self._flipped_y = False
         self._reduce_operation = None
-        self._norm_subtract: np.ndarray | None = None
-        self._norm_divide: np.ndarray | None = None
+        self._norm: np.ndarray | None = None
+        self._norm_operation: Literal["subtract", "divide"] | None = None
 
     def set(
         self,
@@ -46,10 +46,8 @@ class ImageData:
                 image = self._std  # type: ignore
             case _:
                 image = self._image
-        if self._norm_subtract is not None:
-            image = self._norm_subtract
-        if self._norm_divide is not None:
-            image = self._norm_divide
+        if self._norm is not None:
+            image = self._norm
         if self._mask is not None:
             image = image[self._mask]
         if self._transposed:
@@ -84,32 +82,26 @@ class ImageData:
                     self._std = np.expand_dims(self._image.std(0), axis=0)
         self._reduce_operation = operation
 
-    def normalize_subtract(self, left: int, right: int, beta: float) -> None:
+    def normalize(self, left: int, right: int, beta: float, name: str) -> None:
         if self._reduce_operation is not None:
             log("Normalization not possible on reduced data")
             return
-        if self._norm_subtract is not None:
-            self._norm_subtract = None
+        if self._norm_operation == name:
+            self._norm_operation = None
+            self._norm = None
             return
+        if self._norm_operation is not None:
+            self._norm = None
         image = self.image
-        self._norm_subtract = image - beta * np.mean(image[left:right], axis=0)
-
-    def normalize_divide(self, left: int, right: int, beta: float) -> None:
-        if self._reduce_operation is not None:
-            log("Normalization not possible on reduced data")
-            return
-        if self._norm_divide is not None:
-            self._norm_divide = None
-            return
-        image = self.image
-        self._norm_divide = image / (beta * np.mean(image[left:right], axis=0))
+        mean = beta * np.mean(image[left:right+1], axis=0)
+        if name == "subtract":
+            self._norm = image - mean
+        if name == "divide":
+            self._norm = image / mean
+        self._norm_operation = name  # type: ignore
 
     def unravel(self) -> None:
         self._reduce_operation = None
-
-    def unnormalize(self) -> None:
-        self._norm_operation = None
-        self._normalized = None
 
     def mask(self, roi: pg.ROI) -> None:
         if self._transposed or self._flipped_x or self._flipped_y:
@@ -139,7 +131,8 @@ class ImageData:
         self._max = None
         self._mean = None
         self._std = None
-        self._normalized = None
+        self._norm = None
+        self._norm_operation = None
 
     def transpose(self) -> None:
         self._transposed = not self._transposed

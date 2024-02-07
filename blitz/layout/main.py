@@ -6,10 +6,11 @@ import pyqtgraph as pg
 from PyQt5.QtCore import QCoreApplication, Qt
 from PyQt5.QtGui import QFont, QIcon, QKeySequence
 from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
-                             QDoubleSpinBox, QFileDialog, QGridLayout,
+                             QDoubleSpinBox, QFileDialog, QFrame, QGridLayout,
                              QHBoxLayout, QLabel, QMainWindow, QMenu, QMenuBar,
                              QPushButton, QScrollArea, QShortcut, QSpinBox,
-                             QStatusBar, QTabWidget, QVBoxLayout, QWidget)
+                             QStatusBar, QStyle, QTabWidget, QTextEdit,
+                             QVBoxLayout, QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import resources, settings
@@ -303,61 +304,73 @@ class MainWindow(QMainWindow):
         norm_label = QLabel("Normalization")
         norm_label.setStyleSheet(style_heading)
         option_layout.addWidget(norm_label)
+        norm_range_label = QLabel("Range:")
+        norm_range_label.setStyleSheet(style_options)
+        norm_range_label_to = QLabel("-")
+        norm_range_label_to.setStyleSheet(style_options)
         self.norm_range_start = QSpinBox()
-        self.norm_range_start.setPrefix("Start ")
         self.norm_range_start.setMinimum(0)
         self.norm_range_end = QSpinBox()
-        self.norm_range_end.setPrefix("End ")
         self.norm_range_end.setMinimum(1)
         self.norm_range_start.valueChanged.connect(self.update_norm_range)
         self.norm_range_end.valueChanged.connect(self.update_norm_range)
-        norm_range_checkbox = QCheckBox("Select")
+        norm_range_checkbox = QCheckBox("")
+        pixmapi = getattr(QStyle, "SP_DesktopIcon")
+        norm_range_checkbox.setIcon(
+            norm_range_checkbox.style().standardIcon(pixmapi)  # type: ignore
+        )
         norm_range_checkbox.setStyleSheet(style_options)
         norm_range_checkbox.stateChanged.connect(self.toggle_norm_range_select)
         range_layout = QHBoxLayout()
+        range_layout.addWidget(norm_range_label)
         range_layout.addWidget(self.norm_range_start)
+        range_layout.addWidget(norm_range_label_to)
         range_layout.addWidget(self.norm_range_end)
         range_layout.addWidget(norm_range_checkbox)
         option_layout.addLayout(range_layout)
+        norm_bg_label = QLabel("Background:")
+        norm_bg_label.setStyleSheet(style_options)
+        self.bg_input_button = QPushButton("Select")
+        self.bg_input_button.clicked.connect(self.search_background_file)
+        self.bg_remove_button = QPushButton()
+        pixmapi = getattr(QStyle, "SP_DialogCancelButton")
+        self.bg_remove_button.setIcon(
+            self.bg_remove_button.style().standardIcon(pixmapi)  # type: ignore
+        )
+        self.bg_remove_button.clicked.connect(self.remove_background_file)
+        bg_layout = QHBoxLayout()
+        bg_layout.addWidget(norm_bg_label)
+        bg_layout.addWidget(self.bg_input_button)
+        bg_layout.addWidget(self.bg_remove_button)
+        option_layout.addLayout(bg_layout)
         self.norm_range = pg.LinearRegionItem()
         self.norm_range.sigRegionChanged.connect(self.update_norm_range_labels)
         self.norm_range.setZValue(0)
         self.roi_plot.addItem(self.norm_range)
         self.norm_range.hide()
-        norm_subtract_beta = QDoubleSpinBox()
-        norm_subtract_beta.setPrefix("beta: ")
-        norm_subtract_beta.setMinimum(0)
-        norm_subtract_beta.setMaximum(1)
-        norm_subtract_beta.setValue(1)
-        norm_subtract_beta.setSingleStep(0.01)
-        norm_subtract_box = QCheckBox("Subtract Mean")
-        norm_subtract_box.stateChanged.connect(
-            lambda: self.image_viewer.norm_subtract(
-                self.norm_range_start.value(), self.norm_range_end.value(),
-                norm_subtract_beta.value()
-            )
+        self.norm_beta = QDoubleSpinBox()
+        self.norm_beta.setPrefix("beta: ")
+        self.norm_beta.setMinimum(0)
+        self.norm_beta.setMaximum(1)
+        self.norm_beta.setValue(1)
+        self.norm_beta.setSingleStep(0.01)
+        self.norm_subtract_box = QCheckBox("Subtract Mean")
+        self.norm_subtract_box.clicked.connect(
+            lambda: self._normalization("subtract")
         )
-        norm_subtract_layout = QHBoxLayout()
-        norm_subtract_layout.addWidget(norm_subtract_beta)
-        norm_subtract_layout.addWidget(norm_subtract_box)
-        option_layout.addLayout(norm_subtract_layout)
-        norm_divide_beta = QDoubleSpinBox()
-        norm_divide_beta.setPrefix("beta: ")
-        norm_divide_beta.setMinimum(0.0001)
-        norm_divide_beta.setMaximum(1)
-        norm_divide_beta.setValue(1)
-        norm_divide_beta.setSingleStep(0.01)
-        norm_divide_box = QCheckBox("Divide Mean")
-        norm_divide_box.stateChanged.connect(
-            lambda: self.image_viewer.norm_divide(
-                self.norm_range_start.value(), self.norm_range_end.value(),
-                norm_divide_beta.value()
-            )
+        self.norm_divide_box = QCheckBox("Divide Mean")
+        self.norm_divide_box.clicked.connect(
+            lambda: self._normalization("divide")
         )
-        norm_divide_layout = QHBoxLayout()
-        norm_divide_layout.addWidget(norm_divide_beta)
-        norm_divide_layout.addWidget(norm_divide_box)
-        option_layout.addLayout(norm_divide_layout)
+        norm_layout = QGridLayout()
+        norm_layout.addWidget(self.norm_beta, 0, 0, 2, 1)
+        norm_layout.addWidget(self.norm_subtract_box, 0, 1, 1, 2)
+        norm_layout.addWidget(self.norm_divide_box, 1, 1, 1, 2)
+        hline = QFrame()
+        hline.setFrameShape(QFrame.Shape.HLine)
+        hline.setFrameShadow(QFrame.Shadow.Sunken)
+        option_layout.addWidget(hline)
+        option_layout.addLayout(norm_layout)
         option_layout.addStretch()
 
         tools_layout = QVBoxLayout()
@@ -537,6 +550,29 @@ class MainWindow(QMainWindow):
             (self.norm_range_start.value(), self.norm_range_end.value())
         )
 
+    def _normalization(self, name: str) -> None:
+        if name == "subtract" and self.norm_divide_box.isChecked():
+            self.norm_divide_box.setChecked(False)
+        elif name == "divide" and self.norm_subtract_box.isChecked():
+            self.norm_subtract_box.setChecked(False)
+        self.image_viewer.norm(
+            self.norm_range_start.value(), self.norm_range_end.value(),
+            self.norm_divide_beta.value(), name=name,
+        )
+
+    def search_background_file(self) -> None:
+        file, _ = QFileDialog.getOpenFileName(
+            caption="Choose Background File",
+            directory=str(self.last_file_dir),
+        )
+        pixmapi = getattr(QStyle, "SP_DialogApplyButton")
+        self.bg_input_button.setIcon(
+            self.bg_input_button.style().standardIcon(pixmapi)  # type: ignore
+        )
+
+    def remove_background_file(self) -> None:
+        self.bg_input_button.setText("Select")
+
     def override_timeline_keyPressEvent(self, ev) -> None:
         self.roi_plot.scene().keyPressEvent(ev)
         self.image_viewer.keyPressEvent(ev)
@@ -627,9 +663,7 @@ class MainWindow(QMainWindow):
             self.norm_range_start.setValue(0)
             self.norm_range_start.setMaximum(self.image_viewer.data.n_images-1)
             self.norm_range_end.setMaximum(self.image_viewer.data.n_images)
-            self.norm_range_end.setValue(
-                int(self.image_viewer.data.n_images / 2)
-            )
+            self.norm_range_end.setValue(self.image_viewer.data.n_images-1)
 
     def operation_changed(self) -> None:
         log(f"Available RAM: {get_available_ram():.2f} GB")

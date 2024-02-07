@@ -114,24 +114,16 @@ class ImageViewer(pg.ImageView):
         )
         self.toggle_roi_update_frequency(on_drop_roi_update)
 
-    def norm_subtract(self, left: int, right: int, beta: float) -> None:
-        self.data.normalize_subtract(left, right, beta)
+    def norm(self, left: int, right: int, beta: float, name: str) -> None:
+        self.data.normalize(left, right, beta, name=name)
         self.setImage(
             self.data.image,
             autoRange=False,
             autoLevels=False,
             autoHistogramRange=False,
         )
+        self.ui.roiPlot.plotItem.vb.autoRange()
         self.update_profiles()
-
-    def norm_divide(self, left: int, right: int, beta: float) -> None:
-        self.data.normalize_divide(left, right, beta)
-        self.setImage(
-            self.data.image,
-            autoRange=False,
-            autoLevels=False,
-            autoHistogramRange=False,
-        )
 
     def manipulation(
         self,
