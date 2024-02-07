@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
@@ -7,8 +8,7 @@ from PyQt5.QtGui import QDropEvent, QMouseEvent
 from pyqtgraph import RectROI, mkPen
 
 from .. import settings
-from ..data.image import ImageData
-from ..data.load import from_file
+from ..data.load import DataLoader
 from ..tools import format_pixel_value, log, wrap_text
 
 
@@ -50,7 +50,6 @@ class ImageViewer(pg.ImageView):
 
         self.measure_roi = MeasureROI(self.view)
 
-        self.data = ImageData()
         self.mask: None | RectROI = None
         self.pixel_value: Optional[np.ndarray] = None
 
@@ -89,8 +88,8 @@ class ImageViewer(pg.ImageView):
         file_path = e.mimeData().urls()[0].toLocalFile()
         self.file_dropped.emit(file_path)
 
-    def load_data(self, filepath: Optional[str] = None, **kwargs) -> None:
-        self.data.set(*from_file(filepath, **kwargs))
+    def load_data(self, filepath: Optional[Path] = None, **kwargs) -> None:
+        self.data = DataLoader(**kwargs).load(filepath)
         self.setImage(self.data.image)
         self.init_roi_and_crosshair()
         self.update_profiles()

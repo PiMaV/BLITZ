@@ -62,7 +62,7 @@ class MainWindow(QMainWindow):
 
         self.setup_option_dock()
         self.setup_menu_and_status_bar()
-        self.image_viewer.file_dropped.connect(self.load_images)
+        self.image_viewer.file_dropped.connect(self.load_images_adapter)
 
         self.shortcut_copy = QShortcut(QKeySequence("Ctrl+C"), self)
         self.shortcut_copy.activated.connect(self.on_strgC)
@@ -607,7 +607,7 @@ class MainWindow(QMainWindow):
         )
         if file_path:
             self.last_file_dir = Path(file_path).parent
-            self.load_images(file_path)
+            self.load_images(Path(file_path))
 
     def browse_lut(self) -> None:
         file, _ = QFileDialog.getOpenFileName(
@@ -640,7 +640,10 @@ class MainWindow(QMainWindow):
                     indent=4,
                 )
 
-    def load_images(self, file_path: Optional[str] = None) -> None:
+    def load_images_adapter(self, file_path: Optional[Path] = None) -> None:
+        self.load_images(Path(file_path) if file_path is not None else None)
+
+    def load_images(self, file_path: Optional[Path] = None) -> None:
         text = f"Loading {'...' if file_path is None else file_path}"
         with LoadingManager(self, text) as lm:
             self.image_viewer.load_data(

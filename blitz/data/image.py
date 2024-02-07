@@ -8,9 +8,13 @@ from ..tools import log
 
 class ImageData:
 
-    def __init__(self) -> None:
-        self._image = np.empty((1, ))
-        self._meta = []
+    def __init__(
+        self,
+        image: np.ndarray,
+        metadata: list[dict[str, Any]],
+    ) -> None:
+        self._image = image
+        self._meta = metadata
         self._min: np.ndarray | None = None
         self._max: np.ndarray | None = None
         self._mean: np.ndarray | None = None
@@ -23,14 +27,18 @@ class ImageData:
         self._norm: np.ndarray | None = None
         self._norm_operation: Literal["subtract", "divide"] | None = None
 
-    def set(
-        self,
-        image: np.ndarray,
-        metadata: list[dict[str, Any]],
-    ) -> None:
-        self.reset()
-        self._image = image
-        self._meta = metadata
+    def reset(self) -> None:
+        self._min = None
+        self._max = None
+        self._mean = None
+        self._std = None
+        self._mask = None
+        self._transposed = False
+        self._flipped_x = False
+        self._flipped_y = False
+        self._reduce_operation = None
+        self._norm = None
+        self._norm_operation = None
 
     @property
     def image(self) -> np.ndarray:
@@ -124,15 +132,6 @@ class ImageData:
         self._mask = (
             slice(None, None), slice(x_start, x_stop), slice(y_start, y_stop),
         )
-
-    def reset(self) -> None:
-        self._mask = None
-        self._min = None
-        self._max = None
-        self._mean = None
-        self._std = None
-        self._norm = None
-        self._norm_operation = None
 
     def transpose(self) -> None:
         self._transposed = not self._transposed
