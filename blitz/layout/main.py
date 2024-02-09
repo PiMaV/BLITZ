@@ -68,7 +68,6 @@ class MainWindow(QMainWindow):
         self.shortcut_copy.activated.connect(self.on_strgC)
 
         log("Welcome to BLITZ")
-        self.load_images()
 
     def setup_docks(self) -> None:
         viewer_height = self.height() - 2 * self.border_size
@@ -557,7 +556,7 @@ class MainWindow(QMainWindow):
             self.norm_subtract_box.setChecked(False)
         self.image_viewer.norm(
             self.norm_range_start.value(), self.norm_range_end.value(),
-            self.norm_divide_beta.value(), name=name,
+            self.norm_beta.value(), name=name,
         )
 
     def search_background_file(self) -> None:

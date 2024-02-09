@@ -77,6 +77,7 @@ class ImageViewer(pg.ImageView):
             lambda: self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
         )
         self.setAcceptDrops(True)
+        self.load_data()
 
     def dragEnterEvent(self, e: QDropEvent):
         if e.mimeData().hasUrls():
@@ -121,7 +122,7 @@ class ImageViewer(pg.ImageView):
             autoLevels=False,
             autoHistogramRange=False,
         )
-        self.ui.roiPlot.plotItem.vb.autoRange()
+        self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
         self.update_profiles()
 
     def manipulation(

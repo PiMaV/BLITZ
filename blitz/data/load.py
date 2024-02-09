@@ -7,6 +7,7 @@ from typing import Any, Optional
 import cv2
 import numpy as np
 
+from .. import settings
 from ..tools import log
 from .image import ImageData
 from .tools import (adjust_ratio_for_memory, resize_and_convert,
@@ -15,9 +16,6 @@ from .tools import (adjust_ratio_for_memory, resize_and_convert,
 IMAGE_EXTENSIONS = (".jpg", ".png", ".jpeg", ".bmp", ".tiff", ".tif")
 VIDEO_EXTENSIONS = (".mp4", ".avi", ".mov")
 ARRAY_EXTENSIONS = (".npy", )
-
-MULTICORE_SIZE_THRESHOLD = 1.3 * (2**30)  # in GB
-MULTICORE_ARRAYS_THRESHOLD = 333
 
 
 class DataLoader:
@@ -98,8 +96,9 @@ class DataLoader:
         content = content[::int(np.ceil(1/ratio))]
         log(f"Loading {len(content)}/{full_dataset_size} files")
 
-        if (len(content) > MULTICORE_ARRAYS_THRESHOLD
-                or total_size_estimate > MULTICORE_SIZE_THRESHOLD):
+        if (len(content) > settings.get("data/multicore_files_threshold")
+                or total_size_estimate >
+                    settings.get("data/multicore_size_threshold")):
             with Pool(cpu_count()) as pool:
                 results = pool.starmap(
                     load_function,
@@ -202,11 +201,16 @@ class DataLoader:
                 video.grab()
 
         video.release()
-        return ImageData(np.stack(frames), metadata)
+        return ImageData(np.swapaxes(np.stack(frames), 1, 2), metadata)
 
     def _load_array(self, path: Path) -> tuple[np.ndarray, dict[str, Any]]:
+        array: np.ndarray = np.load(path)
+        if self.grayscale and array.ndim == 3:
+            weights = np.array([0.2989, 0.5870, 0.1140])
+            array = np.sum(array * weights, axis=2)
+
         array = np.swapaxes(resize_and_convert_to_8_bit(
-            np.load(path),
+            array,
             self.size,
             self.convert_to_8_bit,
         ), 0, 1)

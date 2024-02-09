@@ -14,6 +14,9 @@ _default_settings = {
 
     "viewer/ROI_on_drop_threshold": 500_000,
 
+    "data/multicore_size_threshold": 1.3 * (2**30),
+    "data/multicore_files_threshold": 333,
+
     "app/restart_exit_code": -12341234,
 }
 
