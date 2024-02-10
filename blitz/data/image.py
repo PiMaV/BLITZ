@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
 import numpy as np
 import pyqtgraph as pg
@@ -74,6 +74,9 @@ class ImageData:
     def meta(self) -> list[dict[str, Any]]:
         return self._meta
 
+    def is_single_image(self) -> bool:
+        return self._image.shape[0] == 1
+
     def reduce(self, operation: Literal['min', 'max', 'mean', 'std']) -> None:
         match operation:
             case 'min':
@@ -90,23 +93,46 @@ class ImageData:
                     self._std = np.expand_dims(self._image.std(0), axis=0)
         self._reduce_operation = operation
 
-    def normalize(self, left: int, right: int, beta: float, name: str) -> None:
+    def normalize(
+        self,
+        operation: Literal["subtract", "divide"],
+        beta: float = 1.0,
+        left: Optional[int] = None,
+        right: Optional[int] = None,
+        reference: Optional["ImageData"] = None,
+    ) -> bool:
         if self._reduce_operation is not None:
             log("Normalization not possible on reduced data")
-            return
-        if self._norm_operation == name:
+            return False
+        if self._norm_operation == operation:
             self._norm_operation = None
             self._norm = None
-            return
+            return True
         if self._norm_operation is not None:
             self._norm = None
         image = self.image
-        mean = beta * np.mean(image[left:right+1], axis=0)
-        if name == "subtract":
-            self._norm = image - mean
-        if name == "divide":
-            self._norm = image / mean
-        self._norm_operation = name  # type: ignore
+        mean_range = mean_ref = None
+        if left is not None and right is not None:
+            mean_range = beta * np.mean(image[left:right+1], axis=0)
+        elif reference is not None:
+            mean_ref = reference.image.mean(axis=0)
+            if mean_ref.shape != image.shape[1:]:
+                log("Error: Background image has incompatible shape")
+                return False
+        else:
+            return False
+        if operation == "subtract":
+            if mean_range is not None:
+                self._norm = image - mean_range
+            if mean_ref is not None:
+                self._norm = image - mean_ref
+        if operation == "divide":
+            if mean_range is not None:
+                self._norm = image / mean_range
+            if mean_ref is not None:
+                self._norm = image / mean_ref
+        self._norm_operation = operation  # type: ignore
+        return True
 
     def unravel(self) -> None:
         self._reduce_operation = None

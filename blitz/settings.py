@@ -8,11 +8,11 @@ SETTINGS: "_Settings" = None  # type: ignore
 
 
 _default_settings = {
-    "window/ratio": 0.75,
     "window/relative_size": 0.85,
-    "window/LUT_vertical_ratio": 0.6,
+    "window/docks": {},
 
     "viewer/ROI_on_drop_threshold": 500_000,
+    "viewer/LUT_source": "",
 
     "data/multicore_size_threshold": 1.3 * (2**30),
     "data/multicore_files_threshold": 333,
@@ -53,8 +53,16 @@ class _Settings:
         )
 
     def write_all(self) -> None:
-        for key, value in _default_settings.items():
-            self.settings.setValue(key, value)
+        self.settings.sync()
+        for key in _default_settings.keys():
+            self.settings.setValue(
+                key,
+                self.settings.value(
+                    key,
+                    _default_settings[key],
+                    type(_default_settings[key]),
+                ),
+            )
 
     def __getitem__(self, setting: str) -> Any:
         self.settings.sync()

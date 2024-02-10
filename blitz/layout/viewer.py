@@ -8,7 +8,7 @@ from PyQt5.QtGui import QDropEvent, QMouseEvent
 from pyqtgraph import RectROI, mkPen
 
 from .. import settings
-from ..data.load import DataLoader
+from ..data.load import DataLoader, ImageData
 from ..tools import format_pixel_value, log, wrap_text
 
 
@@ -77,6 +77,8 @@ class ImageViewer(pg.ImageView):
             lambda: self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
         )
         self.setAcceptDrops(True)
+        self._fit_levels = True
+        self._background_image: ImageData | None = None
         self.load_data()
 
     def dragEnterEvent(self, e: QDropEvent):
@@ -89,12 +91,26 @@ class ImageViewer(pg.ImageView):
         file_path = e.mimeData().urls()[0].toLocalFile()
         self.file_dropped.emit(file_path)
 
-    def load_data(self, filepath: Optional[Path] = None, **kwargs) -> None:
-        self.data = DataLoader(**kwargs).load(filepath)
+    def toggle_fit_levels(self) -> None:
+        self._fit_levels = not self._fit_levels
+
+    def load_data(self, path: Optional[Path] = None, **kwargs) -> None:
+        self.data = DataLoader(**kwargs).load(path)
         self.setImage(self.data.image)
         self.init_roi_and_crosshair()
         self.update_profiles()
         self.autoRange()
+
+    def load_background_file(self, path: Path) -> bool:
+        self._background_image = DataLoader().load(path)
+        if not self._background_image.is_single_image():
+            log("Error: Background is not a single image")
+            self._background_image = None
+            return False
+        return True
+
+    def unload_background_file(self) -> None:
+        self._background_image = None
 
     def init_roi_and_crosshair(self) -> None:
         height = self.image.shape[2]
@@ -114,52 +130,70 @@ class ImageViewer(pg.ImageView):
         )
         self.toggle_roi_update_frequency(on_drop_roi_update)
 
-    def norm(self, left: int, right: int, beta: float, name: str) -> None:
-        self.data.normalize(left, right, beta, name=name)
+    def norm(
+        self,
+        operation: str,
+        beta: float = 1.0,
+        left: Optional[int] = None,
+        right: Optional[int] = None,
+        background: bool = False,
+    ) -> None:
+        self.data.normalize(
+            operation=operation,  # type: ignore
+            beta=beta,
+            left=left,
+            right=right,
+            reference=self._background_image if background else None,
+        )
+        pos = self.timeLine.pos()
         self.setImage(
             self.data.image,
             autoRange=False,
-            autoLevels=False,
-            autoHistogramRange=False,
+            autoLevels=self._fit_levels,
         )
+        self.timeLine.setPos(pos)
         self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
         self.update_profiles()
 
-    def manipulation(
-        self,
-        operation: str,
-        auto_range: bool = False,
-        auto_levels: bool = True,
-        auto_histogram_range: bool = False,
-    ) -> None:
+    def reduce(self, operation: str) -> None:
         match operation:
             case 'min' | 'max' | 'mean' | 'std':
                 self.data.reduce(operation)
             case 'org':
                 self.data.unravel()
-            case 'transpose' | 'flip_x' | 'flip_y':
-                getattr(self.data, operation)()
             case _:
                 log("Operation not implemented")
+                return
         self.setImage(
             self.data.image,
-            autoRange=auto_range,
-            autoLevels=auto_levels,
-            autoHistogramRange=auto_histogram_range,
+            autoRange=False,
+            autoLevels=self._fit_levels,
         )
         self.init_roi_and_crosshair()
         self.update_profiles()
 
-    def auto_histogram_range(self) -> None:
-        self.ui.histogram.setHistogramRange(self.levelMin, self.levelMax)
+    def manipulate(self, operation: str) -> None:
+        if operation in ['transpose', 'flip_x', 'flip_y']:
+            getattr(self.data, operation)()
+        else:
+            log("Operation not implemented")
+            return
+        pos = self.timeLine.pos()
+        self.setImage(
+            self.data.image,
+            autoRange=False,
+            autoLevels=self._fit_levels,
+        )
+        self.timeLine.setPos(pos)
+        self.init_roi_and_crosshair()
+        self.update_profiles()
 
     def reset(self) -> None:
         self.data.reset()
         self.setImage(
             self.data.image,
             autoRange=True,
-            autoLevels=False,
-            autoHistogramRange=False,
+            autoLevels=self._fit_levels,
         )
         self.init_roi_and_crosshair()
 
@@ -168,12 +202,13 @@ class ImageViewer(pg.ImageView):
             return
         self.data.mask(self.mask)
         self.toggle_mask()
+        pos = self.timeLine.pos()
         self.setImage(
             self.data.image,
             autoRange=True,
-            autoLevels=False,
-            autoHistogramRange=False,
+            autoLevels=self._fit_levels,
         )
+        self.timeLine.setPos(pos)
         self.init_roi_and_crosshair()
 
     def toggle_mask(self) -> None:

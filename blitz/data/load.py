@@ -34,15 +34,15 @@ class DataLoader:
 
     def __init__(
         self,
-        ram_size: int = 1,
-        size: int = 1,
-        ratio: float = 1,
+        size_ratio: float = 1.0,
+        subset_ratio: float = 1.0,
+        max_ram: float = 1.0,
         convert_to_8_bit: bool = False,
         grayscale: bool = False,
     ) -> None:
-        self.ram_size = ram_size
-        self.size = size
-        self.ratio = ratio
+        self.max_ram = max_ram
+        self.size_ratio = size_ratio
+        self.subset_ratio = subset_ratio
         self.convert_to_8_bit = convert_to_8_bit
         self.grayscale = grayscale
 
@@ -72,11 +72,11 @@ class DataLoader:
         content = [f for f in path.iterdir()]
         if len(set(f.suffix for f in content)) > 1:
             log("Error: folder contains multiple file types")
-            return self._from_text("Error", color=(255, 0, 0))
+            return self._from_text("Error loading files", color=(255, 0, 0))
 
         if DataLoader._is_image(content[0]):
             sample, _ = self._load_image(content[0])
-            total_size_estimate = len(content) * self.size**2 * (
+            total_size_estimate = len(content) * self.size_ratio**2 * (
                 sample.size if self.convert_to_8_bit else sample.nbytes
             )
             load_function = self._load_image
@@ -89,11 +89,11 @@ class DataLoader:
             return self._from_text("Unsupported file type", color=(255, 0, 0))
 
         adjusted_ratio = adjust_ratio_for_memory(
-            total_size_estimate, self.ram_size,
+            total_size_estimate, self.max_ram,
         )
-        ratio = min(self.ratio, adjusted_ratio)
+        ratio = min(self.subset_ratio, adjusted_ratio)
         full_dataset_size = len(content)
-        content = content[::int(np.ceil(1/ratio))]
+        content = content[::int(np.ceil(1 / ratio))]
         log(f"Loading {len(content)}/{full_dataset_size} files")
 
         if (len(content) > settings.get("data/multicore_files_threshold")
@@ -112,7 +112,11 @@ class DataLoader:
                 matrices.append(matrix)
                 metadata.append(meta)
 
-        matrices = np.stack(matrices)
+        try:
+            matrices = np.stack(matrices)
+        except:
+            log("Error loading files: shapes of images do not match")
+            return self._from_text("Error loading files", color=(255, 0, 0))
         return ImageData(matrices, metadata)
 
     def _load_image(self, path: Path) -> tuple[np.ndarray, dict[str, Any]]:
@@ -128,7 +132,11 @@ class DataLoader:
             elif image.shape[2] == 4:
                 image = cv2.cvtColor(image, cv2.COLOR_BGRA2RGB)
 
-        image = resize_and_convert(image, self.size, self.convert_to_8_bit)
+        image = resize_and_convert(
+            image,
+            self.size_ratio,
+            self.convert_to_8_bit,
+        )
         metadata = {
             "file_name": path.name,
             "file_size_MB": os.path.getsize(path) / 2**20,
@@ -154,10 +162,10 @@ class DataLoader:
         log(f"Estimated size to load: {memory_estimate / 2**20:.2f} MB")
         adjusted_ratio = adjust_ratio_for_memory(
             memory_estimate,
-            self.ram_size,
+            self.max_ram,
         )
 
-        ratio = min(self.ratio, adjusted_ratio)
+        ratio = min(self.subset_ratio, adjusted_ratio)
         if ratio == 1:
             log("No adjustment to ratio required, loading the full dataset")
         else:
@@ -179,7 +187,7 @@ class DataLoader:
                 cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     if not self.grayscale else
                     cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY),
-                self.size,
+                self.size_ratio,
                 self.convert_to_8_bit,
             ))
 
@@ -211,7 +219,7 @@ class DataLoader:
 
         array = np.swapaxes(resize_and_convert_to_8_bit(
             array,
-            self.size,
+            self.size_ratio,
             self.convert_to_8_bit,
         ), 0, 1)
         metadata = {

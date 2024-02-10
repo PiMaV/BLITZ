@@ -9,8 +9,8 @@ from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
                              QDoubleSpinBox, QFileDialog, QFrame, QGridLayout,
                              QHBoxLayout, QLabel, QMainWindow, QMenu, QMenuBar,
                              QPushButton, QScrollArea, QShortcut, QSpinBox,
-                             QStatusBar, QStyle, QTabWidget, QTextEdit,
-                             QVBoxLayout, QWidget)
+                             QStatusBar, QStyle, QTabWidget, QVBoxLayout,
+                             QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import resources, settings
@@ -46,9 +46,8 @@ class MainWindow(QMainWindow):
             width,
             height,
         )
-        window_ratio = settings.get("window/ratio")
-        self.image_viewer_size = int(window_ratio * self.width())
-        self.border_size = int((1 - window_ratio) * self.width() / 2)
+        if relative_size == 1.0:
+            self.showMaximized()
 
         self.dock_area = DockArea()
         self.setup_docks()
@@ -70,42 +69,43 @@ class MainWindow(QMainWindow):
         log("Welcome to BLITZ")
 
     def setup_docks(self) -> None:
-        viewer_height = self.height() - 2 * self.border_size
+        border_size = int(0.25 * self.width() / 2)
+        viewer_height = self.height() - 2 * border_size
 
-        lut_ratio = settings.get("window/LUT_vertical_ratio")
         self.dock_lookup = Dock(
             "LUT",
-            size=(self.border_size, lut_ratio*viewer_height),
+            size=(border_size, 0.6*viewer_height),
             hideTitle=True,
         )
         self.dock_option = Dock(
             "Options",
-            size=(self.border_size, (1-lut_ratio)*viewer_height),
+            size=(border_size, 0.4*viewer_height),
             hideTitle=True,
         )
         self.dock_status = Dock(
             "File Metadata",
-            size=(self.border_size, self.border_size),
+            size=(border_size, border_size),
             hideTitle=True,
         )
         self.dock_v_plot = Dock(
             "V Plot",
-            size=(self.border_size, viewer_height),
+            size=(border_size, viewer_height),
             hideTitle=True,
         )
+        image_viewer_size = int(0.75 * self.width())
         self.dock_h_plot = Dock(
             "H Plot",
-            size=(self.image_viewer_size, self.border_size),
+            size=(image_viewer_size, border_size),
             hideTitle=True,
         )
         self.dock_viewer = Dock(
             "Image Viewer",
-            size=(self.image_viewer_size, viewer_height),
+            size=(image_viewer_size, viewer_height),
             hideTitle=True,
         )
         self.dock_t_line = Dock(
             "Timeline",
-            size=(self.image_viewer_size, self.border_size),
+            size=(image_viewer_size, border_size),
             hideTitle=True,
         )
 
@@ -116,6 +116,8 @@ class MainWindow(QMainWindow):
         self.dock_area.addDock(self.dock_option, 'top', self.dock_lookup)
         self.dock_area.addDock(self.dock_h_plot, 'top', self.dock_viewer)
         self.dock_area.addDock(self.dock_status, 'top', self.dock_v_plot)
+        if (docks_arrangement := settings.get("window/docks")):
+            self.dock_area.restoreState(docks_arrangement)
 
     def setup_menu_and_status_bar(self) -> None:
         menubar = QMenuBar()
@@ -127,7 +129,9 @@ class MainWindow(QMainWindow):
             self.image_viewer.exportClicked
         )
         file_menu.addSeparator()
-        file_menu.addAction("Write .ini").triggered.connect(settings.export)
+        write_ini_action = file_menu.addAction("Write .ini")
+        write_ini_action.triggered.connect(settings.export)
+        write_ini_action.triggered.connect(self.sync_settings)
         file_menu.addAction("Select .ini").triggered.connect(settings.select)
         file_menu.addSeparator()
         file_menu.addAction("Restart").triggered.connect(restart)
@@ -161,24 +165,31 @@ class MainWindow(QMainWindow):
         self.setStatusBar(statusbar)
 
     def setup_lut_dock(self) -> None:
+        self._lut_file: str = ""
         self.image_viewer.ui.histogram.setParent(None)
         self.dock_lookup.addWidget(self.image_viewer.ui.histogram)
-        levels_button = QPushButton("Fit Levels")
-        levels_button.pressed.connect(self.image_viewer.autoLevels)
-        range_button = QPushButton("Show Full Range")
-        range_button.pressed.connect(self.image_viewer.auto_histogram_range)
+        levels_box = QCheckBox("Auto-Fit")
+        levels_box.setChecked(True)
+        levels_box.stateChanged.connect(self.image_viewer.toggle_fit_levels)
         lut_button_container = QWidget(self)
-        lut_button_layout = QGridLayout()
-        lut_button_layout.addWidget(levels_button, 0, 0)
-        lut_button_layout.addWidget(range_button, 0, 1)
         load_button = QPushButton("Load")
         load_button.pressed.connect(self.browse_lut)
         export_button = QPushButton("Export")
         export_button.pressed.connect(self.save_lut)
-        lut_button_layout.addWidget(load_button, 1, 0)
-        lut_button_layout.addWidget(export_button, 1, 1)
+        lut_button_layout = QGridLayout()
+        lut_button_layout.addWidget(levels_box, 0, 0)
+        lut_button_layout.addWidget(load_button, 0, 1)
+        lut_button_layout.addWidget(export_button, 0, 2)
         lut_button_container.setLayout(lut_button_layout)
         self.dock_lookup.addWidget(lut_button_container)
+        if (file := settings.get("viewer/LUT_source")) != "":
+            try:
+                with open(file, "r", encoding="utf-8") as f:
+                    lut_config = json.load(f)
+                self.image_viewer.load_lut_config(lut_config)
+                self._lut_file = file
+            except:
+                log("Failed to load LUT config given in the .ini file")
 
     def setup_option_dock(self) -> None:
         self.option_tabwidget = QTabWidget()
@@ -257,19 +268,19 @@ class MainWindow(QMainWindow):
         view_layout = QHBoxLayout()
         flip_x = QCheckBox("Flip x")
         flip_x.stateChanged.connect(
-            lambda: self.image_viewer.manipulation("flip_x")
+            lambda: self.image_viewer.manipulate("flip_x")
         )
         flip_x.setStyleSheet(style_options)
         view_layout.addWidget(flip_x)
         flip_y = QCheckBox("Flip y")
         flip_y.stateChanged.connect(
-            lambda: self.image_viewer.manipulation("flip_y")
+            lambda: self.image_viewer.manipulate("flip_y")
         )
         flip_y.setStyleSheet(style_options)
         view_layout.addWidget(flip_y)
         transpose = QCheckBox("Transpose")
         transpose.stateChanged.connect(
-            lambda: self.image_viewer.manipulation("transpose")
+            lambda: self.image_viewer.manipulate("transpose")
         )
         transpose.setStyleSheet(style_options)
         view_layout.addWidget(transpose)
@@ -287,24 +298,12 @@ class MainWindow(QMainWindow):
         self.op_combobox.currentIndexChanged.connect(self.operation_changed)
         self.op_combobox.setStyleSheet(style_options)
         option_layout.addWidget(self.op_combobox)
-        auto_layout = QHBoxLayout()
-        label_auto = QLabel("LUT:")
-        label_auto.setStyleSheet(style_options)
-        self.auto_levels_checkbox = QCheckBox("Fit Levels")
-        self.auto_levels_checkbox.setStyleSheet(style_options)
-        self.auto_levels_checkbox.setChecked(True)
-        self.auto_range_checkbox = QCheckBox("Total Range")
-        self.auto_range_checkbox.setStyleSheet(style_options)
-        self.auto_range_checkbox.setChecked(True)
-        auto_layout.addWidget(label_auto)
-        auto_layout.addWidget(self.auto_levels_checkbox)
-        auto_layout.addWidget(self.auto_range_checkbox)
-        option_layout.addLayout(auto_layout)
         norm_label = QLabel("Normalization")
         norm_label.setStyleSheet(style_heading)
         option_layout.addWidget(norm_label)
-        norm_range_label = QLabel("Range:")
-        norm_range_label.setStyleSheet(style_options)
+        self.norm_range_box = QCheckBox("Range:")
+        self.norm_range_box.setStyleSheet(style_options)
+        self.norm_range_box.setChecked(True)
         norm_range_label_to = QLabel("-")
         norm_range_label_to.setStyleSheet(style_options)
         self.norm_range_start = QSpinBox()
@@ -321,26 +320,21 @@ class MainWindow(QMainWindow):
         norm_range_checkbox.setStyleSheet(style_options)
         norm_range_checkbox.stateChanged.connect(self.toggle_norm_range_select)
         range_layout = QHBoxLayout()
-        range_layout.addWidget(norm_range_label)
+        range_layout.addWidget(self.norm_range_box)
         range_layout.addWidget(self.norm_range_start)
         range_layout.addWidget(norm_range_label_to)
         range_layout.addWidget(self.norm_range_end)
         range_layout.addWidget(norm_range_checkbox)
         option_layout.addLayout(range_layout)
-        norm_bg_label = QLabel("Background:")
-        norm_bg_label.setStyleSheet(style_options)
-        self.bg_input_button = QPushButton("Select")
+        self.norm_bg_box = QCheckBox("Background:")
+        self.norm_bg_box.setStyleSheet(style_options)
+        self.norm_bg_box.setEnabled(False)
+        self.bg_input_button = QPushButton("[Select]")
         self.bg_input_button.clicked.connect(self.search_background_file)
-        self.bg_remove_button = QPushButton()
-        pixmapi = getattr(QStyle, "SP_DialogCancelButton")
-        self.bg_remove_button.setIcon(
-            self.bg_remove_button.style().standardIcon(pixmapi)  # type: ignore
-        )
-        self.bg_remove_button.clicked.connect(self.remove_background_file)
         bg_layout = QHBoxLayout()
-        bg_layout.addWidget(norm_bg_label)
+        bg_layout.addWidget(self.norm_bg_box)
         bg_layout.addWidget(self.bg_input_button)
-        bg_layout.addWidget(self.bg_remove_button)
+        # bg_layout.addWidget(self.bg_remove_button)
         option_layout.addLayout(bg_layout)
         self.norm_range = pg.LinearRegionItem()
         self.norm_range.sigRegionChanged.connect(self.update_norm_range_labels)
@@ -550,27 +544,49 @@ class MainWindow(QMainWindow):
         )
 
     def _normalization(self, name: str) -> None:
+        if (not self.norm_range_box.isChecked()
+                and not self.norm_bg_box.isChecked()):
+            self.norm_subtract_box.setChecked(False)
+            self.norm_divide_box.setChecked(False)
+            return
+        if (self.norm_divide_box.isChecked()
+                or self.norm_subtract_box.isChecked()):
+            self.norm_range_box.setEnabled(False)
+            self.norm_bg_box.setEnabled(False)
+        else:
+            self.norm_range_box.setEnabled(True)
+            self.norm_bg_box.setEnabled(True)
         if name == "subtract" and self.norm_divide_box.isChecked():
             self.norm_divide_box.setChecked(False)
         elif name == "divide" and self.norm_subtract_box.isChecked():
             self.norm_subtract_box.setChecked(False)
+        left = right = None
+        if self.norm_range_box.isChecked():
+            left = self.norm_range_start.value()
+            right = self.norm_range_end.value()
         self.image_viewer.norm(
-            self.norm_range_start.value(), self.norm_range_end.value(),
-            self.norm_beta.value(), name=name,
+            operation=name,
+            beta=self.norm_beta.value(),
+            left=left,
+            right=right,
+            background=self.norm_bg_box.isChecked(),
         )
 
     def search_background_file(self) -> None:
-        file, _ = QFileDialog.getOpenFileName(
-            caption="Choose Background File",
-            directory=str(self.last_file_dir),
-        )
-        pixmapi = getattr(QStyle, "SP_DialogApplyButton")
-        self.bg_input_button.setIcon(
-            self.bg_input_button.style().standardIcon(pixmapi)  # type: ignore
-        )
-
-    def remove_background_file(self) -> None:
-        self.bg_input_button.setText("Select")
+        if self.bg_input_button.text() == "[Select]":
+            file, _ = QFileDialog.getOpenFileName(
+                caption="Choose Background File",
+                directory=str(self.last_file_dir),
+            )
+            if file and self.image_viewer.load_background_file(Path(file)):
+                self.bg_input_button.setText("[Remove]")
+                self.norm_bg_box.setEnabled(True)
+                self.norm_bg_box.setChecked(True)
+        else:
+            self.norm_bg_box.setEnabled(False)
+            self.norm_bg_box.setChecked(False)
+            self.image_viewer.unload_background_file()
+            self.bg_input_button.setText("[Select]")
 
     def override_timeline_keyPressEvent(self, ev) -> None:
         self.roi_plot.scene().keyPressEvent(ev)
@@ -619,6 +635,7 @@ class MainWindow(QMainWindow):
                 with open(file, "r", encoding="utf-8") as f:
                     lut_config = json.load(f)
                 self.image_viewer.load_lut_config(lut_config)
+                self._lut_file = file
             except:
                 log("LUT could not be loaded. Make sure it is an "
                     "appropriately structured '.json' file.")
@@ -638,6 +655,7 @@ class MainWindow(QMainWindow):
                     ensure_ascii=False,
                     indent=4,
                 )
+            self._lut_file = str(file)
 
     def load_images_adapter(self, file_path: Optional[Path] = None) -> None:
         self.load_images(Path(file_path) if file_path is not None else None)
@@ -647,10 +665,10 @@ class MainWindow(QMainWindow):
         with LoadingManager(self, text) as lm:
             self.image_viewer.load_data(
                 file_path,
-                size=self.size_ratio_spinbox.value(),
-                ratio=self.subset_ratio_spinbox.value(),
+                size_ratio=self.size_ratio_spinbox.value(),
+                subset_ratio=self.subset_ratio_spinbox.value(),
+                max_ram=self.max_ram_spinbox.value(),
                 convert_to_8_bit=self.load_8bit_checkbox.isChecked(),
-                ram_size=self.max_ram_spinbox.value(),
                 grayscale=self.load_grayscale_checkbox.isChecked(),
             )
         if file_path is not None:
@@ -671,10 +689,8 @@ class MainWindow(QMainWindow):
         log(f"Available RAM: {get_available_ram():.2f} GB")
         text = self.op_combobox.currentText()
         with LoadingManager(self, f"Loading {text}...") as lm:
-            self.image_viewer.manipulation(
+            self.image_viewer.reduce(
                 self.image_viewer.AVAILABLE_OPERATIONS[text],
-                auto_levels=self.auto_levels_checkbox.isChecked(),
-                auto_histogram_range=self.auto_range_checkbox.isChecked(),
             )
         log(f"Seconds needed: {lm.duration:.2f}")
         log(f"Available RAM: {get_available_ram():.2f} GB")
@@ -686,3 +702,15 @@ class MainWindow(QMainWindow):
         if not self.measure_checkbox.isChecked():
             return
         self.image_viewer.measure_roi.update_labels()
+
+    def sync_settings(self) -> None:
+        settings.set("viewer/LUT_source", self._lut_file)
+        screen_geometry = QApplication.primaryScreen().availableGeometry()
+        settings.set(
+            "window/relative_size",
+            self.width() / screen_geometry.width(),
+        )
+        settings.set(
+            "window/docks",
+            self.dock_area.saveState(),
+        )

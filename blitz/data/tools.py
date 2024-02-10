@@ -4,7 +4,7 @@ import numpy as np
 
 def resize_and_convert(
     image: np.ndarray,
-    size: int,
+    size: float,
     convert_to_8_bit: bool,
 ) -> np.ndarray:
     h, w = image.shape[:2]
@@ -20,7 +20,7 @@ def resize_and_convert(
 
 def resize_and_convert_to_8_bit(
     array: np.ndarray,
-    size_ratio: int,
+    size_ratio: float,
     convert_to_8_bit: bool,
 ) -> np.ndarray:
     new_shape = tuple(int(dim * size_ratio) for dim in array.shape[:2])
