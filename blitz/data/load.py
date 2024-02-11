@@ -57,8 +57,7 @@ class DataLoader:
 
     def _load_file(self, path: Path) -> ImageData:
         if DataLoader._is_array(path):
-            image, metadata = self._load_array(path)
-            return ImageData(image[np.newaxis, ...], [metadata])
+            return self._load_array(path)
         elif DataLoader._is_image(path):
             image, metadata = self._load_image(path)
             return ImageData(image[np.newaxis, ...], [metadata])
@@ -81,9 +80,9 @@ class DataLoader:
             )
             load_function = self._load_image
         elif DataLoader._is_array(content[0]):
-            sample, _ = self._load_array(content[0])
+            sample, _ = self._load_single_array(content[0])
             total_size_estimate = sample.nbytes * len(content)
-            load_function = self._load_array
+            load_function = self._load_single_array
         else:
             log("Error: Unknown file extension in folder")
             return self._from_text("Unsupported file type", color=(255, 0, 0))
@@ -211,11 +210,71 @@ class DataLoader:
         video.release()
         return ImageData(np.swapaxes(np.stack(frames), 1, 2), metadata)
 
-    def _load_array(self, path: Path) -> tuple[np.ndarray, dict[str, Any]]:
+    def _load_array(self, path: Path) -> ImageData:
         array: np.ndarray = np.load(path)
-        if self.grayscale and array.ndim == 3:
+        match array.ndim:
+            case 4:
+                if self.grayscale:
+                    weights = np.array([0.2989, 0.5870, 0.1140])
+                    array = np.sum(array * weights, axis=-1)
+            case 3:
+                if not self.grayscale:
+                    if array.shape[2] != 3:
+                        log("Warning: File does not contain color images, "
+                            "loading as grayscale")
+                    else:
+                        array = array[np.newaxis, ...]
+            case 2:
+                if not self.grayscale:
+                    log("Warning: Loading files as grayscale images")
+                array = array[np.newaxis, ...]
+            case _:
+                log(f"Error: Unsupported array shape {array.shape}")
+                return self._from_text(
+                    "Error loading files", color=(255, 0, 0)
+                )
+        # now the first dimension is time
+        function_ = lambda x: resize_and_convert_to_8_bit(
+            x,
+            self.size_ratio,
+            self.convert_to_8_bit,
+        )
+        total_size_estimate = array[0].nbytes * array.shape[0]
+        if (array.shape[0] > settings.get("data/multicore_files_threshold")
+                or total_size_estimate >
+                    settings.get("data/multicore_size_threshold")):
+            with Pool(cpu_count()) as pool:
+                matrices = pool.starmap(
+                    function_,
+                    [(a, ) for a in array],
+                )
+        else:
+            matrices = []
+            for a in array:
+                matrix = function_(a)
+                matrices.append(matrix)
+
+        array = np.swapaxes(np.stack(matrices), 1, 2)
+        metadata = [{
+            'file_name': path.name + f"-{i}",
+            'shape': array.shape,
+            'dtype': array.dtype,
+        } for i in range(array.shape[0])]
+        return ImageData(array, metadata)
+
+    def _load_single_array(
+        self,
+        path: Path,
+    ) -> tuple[np.ndarray, dict[str, Any]]:
+        array: np.ndarray = np.load(path)
+        if array.ndim >= 4 or (array.ndim == 3 and array.shape[2] != 3):
+            log(f"Error: Unsupported array shape {array.shape}")
+            data = self._from_text("Error loading files", color=(255, 0, 0))
+            return data.image[0], data.meta[0]
+
+        if array.ndim == 3 and self.grayscale:
             weights = np.array([0.2989, 0.5870, 0.1140])
-            array = np.sum(array * weights, axis=2)
+            array = np.sum(array * weights, axis=-1)
 
         array = np.swapaxes(resize_and_convert_to_8_bit(
             array,

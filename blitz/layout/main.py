@@ -217,6 +217,7 @@ class MainWindow(QMainWindow):
         load_hlay.addWidget(self.load_8bit_checkbox)
         self.load_grayscale_checkbox = QCheckBox("Grayscale")
         self.load_grayscale_checkbox.setStyleSheet(style_options)
+        self.load_grayscale_checkbox.setChecked(True)
         load_hlay.addWidget(self.load_grayscale_checkbox)
         load_btn = QPushButton("Open ...")
         load_btn.pressed.connect(self.browse_file)
@@ -535,8 +536,10 @@ class MainWindow(QMainWindow):
 
     def update_norm_range_labels(self) -> None:
         norm_range_ = self.norm_range.getRegion()
-        self.norm_range_start.setValue(int(norm_range_[0]))  # type: ignore
-        self.norm_range_end.setValue(int(norm_range_[1]))  # type: ignore
+        left, right = map(round, norm_range_)  # type: ignore
+        self.norm_range_start.setValue(left)
+        self.norm_range_end.setValue(right)
+        self.norm_range.setRegion((left, right))
 
     def update_norm_range(self) -> None:
         self.norm_range.setRegion(
