@@ -56,24 +56,20 @@ class TimePlot(pg.PlotWidget):
                 self.timeline.setPos((pos[0]-1, pos[1]))
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        if self.norm_range.mouseHovering:
-            self._accept_all_events = True
-            super().mousePressEvent(event)
-            return
-        if (event.modifiers() == Qt.KeyboardModifier.NoModifier and
-                event.button() == Qt.MouseButton.LeftButton):
+        if (event.modifiers() == Qt.KeyboardModifier.NoModifier
+                and event.button() == Qt.MouseButton.LeftButton
+                and not self.norm_range.isVisible()):
             x = self.plotItem.vb.mapSceneToView(  # type: ignore
                 event.pos()
             ).x()
             self.image_viewer.setCurrentIndex(round(x))
             event.accept()
-        else:
+        elif (self.norm_range.mouseHovering
+                or self.norm_range.childItems()[0].mouseHovering
+                or self.norm_range.childItems()[1].mouseHovering):
             super().mousePressEvent(event)
-
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        if self._accept_all_events:
-            self._accept_all_events = False
-        super().mouseReleaseEvent(event)
+        else:
+            event.ignore()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         super().keyPressEvent(event)
