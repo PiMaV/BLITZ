@@ -48,10 +48,10 @@ class TimePlot(pg.PlotWidget):
             super().wheelEvent(event)
         else:
             rotation = event.angleDelta().y()
-            if rotation > 0:
+            if rotation < 0:
                 pos = self.timeline.getPos()
                 self.timeline.setPos((pos[0]+1, pos[1]))
-            if rotation < 0:
+            if rotation > 0:
                 pos = self.timeline.getPos()
                 self.timeline.setPos((pos[0]-1, pos[1]))
 
@@ -64,9 +64,11 @@ class TimePlot(pg.PlotWidget):
             ).x()
             self.image_viewer.setCurrentIndex(round(x))
             event.accept()
-        elif (self.norm_range.mouseHovering
-                or self.norm_range.childItems()[0].mouseHovering
-                or self.norm_range.childItems()[1].mouseHovering):
+        elif ((self.norm_range.isVisible()
+                    and (self.norm_range.mouseHovering
+                        or self.norm_range.childItems()[0].mouseHovering
+                        or self.norm_range.childItems()[1].mouseHovering))
+                or not self.norm_range.isVisible()):
             super().mousePressEvent(event)
         else:
             event.ignore()

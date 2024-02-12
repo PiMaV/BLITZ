@@ -249,14 +249,14 @@ class MainWindow(QMainWindow):
         mask_label = QLabel("Mask")
         mask_label.setStyleSheet(style_heading)
         file_layout.addWidget(mask_label)
-        mask_checkbox = QCheckBox("Show")
-        mask_checkbox.clicked.connect(self.image_viewer.toggle_mask)
-        mask_checkbox.setStyleSheet(style_options)
-        file_layout.addWidget(mask_checkbox)
+        self.mask_checkbox = QCheckBox("Show")
+        self.mask_checkbox.stateChanged.connect(self.image_viewer.toggle_mask)
+        self.mask_checkbox.setStyleSheet(style_options)
+        file_layout.addWidget(self.mask_checkbox)
         mask_holay = QHBoxLayout()
         apply_btn = QPushButton("Apply")
         apply_btn.pressed.connect(self.image_viewer.apply_mask)
-        apply_btn.pressed.connect(lambda: mask_checkbox.setChecked(False))
+        apply_btn.pressed.connect(lambda: self.mask_checkbox.setChecked(False))
         apply_btn.setStyleSheet(style_options)
         mask_holay.addWidget(apply_btn)
         reset_btn = QPushButton("Reset")
@@ -268,24 +268,24 @@ class MainWindow(QMainWindow):
         view_label.setStyleSheet(style_heading)
         file_layout.addWidget(view_label)
         view_layout = QHBoxLayout()
-        flip_x = QCheckBox("Flip x")
-        flip_x.stateChanged.connect(
+        self.flip_x_box = QCheckBox("Flip x")
+        self.flip_x_box.clicked.connect(
             lambda: self.image_viewer.manipulate("flip_x")
         )
-        flip_x.setStyleSheet(style_options)
-        view_layout.addWidget(flip_x)
-        flip_y = QCheckBox("Flip y")
-        flip_y.stateChanged.connect(
+        self.flip_x_box.setStyleSheet(style_options)
+        view_layout.addWidget(self.flip_x_box)
+        self.flip_y_box = QCheckBox("Flip y")
+        self.flip_y_box.clicked.connect(
             lambda: self.image_viewer.manipulate("flip_y")
         )
-        flip_y.setStyleSheet(style_options)
-        view_layout.addWidget(flip_y)
-        transpose = QCheckBox("Transpose")
-        transpose.stateChanged.connect(
+        self.flip_y_box.setStyleSheet(style_options)
+        view_layout.addWidget(self.flip_y_box)
+        self.transpose_box = QCheckBox("Transpose")
+        self.transpose_box.clicked.connect(
             lambda: self.image_viewer.manipulate("transpose")
         )
-        transpose.setStyleSheet(style_options)
-        view_layout.addWidget(transpose)
+        self.transpose_box.setStyleSheet(style_options)
+        view_layout.addWidget(self.transpose_box)
         file_layout.addLayout(view_layout)
         file_layout.addStretch()
 
@@ -314,13 +314,13 @@ class MainWindow(QMainWindow):
         self.norm_range_end.setMinimum(1)
         self.norm_range_start.valueChanged.connect(self.update_norm_range)
         self.norm_range_end.valueChanged.connect(self.update_norm_range)
-        norm_range_checkbox = QCheckBox("")
-        pixmapi = getattr(QStyle, "SP_DesktopIcon")
-        norm_range_checkbox.setIcon(
-            norm_range_checkbox.style().standardIcon(pixmapi)  # type: ignore
+        self.norm_range_checkbox = QCheckBox("")
+        map_ = getattr(QStyle, "SP_DesktopIcon")
+        self.norm_range_checkbox.setIcon(
+            self.norm_range_checkbox.style().standardIcon(map_)  # type: ignore
         )
-        norm_range_checkbox.setStyleSheet(style_options)
-        norm_range_checkbox.stateChanged.connect(
+        self.norm_range_checkbox.setStyleSheet(style_options)
+        self.norm_range_checkbox.stateChanged.connect(
             self.roi_plot.toggle_norm_range
         )
         range_layout = QHBoxLayout()
@@ -328,7 +328,7 @@ class MainWindow(QMainWindow):
         range_layout.addWidget(self.norm_range_start)
         range_layout.addWidget(norm_range_label_to)
         range_layout.addWidget(self.norm_range_end)
-        range_layout.addWidget(norm_range_checkbox)
+        range_layout.addWidget(self.norm_range_checkbox)
         option_layout.addLayout(range_layout)
         self.norm_bg_box = QCheckBox("Background:")
         self.norm_bg_box.setStyleSheet(style_options)
@@ -346,6 +346,7 @@ class MainWindow(QMainWindow):
         self.norm_beta.setMaximum(1)
         self.norm_beta.setValue(1)
         self.norm_beta.setSingleStep(0.01)
+        self.norm_beta.editingFinished.connect(self._normalization_beta_update)
         self.norm_subtract_box = QCheckBox("Subtract Mean")
         self.norm_subtract_box.clicked.connect(
             lambda: self._normalization("subtract")
@@ -535,6 +536,31 @@ class MainWindow(QMainWindow):
         self.v_plot.setYLink(self.image_viewer.getView())
         self.h_plot.setXLink(self.image_viewer.getView())
 
+    def reset_options(self) -> None:
+        self.mask_checkbox.setChecked(False)
+        self.flip_x_box.setChecked(False)
+        self.flip_y_box.setChecked(False)
+        self.transpose_box.setChecked(False)
+        self.op_combobox.setCurrentIndex(0)
+        self.norm_range_box.setChecked(True)
+        self.norm_range_box.setEnabled(True)
+        self.norm_bg_box.setEnabled(False)
+        self.norm_bg_box.setChecked(False)
+        self.norm_subtract_box.setChecked(False)
+        self.norm_divide_box.setChecked(False)
+        self.norm_beta.setValue(1.0)
+        self.bg_input_button.setText("[Select]")
+        self.norm_range_checkbox.setChecked(False)
+        self.image_viewer._background_image = None
+        self.measure_checkbox.setChecked(False)
+        self.norm_range_start.setValue(0)
+        self.norm_range_start.setMaximum(self.image_viewer.data.n_images-1)
+        self.norm_range_end.setMaximum(self.image_viewer.data.n_images)
+        self.norm_range_end.setValue(self.image_viewer.data.n_images-1)
+        self.roi_drop_checkbox.setChecked(
+            self.image_viewer.is_roi_on_drop_update()
+        )
+
     def update_norm_range_labels(self) -> None:
         norm_range_ = self.norm_range.getRegion()
         left, right = map(round, norm_range_)  # type: ignore
@@ -546,6 +572,26 @@ class MainWindow(QMainWindow):
         self.norm_range.setRegion(
             (self.norm_range_start.value(), self.norm_range_end.value())
         )
+
+    def _normalization_beta_update(self) -> None:
+        name = None
+        if self.norm_subtract_box.isChecked():
+            name = "subtract"
+        if self.norm_divide_box.isChecked():
+            name = "divide"
+        if name is not None:
+            left = right = None
+            if self.norm_range_box.isChecked():
+                left = self.norm_range_start.value()
+                right = self.norm_range_end.value()
+            self.image_viewer.norm(
+                operation=name,
+                beta=self.norm_beta.value(),
+                left=left,
+                right=right,
+                background=self.norm_bg_box.isChecked(),
+                force_calculation=True,
+            )
 
     def _normalization(self, name: str) -> None:
         if (not self.norm_range_box.isChecked()
@@ -682,13 +728,7 @@ class MainWindow(QMainWindow):
             log(f"Available RAM: {get_available_ram():.2f} GB")
             log(f"Seconds needed: {lm.duration:.2f}")
             self.update_statusbar_frame()
-            self.roi_drop_checkbox.setChecked(
-                self.image_viewer.is_roi_on_drop_update()
-            )
-            self.norm_range_start.setValue(0)
-            self.norm_range_start.setMaximum(self.image_viewer.data.n_images-1)
-            self.norm_range_end.setMaximum(self.image_viewer.data.n_images)
-            self.norm_range_end.setValue(self.image_viewer.data.n_images-1)
+            self.reset_options()
 
     def operation_changed(self) -> None:
         log(f"Available RAM: {get_available_ram():.2f} GB")

@@ -137,6 +137,7 @@ class ImageViewer(pg.ImageView):
         left: Optional[int] = None,
         right: Optional[int] = None,
         background: bool = False,
+        force_calculation: bool = False,
     ) -> None:
         self.data.normalize(
             operation=operation,  # type: ignore
@@ -144,6 +145,7 @@ class ImageViewer(pg.ImageView):
             left=left,
             right=right,
             reference=self._background_image if background else None,
+            force_calculation=force_calculation,
         )
         pos = self.timeLine.pos()
         self.setImage(

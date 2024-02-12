@@ -100,11 +100,12 @@ class ImageData:
         left: Optional[int] = None,
         right: Optional[int] = None,
         reference: Optional["ImageData"] = None,
+        force_calculation: bool = False,
     ) -> bool:
         if self._reduce_operation is not None:
             log("Normalization not possible on reduced data")
             return False
-        if self._norm_operation == operation:
+        if self._norm_operation == operation and not force_calculation:
             self._norm_operation = None
             self._norm = None
             return True
