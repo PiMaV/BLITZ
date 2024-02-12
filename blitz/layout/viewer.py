@@ -258,7 +258,7 @@ class ImageViewer(pg.ImageView):
     ) -> tuple[float, float, str | None]:
         img_coords = self.view.vb.mapSceneToView(pos)
         x, y = int(img_coords.x()), int(img_coords.y())
-        if (0 <= x < self.image.shape[-2] and 0 <= y < self.image.shape[-1]):
+        if (0 <= x < self.image.shape[1] and 0 <= y < self.image.shape[2]):
             pixel_value = self.image[self.currentIndex, x, y]
         else:
             pixel_value = None

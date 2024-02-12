@@ -18,6 +18,7 @@ from ..tools import (LoadingManager, LoggingTextEdit, get_available_ram, log,
                      setup_logger)
 from .tof import TOFAdapter
 from .viewer import ImageViewer
+from .widgets import TimePlot
 
 TITLE = (
     "BLITZ: Bulk Loading and Interactive Time series Zonal analysis "
@@ -505,9 +506,14 @@ class MainWindow(QMainWindow):
         )
         self.dock_viewer.addWidget(self.image_viewer)
 
-        # relocate the roiPlot to the timeline dock
-        self.roi_plot = self.image_viewer.ui.roiPlot
-        self.roi_plot.setParent(None)
+        # create a new timeline replacing roiPlot
+        self.roi_plot = TimePlot(self.dock_t_line, self.image_viewer)
+        self.roi_plot.showGrid(x=True, y=True, alpha=0.4)
+        self.image_viewer.ui.roiPlot.setParent(None)
+        self.image_viewer.ui.roiPlot = self.roi_plot
+        while len(self.image_viewer.roiCurves) > 0:
+            c = self.image_viewer.roiCurves.pop()
+            c.scene().removeItem(c)
         # this decoy prevents an error being thrown in the ImageView
         timeline_decoy = pg.PlotWidget(self.image_viewer.ui.splitter)
         timeline_decoy.hide()
@@ -522,9 +528,6 @@ class MainWindow(QMainWindow):
         self.image_viewer.timeLine.sigPositionChanged.connect(
             self.update_statusbar_frame
         )
-        self.roi_plot.keyPressEvent = self.override_timeline_keyPressEvent
-        self.roi_plot.keyReleaseEvent = self.image_viewer.keyReleaseEvent
-
         self.v_plot.setYLink(self.image_viewer.getView())
         self.h_plot.setXLink(self.image_viewer.getView())
 
@@ -556,9 +559,14 @@ class MainWindow(QMainWindow):
                 or self.norm_subtract_box.isChecked()):
             self.norm_range_box.setEnabled(False)
             self.norm_bg_box.setEnabled(False)
+            self.bg_input_button.setEnabled(False)
+            self.op_combobox.setEnabled(False)
         else:
             self.norm_range_box.setEnabled(True)
-            self.norm_bg_box.setEnabled(True)
+            if self.bg_input_button.text() == "[Remove]":
+                self.norm_bg_box.setEnabled(True)
+            self.bg_input_button.setEnabled(True)
+            self.op_combobox.setEnabled(True)
         if name == "subtract" and self.norm_divide_box.isChecked():
             self.norm_divide_box.setChecked(False)
         elif name == "divide" and self.norm_subtract_box.isChecked():
@@ -590,10 +598,6 @@ class MainWindow(QMainWindow):
             self.norm_bg_box.setChecked(False)
             self.image_viewer.unload_background_file()
             self.bg_input_button.setText("[Select]")
-
-    def override_timeline_keyPressEvent(self, ev) -> None:
-        self.roi_plot.scene().keyPressEvent(ev)
-        self.image_viewer.keyPressEvent(ev)
 
     def on_strgC(self) -> None:
         cb = QApplication.clipboard()
@@ -691,6 +695,12 @@ class MainWindow(QMainWindow):
     def operation_changed(self) -> None:
         log(f"Available RAM: {get_available_ram():.2f} GB")
         text = self.op_combobox.currentText()
+        if text != "All Images":
+            self.norm_subtract_box.setEnabled(False)
+            self.norm_divide_box.setEnabled(False)
+        else:
+            self.norm_subtract_box.setEnabled(True)
+            self.norm_divide_box.setEnabled(True)
         with LoadingManager(self, f"Loading {text}...") as lm:
             self.image_viewer.reduce(
                 self.image_viewer.AVAILABLE_OPERATIONS[text],

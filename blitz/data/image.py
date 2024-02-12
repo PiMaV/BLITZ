@@ -114,12 +114,12 @@ class ImageData:
         mean_range = mean_ref = None
         if left is not None and right is not None:
             mean_range = beta * np.mean(image[left:right+1], axis=0)
-        elif reference is not None:
+        if reference is not None:
             mean_ref = reference.image.mean(axis=0)
             if mean_ref.shape != image.shape[1:]:
                 log("Error: Background image has incompatible shape")
                 return False
-        else:
+        if left is None and right is None and reference is None:
             return False
         if operation == "subtract":
             if mean_range is not None:
