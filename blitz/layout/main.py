@@ -320,7 +320,9 @@ class MainWindow(QMainWindow):
             norm_range_checkbox.style().standardIcon(pixmapi)  # type: ignore
         )
         norm_range_checkbox.setStyleSheet(style_options)
-        norm_range_checkbox.stateChanged.connect(self.toggle_norm_range_select)
+        norm_range_checkbox.stateChanged.connect(
+            self.roi_plot.toggle_norm_range
+        )
         range_layout = QHBoxLayout()
         range_layout.addWidget(self.norm_range_box)
         range_layout.addWidget(self.norm_range_start)
@@ -338,11 +340,6 @@ class MainWindow(QMainWindow):
         bg_layout.addWidget(self.bg_input_button)
         # bg_layout.addWidget(self.bg_remove_button)
         option_layout.addLayout(bg_layout)
-        self.norm_range = pg.LinearRegionItem()
-        self.norm_range.sigRegionChanged.connect(self.update_norm_range_labels)
-        self.norm_range.setZValue(0)
-        self.roi_plot.addItem(self.norm_range)
-        self.norm_range.hide()
         self.norm_beta = QDoubleSpinBox()
         self.norm_beta.setPrefix("beta: ")
         self.norm_beta.setMinimum(0)
@@ -507,7 +504,14 @@ class MainWindow(QMainWindow):
         self.dock_viewer.addWidget(self.image_viewer)
 
         # create a new timeline replacing roiPlot
-        self.roi_plot = TimePlot(self.dock_t_line, self.image_viewer)
+        self.norm_range = pg.LinearRegionItem()
+        self.norm_range.sigRegionChanged.connect(self.update_norm_range_labels)
+        self.norm_range.setZValue(0)
+        self.roi_plot = TimePlot(
+            self.dock_t_line,
+            self.image_viewer,
+            self.norm_range,
+        )
         self.roi_plot.showGrid(x=True, y=True, alpha=0.4)
         self.image_viewer.ui.roiPlot.setParent(None)
         self.image_viewer.ui.roiPlot = self.roi_plot
@@ -530,12 +534,6 @@ class MainWindow(QMainWindow):
         )
         self.v_plot.setYLink(self.image_viewer.getView())
         self.h_plot.setXLink(self.image_viewer.getView())
-
-    def toggle_norm_range_select(self) -> None:
-        if self.norm_range.isVisible():
-            self.norm_range.hide()
-        else:
-            self.norm_range.show()
 
     def update_norm_range_labels(self) -> None:
         norm_range_ = self.norm_range.getRegion()
