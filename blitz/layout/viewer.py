@@ -10,7 +10,7 @@ from pyqtgraph import RectROI, mkPen
 from .. import settings
 from ..data.load import DataLoader, ImageData
 from ..tools import format_pixel_value, log, wrap_text
-from .widgets import MeasureROI
+from .widgets import MeasureROI, ScannerLine
 
 
 class ImageViewer(pg.ImageView):
@@ -57,15 +57,10 @@ class ImageViewer(pg.ImageView):
         self.h_plot = h_plot
         self.v_plot = v_plot
 
-        self.crosshair_vline = pg.InfiniteLine(angle=90, movable=True)
-        self.crosshair_hline = pg.InfiniteLine(angle=0, movable=True)
-        self.view.addItem(self.crosshair_vline)
-        self.view.addItem(self.crosshair_hline)
-        self.pen = mkPen(
-            color=(200, 200, 200, 140),
-            style=Qt.PenStyle.DashDotDotLine,
-            width=1,
-        )
+        self.crosshair_hline = ScannerLine()
+        self.crosshair_vline = ScannerLine(vertical=True)
+        self.addItem(self.crosshair_vline)
+        self.addItem(self.crosshair_hline)
         self.setup_connections()
         self.crosshair_state = False
         self.toggle_crosshair()
@@ -80,6 +75,10 @@ class ImageViewer(pg.ImageView):
         self._fit_levels = True
         self._background_image: ImageData | None = None
         self.load_data()
+
+    @property
+    def now(self) -> np.ndarray:
+        return self.image[self.currentIndex, ...]
 
     def dragEnterEvent(self, e: QDropEvent):
         if e.mimeData().hasUrls():
@@ -296,9 +295,6 @@ class ImageViewer(pg.ImageView):
 
             if self.crosshair_hline not in self.view.items:
                 self.view.addItem(self.crosshair_hline)
-
-            self.crosshair_hline.setPen(self.pen)
-            self.crosshair_vline.setPen(self.pen)
             self.crosshair_vline.setMovable(True)
             self.crosshair_hline.setMovable(True)
         else:
@@ -308,46 +304,23 @@ class ImageViewer(pg.ImageView):
             self.view.removeItem(self.crosshair_vline)
 
     def update_profiles(self) -> None:
-        x = int(self.crosshair_vline.getPos()[0])
-        y = int(self.crosshair_hline.getPos()[1])
-        frame_idx = int(self.timeLine.value())  # type: ignore
-
-        if frame_idx > self.image.shape[0] - 1:
-            log("Frame index out of bounds, skipping plotting.")
+        x = int(self.crosshair_vline.value())  # type: ignore
+        y = int(self.crosshair_hline.value())  # type: ignore
+        if (not (0 <= x < self.image.shape[1])
+                or (not (0 <= y < self.image.shape[2]))):
             return
-
-        x_constrained = min(max(0, x), self.image.shape[1] - 1)
-        y_constrained = min(max(0, y), self.image.shape[2] - 1)
-
-        if x_constrained != x or y_constrained != y:
-            return
-
-        x_values = np.arange(self.image.shape[2])
 
         self.v_plot.clear()
         self.h_plot.clear()
 
-        if (len(self.image.shape) == 4
-                and self.image.shape[3] == 3):
-            # colored image
-            r_data_v = self.image[frame_idx, x, :, 0]
-            g_data_v = self.image[frame_idx, x, :, 1]
-            b_data_v = self.image[frame_idx, x, :, 2]
-
-            self.v_plot.plot(r_data_v, x_values, pen='r')
-            self.v_plot.plot(g_data_v, x_values, pen='g')
-            self.v_plot.plot(b_data_v, x_values, pen='b')
-
-            r_data_h = self.image[frame_idx, :, y, 0]
-            g_data_h = self.image[frame_idx, :, y, 1]
-            b_data_h = self.image[frame_idx, :, y, 2]
-
-            self.h_plot.plot(r_data_h, pen='r')
-            self.h_plot.plot(g_data_h, pen='g')
-            self.h_plot.plot(b_data_h, pen='b')
+        x_values = np.arange(self.image.shape[2])
+        if not self.data.is_greyscale():
+            self.v_plot.plot(self.now[x, :, 0], x_values, pen='r')
+            self.v_plot.plot(self.now[x, :, 1], x_values, pen='g')
+            self.v_plot.plot(self.now[x, :, 2], x_values, pen='b')
+            self.h_plot.plot(self.now[:, y, 0], pen='r')
+            self.h_plot.plot(self.now[:, y, 1], pen='g')
+            self.h_plot.plot(self.now[:, y, 2], pen='b')
         else:
-            # grayscale image
-            v_data = self.image[frame_idx, x, :]
-            h_data = self.image[frame_idx, :, y]
-            self.v_plot.plot(v_data, x_values, pen='gray')
-            self.h_plot.plot(h_data, pen='gray')
+            self.v_plot.plot(self.now[x, :], x_values, pen='gray')
+            self.h_plot.plot(self.now[:, y], pen='gray')

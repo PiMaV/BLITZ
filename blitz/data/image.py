@@ -77,6 +77,9 @@ class ImageData:
     def is_single_image(self) -> bool:
         return self._image.shape[0] == 1
 
+    def is_greyscale(self) -> bool:
+        return self._image.ndim == 3
+
     def reduce(self, operation: Literal['min', 'max', 'mean', 'std']) -> None:
         match operation:
             case 'min':

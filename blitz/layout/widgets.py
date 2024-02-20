@@ -163,3 +163,23 @@ class MeasureROI(pg.PolyLineROI):
                 angle_label.setPos(mid.x(), mid.y())
                 self.view.addItem(angle_label)
                 self.line_labels.append(angle_label)
+
+
+class ScannerLine(pg.InfiniteLine):
+
+    def __init__(
+        self,
+        vertical: bool = False,
+        **kwargs,
+    ) -> None:
+        pen = pg.mkPen(
+            color=(100, 100, 100, 200),
+            style=Qt.PenStyle.DashLine,
+            width=3,
+        )
+        super().__init__(
+            angle=90 if vertical else 0,
+            pen=pen,
+            movable=True,
+            **kwargs,
+        )
