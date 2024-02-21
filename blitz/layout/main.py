@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
                              QHBoxLayout, QLabel, QMainWindow, QMenu, QMenuBar,
                              QPushButton, QScrollArea, QShortcut, QSpinBox,
                              QStatusBar, QStyle, QTabWidget, QVBoxLayout,
-                             QWidget)
+                             QWidget, QLayout)
 from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import resources, settings
@@ -18,7 +18,7 @@ from ..tools import (LoadingManager, LoggingTextEdit, get_available_ram, log,
                      setup_logger)
 from .tof import TOFAdapter
 from .viewer import ImageViewer
-from .widgets import TimePlot
+from .widgets import TimePlot, LineExtractorPlot, MeasureROI
 
 TITLE = (
     "BLITZ: Bulk Loading and Interactive Time series Zonal analysis "
@@ -139,9 +139,9 @@ class MainWindow(QMainWindow):
         menubar.addMenu(file_menu)
 
         view_menu = QMenu("View", self)
-        view_menu.addAction("Show / Hide Crosshair").triggered.connect(
-            self.image_viewer.toggle_crosshair
-        )
+        crosshair_action = view_menu.addAction("Show / Hide Crosshair")
+        crosshair_action.triggered.connect(self.h_plot.toggle_line)
+        crosshair_action.triggered.connect(self.v_plot.toggle_line)
         menubar.addMenu(view_menu)
 
         self.setMenuBar(menubar)
@@ -194,6 +194,7 @@ class MainWindow(QMainWindow):
 
     def setup_option_dock(self) -> None:
         self.option_tabwidget = QTabWidget()
+        self.dock_option.addWidget(self.option_tabwidget)
 
         style_heading = (
             "background-color: rgb(50, 50, 78);"
@@ -208,6 +209,7 @@ class MainWindow(QMainWindow):
 
         self.option_tabwidget.setStyleSheet(style_options)
 
+        # --- File ---
         file_layout = QVBoxLayout()
         load_label = QLabel("Load Options")
         load_label.setStyleSheet(style_heading)
@@ -220,10 +222,6 @@ class MainWindow(QMainWindow):
         self.load_grayscale_checkbox.setStyleSheet(style_options)
         self.load_grayscale_checkbox.setChecked(True)
         load_hlay.addWidget(self.load_grayscale_checkbox)
-        load_btn = QPushButton("Open ...")
-        load_btn.pressed.connect(self.browse_file)
-        load_btn.setStyleSheet(style_options)
-        load_hlay.addWidget(load_btn)
         file_layout.addLayout(load_hlay)
         self.size_ratio_spinbox = QDoubleSpinBox()
         self.size_ratio_spinbox.setRange(0, 1)
@@ -246,14 +244,43 @@ class MainWindow(QMainWindow):
         self.max_ram_spinbox.setPrefix("Max. RAM: ")
         self.max_ram_spinbox.setStyleSheet(style_options)
         file_layout.addWidget(self.max_ram_spinbox)
+        load_btn = QPushButton("Open File")
+        load_btn.pressed.connect(self.browse_file)
+        load_btn.setStyleSheet(style_options)
+        file_layout.addWidget(load_btn)
+        file_layout.addStretch()
+        self.create_option_tab(file_layout, "File")
+
+        # --- View ---
+        view_layout = QVBoxLayout()
+        viewchange_layout = QHBoxLayout()
+        self.flip_x_box = QCheckBox("Flip x")
+        self.flip_x_box.clicked.connect(
+            lambda: self.image_viewer.manipulate("flip_x")
+        )
+        self.flip_x_box.setStyleSheet(style_options)
+        viewchange_layout.addWidget(self.flip_x_box)
+        self.flip_y_box = QCheckBox("Flip y")
+        self.flip_y_box.clicked.connect(
+            lambda: self.image_viewer.manipulate("flip_y")
+        )
+        self.flip_y_box.setStyleSheet(style_options)
+        viewchange_layout.addWidget(self.flip_y_box)
+        self.transpose_box = QCheckBox("Transpose")
+        self.transpose_box.clicked.connect(
+            lambda: self.image_viewer.manipulate("transpose")
+        )
+        self.transpose_box.setStyleSheet(style_options)
+        viewchange_layout.addWidget(self.transpose_box)
+        view_layout.addLayout(viewchange_layout)
         mask_label = QLabel("Mask")
         mask_label.setStyleSheet(style_heading)
-        file_layout.addWidget(mask_label)
+        view_layout.addWidget(mask_label)
+        mask_holay = QHBoxLayout()
         self.mask_checkbox = QCheckBox("Show")
         self.mask_checkbox.stateChanged.connect(self.image_viewer.toggle_mask)
         self.mask_checkbox.setStyleSheet(style_options)
-        file_layout.addWidget(self.mask_checkbox)
-        mask_holay = QHBoxLayout()
+        mask_holay.addWidget(self.mask_checkbox)
         apply_btn = QPushButton("Apply")
         apply_btn.pressed.connect(self.image_viewer.apply_mask)
         apply_btn.pressed.connect(lambda: self.mask_checkbox.setChecked(False))
@@ -263,46 +290,24 @@ class MainWindow(QMainWindow):
         reset_btn.pressed.connect(self.image_viewer.reset)
         reset_btn.setStyleSheet(style_options)
         mask_holay.addWidget(reset_btn)
-        file_layout.addLayout(mask_holay)
-        view_label = QLabel("View")
-        view_label.setStyleSheet(style_heading)
-        file_layout.addWidget(view_label)
-        view_layout = QHBoxLayout()
-        self.flip_x_box = QCheckBox("Flip x")
-        self.flip_x_box.clicked.connect(
-            lambda: self.image_viewer.manipulate("flip_x")
-        )
-        self.flip_x_box.setStyleSheet(style_options)
-        view_layout.addWidget(self.flip_x_box)
-        self.flip_y_box = QCheckBox("Flip y")
-        self.flip_y_box.clicked.connect(
-            lambda: self.image_viewer.manipulate("flip_y")
-        )
-        self.flip_y_box.setStyleSheet(style_options)
-        view_layout.addWidget(self.flip_y_box)
-        self.transpose_box = QCheckBox("Transpose")
-        self.transpose_box.clicked.connect(
-            lambda: self.image_viewer.manipulate("transpose")
-        )
-        self.transpose_box.setStyleSheet(style_options)
-        view_layout.addWidget(self.transpose_box)
-        file_layout.addLayout(view_layout)
-        file_layout.addStretch()
+        view_layout.addLayout(mask_holay)
+        view_layout.addStretch()
+        self.create_option_tab(view_layout, "View")
 
-        option_layout = QVBoxLayout()
-
+        # --- Timeline Operation ---
+        timeop_layout = QVBoxLayout()
         timeline_label = QLabel("Timeline Operation")
         timeline_label.setStyleSheet(style_heading)
-        option_layout.addWidget(timeline_label)
+        timeop_layout.addWidget(timeline_label)
         self.op_combobox = QComboBox()
         for op in self.image_viewer.AVAILABLE_OPERATIONS:
             self.op_combobox.addItem(op)
         self.op_combobox.currentIndexChanged.connect(self.operation_changed)
         self.op_combobox.setStyleSheet(style_options)
-        option_layout.addWidget(self.op_combobox)
+        timeop_layout.addWidget(self.op_combobox)
         norm_label = QLabel("Normalization")
         norm_label.setStyleSheet(style_heading)
-        option_layout.addWidget(norm_label)
+        timeop_layout.addWidget(norm_label)
         self.norm_range_box = QCheckBox("Range:")
         self.norm_range_box.setStyleSheet(style_options)
         self.norm_range_box.setChecked(True)
@@ -329,7 +334,7 @@ class MainWindow(QMainWindow):
         range_layout.addWidget(norm_range_label_to)
         range_layout.addWidget(self.norm_range_end)
         range_layout.addWidget(self.norm_range_checkbox)
-        option_layout.addLayout(range_layout)
+        timeop_layout.addLayout(range_layout)
         self.norm_bg_box = QCheckBox("Background:")
         self.norm_bg_box.setStyleSheet(style_options)
         self.norm_bg_box.setEnabled(False)
@@ -339,7 +344,7 @@ class MainWindow(QMainWindow):
         bg_layout.addWidget(self.norm_bg_box)
         bg_layout.addWidget(self.bg_input_button)
         # bg_layout.addWidget(self.bg_remove_button)
-        option_layout.addLayout(bg_layout)
+        timeop_layout.addLayout(bg_layout)
         self.norm_beta = QDoubleSpinBox()
         self.norm_beta.setPrefix("beta: ")
         self.norm_beta.setMinimum(0)
@@ -362,19 +367,18 @@ class MainWindow(QMainWindow):
         hline = QFrame()
         hline.setFrameShape(QFrame.Shape.HLine)
         hline.setFrameShadow(QFrame.Shadow.Sunken)
-        option_layout.addWidget(hline)
-        option_layout.addLayout(norm_layout)
-        option_layout.addStretch()
+        timeop_layout.addWidget(hline)
+        timeop_layout.addLayout(norm_layout)
+        timeop_layout.addStretch()
+        self.create_option_tab(timeop_layout, "Manipulation")
 
+        # --- Tools ---
         tools_layout = QVBoxLayout()
-
         roi_label = QLabel("Measure Tool")
         roi_label.setStyleSheet(style_heading)
         tools_layout.addWidget(roi_label)
         self.measure_checkbox = QCheckBox("Show")
-        self.measure_checkbox.stateChanged.connect(
-            self.image_viewer.measure_roi.toggle
-        )
+        self.measure_checkbox.stateChanged.connect(self.measure_roi.toggle)
         self.measure_checkbox.setStyleSheet(style_options)
         tools_layout.addWidget(self.measure_checkbox)
         self.mm_checkbox = QCheckBox("Display in mm")
@@ -427,50 +431,21 @@ class MainWindow(QMainWindow):
         self.roi_drop_checkbox.setStyleSheet(style_options)
         tools_layout.addWidget(self.roi_drop_checkbox)
         tools_layout.addStretch()
+        self.create_option_tab(tools_layout, "Tools")
 
-        option_scrollarea = QScrollArea()
-        option_scrollarea.setHorizontalScrollBarPolicy(
+    def create_option_tab(self, layout: QLayout, name: str) -> None:
+        scrollarea = QScrollArea()
+        scrollarea.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
-        option_scrollarea.setVerticalScrollBarPolicy(
+        scrollarea.setVerticalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
-        tools_scrollarea = QScrollArea()
-        tools_scrollarea.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        tools_scrollarea.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAsNeeded
-        )
-
-        file_scrollarea = QScrollArea()
-        file_scrollarea.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        file_scrollarea.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAsNeeded
-        )
-
-        file_container = QWidget()
-        file_container.setLayout(file_layout)
-        file_scrollarea.setWidget(file_container)
-        file_scrollarea.setWidgetResizable(True)
-
-        option_container = QWidget()
-        option_container.setLayout(option_layout)
-        option_scrollarea.setWidget(option_container)
-        option_scrollarea.setWidgetResizable(True)
-
-        tools_container = QWidget()
-        tools_container.setLayout(tools_layout)
-        tools_scrollarea.setWidget(tools_container)
-        tools_scrollarea.setWidgetResizable(True)
-
-        self.option_tabwidget.addTab(file_scrollarea, "File")
-        self.option_tabwidget.addTab(option_scrollarea, "Manipulation")
-        self.option_tabwidget.addTab(tools_scrollarea, "Tools")
-
-        self.dock_option.addWidget(self.option_tabwidget)
+        container = QWidget()
+        container.setLayout(layout)
+        scrollarea.setWidget(container)
+        scrollarea.setWidgetResizable(True)
+        self.option_tabwidget.addTab(scrollarea, name)
 
     def setup_logger(self) -> None:
         self.logger = LoggingTextEdit()
@@ -484,25 +459,29 @@ class MainWindow(QMainWindow):
         setup_logger(self.logger)
 
     def setup_image_and_line_viewers(self) -> None:
-        v_plot_viewbox = pg.ViewBox()
-        v_plot_viewbox.invertX()
-        v_plot_viewbox.invertY()
-        v_plot_item = pg.PlotItem(viewBox=v_plot_viewbox)
-        v_plot_item.showGrid(x=True, y=True, alpha=0.4)
-        self.v_plot = pg.PlotWidget(plotItem=v_plot_item)
+        # v_plot_viewbox = pg.ViewBox()
+        # v_plot_viewbox.invertX()
+        # v_plot_viewbox.invertY()
+        # v_plot_item = pg.PlotItem(viewBox=v_plot_viewbox)
+        # v_plot_item.showGrid(x=True, y=True, alpha=0.4)
+        # self.v_plot = pg.PlotWidget(plotItem=v_plot_item)
+        # self.dock_v_plot.addWidget(self.v_plot)
+
+        # h_plot_viewbox = pg.ViewBox()
+        # h_plot_item = pg.PlotItem(viewBox=h_plot_viewbox)
+        # h_plot_item.showGrid(x=True, y=True, alpha=0.4)
+        # self.h_plot = pg.PlotWidget(plotItem=h_plot_item)
+        # self.dock_h_plot.addWidget(self.h_plot)
+
+        self.image_viewer = ImageViewer()
+        self.dock_viewer.addWidget(self.image_viewer)
+
+        self.h_plot = LineExtractorPlot(self.image_viewer)
+        self.dock_h_plot.addWidget(self.h_plot)
+        self.v_plot = LineExtractorPlot(self.image_viewer, vertical=True)
         self.dock_v_plot.addWidget(self.v_plot)
 
-        h_plot_viewbox = pg.ViewBox()
-        h_plot_item = pg.PlotItem(viewBox=h_plot_viewbox)
-        h_plot_item.showGrid(x=True, y=True, alpha=0.4)
-        self.h_plot = pg.PlotWidget(plotItem=h_plot_item)
-        self.dock_h_plot.addWidget(self.h_plot)
-
-        self.image_viewer = ImageViewer(
-            h_plot=self.h_plot,
-            v_plot=self.v_plot,
-        )
-        self.dock_viewer.addWidget(self.image_viewer)
+        self.measure_roi = MeasureROI(self.image_viewer)
 
         # create a new timeline replacing roiPlot
         self.norm_range = pg.LinearRegionItem()
@@ -747,12 +726,12 @@ class MainWindow(QMainWindow):
         log(f"Available RAM: {get_available_ram():.2f} GB")
 
     def update_roi_settings(self) -> None:
-        self.image_viewer.measure_roi.show_in_mm = self.mm_checkbox.isChecked()
-        self.image_viewer.measure_roi.n_px = self.pixel_spinbox.value()
-        self.image_viewer.measure_roi.px_in_mm = self.mm_spinbox.value()
+        self.measure_roi.show_in_mm = self.mm_checkbox.isChecked()
+        self.measure_roi.n_px = self.pixel_spinbox.value()
+        self.measure_roi.px_in_mm = self.mm_spinbox.value()
         if not self.measure_checkbox.isChecked():
             return
-        self.image_viewer.measure_roi.update_labels()
+        self.measure_roi.update_labels()
 
     def sync_settings(self) -> None:
         settings.set("viewer/LUT_source", self._lut_file)

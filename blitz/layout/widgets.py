@@ -2,6 +2,9 @@ import pyqtgraph as pg
 from PyQt5.QtCore import QSize, Qt
 from PyQt5.QtGui import QKeyEvent, QMouseEvent, QWheelEvent
 from PyQt5.QtWidgets import QSizePolicy, QWidget
+import numpy as np
+
+from .viewer import ImageViewer
 
 
 class TimePlot(pg.PlotWidget):
@@ -84,11 +87,11 @@ class TimePlot(pg.PlotWidget):
 
 class MeasureROI(pg.PolyLineROI):
 
-    def __init__(self, view: pg.ViewBox) -> None:
+    def __init__(self, viewer: ImageViewer) -> None:
+        self._viewer = viewer
         super().__init__([[0, 0], [0, 20], [10, 10]], closed=True)
         self.handleSize = 10
         self.sigRegionChanged.connect(self.update_labels)
-        self.view = view
 
         self.n_px: int = 1
         self.px_in_mm: float = 1
@@ -97,9 +100,17 @@ class MeasureROI(pg.PolyLineROI):
         self.line_labels = []
         self.angle_labels = []
 
-        self.view.addItem(self)
+        self._viewer.view.addItem(self)
         self.setPen(color=(128, 128, 0, 100), width=3)
         self._visible = True
+        self.toggle()
+        self._viewer.image_changed.connect(self.reshape)
+
+    def reshape(self) -> None:
+        height = self._viewer.image.shape[2]
+        width = self._viewer.image.shape[1]
+        self.toggle()
+        self.setPoints([[0, 0], [0, 0.5*height], [0.5*width, 0.25*height]])
         self.toggle()
 
     def toggle(self) -> None:
@@ -121,7 +132,7 @@ class MeasureROI(pg.PolyLineROI):
 
         while len(self.angle_labels) > len(positions):
             label = self.angle_labels.pop()
-            self.view.removeItem(label)
+            self._viewer.view.removeItem(label)
 
         for i, (_, pos) in enumerate(positions):
             _, prev_pos = positions[(i - 1) % len(positions)]
@@ -129,14 +140,14 @@ class MeasureROI(pg.PolyLineROI):
             angle = pg.Point(pos - next_pos).angle(
                 pg.Point(pos - prev_pos)
             )
-            pos = self.view.mapToView(pos)
+            pos = self._viewer.view.mapToView(pos)
             if i < len(self.angle_labels):
                 self.angle_labels[i].setPos(pos.x(), pos.y())
                 self.angle_labels[i].setText(f"{angle:.2f}°")
             else:
                 angle_label = pg.TextItem(f"{angle:.2f}°")
                 angle_label.setPos(pos.x(), pos.y())
-                self.view.addItem(angle_label)
+                self._viewer.view.addItem(angle_label)
                 self.angle_labels.append(angle_label)
 
     def update_lines(self) -> None:
@@ -144,42 +155,107 @@ class MeasureROI(pg.PolyLineROI):
 
         while len(self.line_labels) > len(positions):
             label = self.line_labels.pop()
-            self.view.removeItem(label)
+            self._viewer.view.removeItem(label)
 
         for i, (_, pos) in enumerate(positions):
             _, next_pos = positions[(i + 1) % len(positions)]
-            pos = self.view.mapToView(pos)
-            next_pos = self.view.mapToView(next_pos)
+            pos = self._viewer.view.mapToView(pos)
+            next_pos = self._viewer.view.mapToView(next_pos)
             length = pg.Point(pos - next_pos).length()
             mid = (pos + next_pos) / 2
             if self.show_in_mm:
                 length = length * self.px_in_mm / self.n_px
-            pos = self.view.mapToView(pos)
+            pos = self._viewer.view.mapToView(pos)
             if i < len(self.line_labels):
                 self.line_labels[i].setPos(mid.x(), mid.y())
                 self.line_labels[i].setText(f"{length:.2f}")
             else:
                 angle_label = pg.TextItem(f"{length:.2f}")
                 angle_label.setPos(mid.x(), mid.y())
-                self.view.addItem(angle_label)
+                self._viewer.view.addItem(angle_label)
                 self.line_labels.append(angle_label)
 
 
-class ScannerLine(pg.InfiniteLine):
+class LineExtractorPlot(pg.PlotWidget):
+
+    plotItem: pg.PlotItem
 
     def __init__(
         self,
+        viewer: ImageViewer,
         vertical: bool = False,
         **kwargs,
     ) -> None:
+        self._viewer = viewer
+        self._vert = vertical
+        self._width = 0  # n pixels above and below line to mean
+        v_plot_viewbox = pg.ViewBox()
+        if vertical:
+            v_plot_viewbox.invertX()
+            v_plot_viewbox.invertY()
+        v_plot_item = pg.PlotItem(viewBox=v_plot_viewbox)
+        v_plot_item.showGrid(x=True, y=True, alpha=0.4)
+        super().__init__(plotItem=v_plot_item, **kwargs)
+
         pen = pg.mkPen(
             color=(100, 100, 100, 200),
             style=Qt.PenStyle.DashLine,
             width=3,
         )
-        super().__init__(
+        self._line = pg.InfiniteLine(
             angle=90 if vertical else 0,
             pen=pen,
             movable=True,
-            **kwargs,
         )
+        self._line.sigPositionChanged.connect(self.draw_line)
+        self._viewer.timeLine.sigPositionChanged.connect(self.draw_line)
+        self._viewer.image_changed.connect(self.draw_line)
+        self._viewer.image_changed.connect(self.center_line)
+        self._viewer.view.addItem(self._line)
+        self.center_line()
+
+    def center_line(self) -> None:
+        self._line.setPos(self._viewer.image.shape[1 if self._vert else 2] / 2)
+
+    def change_width(self, width: int) -> None:
+        if width < 0:
+            raise ValueError("Negative width is not allowed")
+        self._width = width
+
+    def draw_line(self) -> None:
+        p = int(self._line.value())  # type: ignore
+        if not (0 <= p < self._viewer.image.shape[1 if self._vert else 2]):
+            return
+        self.clear()
+        sp = slice(p - self._width, p + self._width + 1)
+        if self._vert:
+            image = self._viewer.now[sp, :].mean(axis=0)
+        else:
+            image = self._viewer.now[:, sp].mean(axis=1)
+        self.plot(image)
+
+    def plot(self, image: np.ndarray) -> None:
+        if image.ndim == 2:
+            if self._vert:
+                x_values = np.arange(image.shape[0])
+                self.plotItem.plot(image[:, 0], x_values, pen='r')
+                self.plotItem.plot(image[:, 1], x_values, pen='g')
+                self.plotItem.plot(image[:, 2], x_values, pen='b')
+            else:
+                self.plotItem.plot(image[:, 0], pen='r')
+                self.plotItem.plot(image[:, 1], pen='g')
+                self.plotItem.plot(image[:, 2], pen='b')
+        else:
+            if self._vert:
+                x_values = np.arange(image.shape[0])
+                self.plotItem.plot(image, x_values, pen='gray')
+            else:
+                self.plotItem.plot(image, pen='gray')
+
+    def toggle_line(self) -> None:
+        if self._line.movable:
+            self._line.setMovable(False)
+            self._viewer.view.removeItem(self._line)
+        else:
+            self._line.setMovable(True)
+            self._viewer.view.addItem(self._line)

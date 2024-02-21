@@ -3,14 +3,13 @@ from typing import Any, Optional
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtGui import QDropEvent
-from pyqtgraph import RectROI, mkPen
+from pyqtgraph import RectROI
 
 from .. import settings
 from ..data.load import DataLoader, ImageData
 from ..tools import format_pixel_value, log, wrap_text
-from .widgets import MeasureROI, ScannerLine
 
 
 class ImageViewer(pg.ImageView):
@@ -26,12 +25,9 @@ class ImageViewer(pg.ImageView):
     }
 
     file_dropped = pyqtSignal(str)
+    image_changed = pyqtSignal()
 
-    def __init__(
-        self,
-        h_plot: pg.PlotWidget,
-        v_plot: pg.PlotWidget,
-    ) -> None:
+    def __init__(self) -> None:
         view = pg.PlotItem()
         view.showGrid(x=True, y=True, alpha=0.4)
         roi = pg.ROI(pos=(0, 0), size=10)  # type: ignore
@@ -49,21 +45,8 @@ class ImageViewer(pg.ImageView):
         )
         self.ui.histogram.gradient.loadPreset('greyclip')
 
-        self.measure_roi = MeasureROI(self.view)
-
         self.mask: None | RectROI = None
         self.pixel_value: Optional[np.ndarray] = None
-
-        self.h_plot = h_plot
-        self.v_plot = v_plot
-
-        self.crosshair_hline = ScannerLine()
-        self.crosshair_vline = ScannerLine(vertical=True)
-        self.addItem(self.crosshair_vline)
-        self.addItem(self.crosshair_hline)
-        self.setup_connections()
-        self.crosshair_state = False
-        self.toggle_crosshair()
 
         self.roi.sigRegionChanged.connect(
             lambda: self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
@@ -90,14 +73,17 @@ class ImageViewer(pg.ImageView):
         file_path = e.mimeData().urls()[0].toLocalFile()
         self.file_dropped.emit(file_path)
 
+    def setImage(self, *args, **kwargs) -> None:
+        super().setImage(*args, **kwargs)
+        self.image_changed.emit()
+
     def toggle_fit_levels(self) -> None:
         self._fit_levels = not self._fit_levels
 
     def load_data(self, path: Optional[Path] = None, **kwargs) -> None:
         self.data = DataLoader(**kwargs).load(path)
         self.setImage(self.data.image)
-        self.init_roi_and_crosshair()
-        self.update_profiles()
+        self.init_roi()
         self.autoRange()
 
     def load_background_file(self, path: Path) -> bool:
@@ -111,18 +97,11 @@ class ImageViewer(pg.ImageView):
     def unload_background_file(self) -> None:
         self._background_image = None
 
-    def init_roi_and_crosshair(self) -> None:
+    def init_roi(self) -> None:
         height = self.image.shape[2]
         width = self.image.shape[1]
-        self.crosshair_vline.setPos(width / 2)
-        self.crosshair_hline.setPos(height / 2)
         self.roi.setSize((.1*width, .1*height))
         self.roi.setPos((width*9/20, height*9/20))
-        self.measure_roi.toggle()
-        self.measure_roi.setPoints(
-            [[0, 0], [0, 0.5*height], [0.5*width, 0.25*height]]
-        )
-        self.measure_roi.toggle()
         on_drop_roi_update = (
             self.data.n_images * np.prod(self.roi.size())
             > settings.get("viewer/ROI_on_drop_threshold")
@@ -154,7 +133,6 @@ class ImageViewer(pg.ImageView):
         )
         self.timeLine.setPos(pos)
         self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
-        self.update_profiles()
 
     def reduce(self, operation: str) -> None:
         match operation:
@@ -170,8 +148,7 @@ class ImageViewer(pg.ImageView):
             autoRange=False,
             autoLevels=self._fit_levels,
         )
-        self.init_roi_and_crosshair()
-        self.update_profiles()
+        self.init_roi()
 
     def manipulate(self, operation: str) -> None:
         if operation in ['transpose', 'flip_x', 'flip_y']:
@@ -186,8 +163,7 @@ class ImageViewer(pg.ImageView):
             autoLevels=self._fit_levels,
         )
         self.timeLine.setPos(pos)
-        self.init_roi_and_crosshair()
-        self.update_profiles()
+        self.init_roi()
 
     def reset(self) -> None:
         self.data.reset()
@@ -196,7 +172,7 @@ class ImageViewer(pg.ImageView):
             autoRange=True,
             autoLevels=self._fit_levels,
         )
-        self.init_roi_and_crosshair()
+        self.init_roi()
 
     def apply_mask(self) -> None:
         if self.mask is None:
@@ -210,7 +186,7 @@ class ImageViewer(pg.ImageView):
             autoLevels=self._fit_levels,
         )
         self.timeLine.setPos(pos)
-        self.init_roi_and_crosshair()
+        self.init_roi()
 
     def toggle_mask(self) -> None:
         if self.mask is None:
@@ -280,47 +256,3 @@ class ImageViewer(pg.ImageView):
 
     def get_lut_config(self) -> dict[str, Any]:
         return self.ui.histogram.saveState()
-
-    def setup_connections(self) -> None:
-        self.crosshair_vline.sigPositionChanged.connect(self.update_profiles)
-        self.crosshair_hline.sigPositionChanged.connect(self.update_profiles)
-        self.timeLine.sigPositionChanged.connect(self.update_profiles)
-        self.items_added = False
-
-    def toggle_crosshair(self) -> None:
-        self.crosshair_state = not self.crosshair_state
-        if self.crosshair_state:
-            if self.crosshair_vline not in self.view.items:
-                self.view.addItem(self.crosshair_vline)
-
-            if self.crosshair_hline not in self.view.items:
-                self.view.addItem(self.crosshair_hline)
-            self.crosshair_vline.setMovable(True)
-            self.crosshair_hline.setMovable(True)
-        else:
-            self.crosshair_vline.setMovable(False)
-            self.crosshair_hline.setMovable(False)
-            self.view.removeItem(self.crosshair_hline)
-            self.view.removeItem(self.crosshair_vline)
-
-    def update_profiles(self) -> None:
-        x = int(self.crosshair_vline.value())  # type: ignore
-        y = int(self.crosshair_hline.value())  # type: ignore
-        if (not (0 <= x < self.image.shape[1])
-                or (not (0 <= y < self.image.shape[2]))):
-            return
-
-        self.v_plot.clear()
-        self.h_plot.clear()
-
-        x_values = np.arange(self.image.shape[2])
-        if not self.data.is_greyscale():
-            self.v_plot.plot(self.now[x, :, 0], x_values, pen='r')
-            self.v_plot.plot(self.now[x, :, 1], x_values, pen='g')
-            self.v_plot.plot(self.now[x, :, 2], x_values, pen='b')
-            self.h_plot.plot(self.now[:, y, 0], pen='r')
-            self.h_plot.plot(self.now[:, y, 1], pen='g')
-            self.h_plot.plot(self.now[:, y, 2], pen='b')
-        else:
-            self.v_plot.plot(self.now[x, :], x_values, pen='gray')
-            self.h_plot.plot(self.now[:, y], pen='gray')
