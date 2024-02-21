@@ -221,6 +221,13 @@ class LineExtractorPlot(pg.PlotWidget):
         if width < 0:
             raise ValueError("Negative width is not allowed")
         self._width = width
+        pen = pg.mkPen(
+            color=(100, 100, 100, 200),
+            style=Qt.PenStyle.DashLine,
+            width=3*(width+1),
+        )
+        self._line.setPen(pen)
+        self.draw_line()
 
     def draw_line(self) -> None:
         p = int(self._line.value())  # type: ignore

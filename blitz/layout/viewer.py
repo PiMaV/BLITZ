@@ -17,7 +17,7 @@ class ImageViewer(pg.ImageView):
     image: np.ndarray
 
     AVAILABLE_OPERATIONS = {
-        "All Images": "org",
+        "-": "org",
         "Minimum": "min",
         "Maximum": "max",
         "Mean": "mean",
@@ -73,17 +73,23 @@ class ImageViewer(pg.ImageView):
         file_path = e.mimeData().urls()[0].toLocalFile()
         self.file_dropped.emit(file_path)
 
-    def setImage(self, *args, **kwargs) -> None:
+    def setImage(self, *args, keep_timestep: bool = False, **kwargs) -> None:
+        if keep_timestep:
+            pos = self.timeLine.pos()
         super().setImage(*args, **kwargs)
+        if keep_timestep:
+            self.timeLine.setPos(pos)
+        self.init_roi()
         self.image_changed.emit()
 
     def toggle_fit_levels(self) -> None:
         self._fit_levels = not self._fit_levels
+        if self._fit_levels:
+            self.autoLevels()
 
     def load_data(self, path: Optional[Path] = None, **kwargs) -> None:
         self.data = DataLoader(**kwargs).load(path)
         self.setImage(self.data.image)
-        self.init_roi()
         self.autoRange()
 
     def load_background_file(self, path: Path) -> bool:
@@ -125,13 +131,12 @@ class ImageViewer(pg.ImageView):
             reference=self._background_image if background else None,
             force_calculation=force_calculation,
         )
-        pos = self.timeLine.pos()
         self.setImage(
             self.data.image,
+            keep_timestep=True,
             autoRange=False,
             autoLevels=self._fit_levels,
         )
-        self.timeLine.setPos(pos)
         self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
 
     def reduce(self, operation: str) -> None:
@@ -148,7 +153,6 @@ class ImageViewer(pg.ImageView):
             autoRange=False,
             autoLevels=self._fit_levels,
         )
-        self.init_roi()
 
     def manipulate(self, operation: str) -> None:
         if operation in ['transpose', 'flip_x', 'flip_y']:
@@ -156,37 +160,30 @@ class ImageViewer(pg.ImageView):
         else:
             log("Operation not implemented")
             return
-        pos = self.timeLine.pos()
         self.setImage(
             self.data.image,
+            keep_timestep=True,
             autoRange=False,
             autoLevels=self._fit_levels,
         )
-        self.timeLine.setPos(pos)
-        self.init_roi()
 
     def reset(self) -> None:
         self.data.reset()
         self.setImage(
             self.data.image,
-            autoRange=True,
             autoLevels=self._fit_levels,
         )
-        self.init_roi()
 
     def apply_mask(self) -> None:
         if self.mask is None:
             return
         self.data.mask(self.mask)
         self.toggle_mask()
-        pos = self.timeLine.pos()
         self.setImage(
             self.data.image,
-            autoRange=True,
+            keep_timestep=True,
             autoLevels=self._fit_levels,
         )
-        self.timeLine.setPos(pos)
-        self.init_roi()
 
     def toggle_mask(self) -> None:
         if self.mask is None:

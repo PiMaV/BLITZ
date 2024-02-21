@@ -71,6 +71,10 @@ class ImageData:
         return self._image.shape[0]
 
     @property
+    def shape(self) -> tuple[int, int]:
+        return (self.image.shape[1], self.image.shape[2])
+
+    @property
     def meta(self) -> list[dict[str, Any]]:
         return self._meta
 
