@@ -324,7 +324,9 @@ class ExtractionPlot(pg.PlotWidget):
             return
         self.clear()
         sp = slice(
-            p - self._extractionline.width, p + self._extractionline.width + 1
+            max(p - self._extractionline.width, 0),
+            min(p + self._extractionline.width + 1,
+                self._viewer.image.shape[1 if self._vert else 2])
         )
         if self._vert:
             image = self._viewer.now[sp, :].mean(axis=0)

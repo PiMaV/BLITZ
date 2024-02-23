@@ -43,6 +43,7 @@ class ImageViewer(pg.ImageView):
         self.ui.roiPlot.plotItem.showGrid(  # type: ignore
             x=True, y=True, alpha=0.6,
         )
+        self._auto_changed_gradient = False
         self.ui.histogram.gradient.loadPreset('greyclip')
 
         self.mask: None | RectROI = None
@@ -81,6 +82,21 @@ class ImageViewer(pg.ImageView):
             self.timeLine.setPos(pos)
         self.init_roi()
         self.image_changed.emit()
+
+    def autoLevels(self) -> None:
+        if not self.data.is_greyscale():
+            return super().autoLevels()
+        if (min_ := self.image.min()) < 0 < (max_ := self.image.max()):
+            max_ = max(abs(min_), max_)
+            min_ = - max_
+            self.ui.histogram.gradient.loadPreset('bipolar')
+            self.setLevels(min=min_, max=max_)
+            self._auto_changed_gradient = True
+        else:
+            if self._auto_changed_gradient:
+                self.ui.histogram.gradient.loadPreset('greyclip')
+                self._auto_changed_gradient = False
+            super().autoLevels()
 
     def toggle_fit_levels(self) -> None:
         self._fit_levels = not self._fit_levels
