@@ -7,10 +7,10 @@ from PyQt5.QtCore import QCoreApplication, Qt
 from PyQt5.QtGui import QFont, QIcon, QKeySequence
 from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
                              QDoubleSpinBox, QFileDialog, QFrame, QGridLayout,
-                             QHBoxLayout, QLabel, QMainWindow, QMenu, QMenuBar,
-                             QPushButton, QScrollArea, QShortcut, QSpinBox,
-                             QStatusBar, QStyle, QTabWidget, QVBoxLayout,
-                             QWidget, QLayout)
+                             QHBoxLayout, QLabel, QLayout, QMainWindow, QMenu,
+                             QMenuBar, QPushButton, QScrollArea, QShortcut,
+                             QSpinBox, QStatusBar, QStyle, QTabWidget,
+                             QVBoxLayout, QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import resources, settings
@@ -18,7 +18,7 @@ from ..tools import (LoadingManager, LoggingTextEdit, get_available_ram, log,
                      setup_logger)
 from .tof import TOFAdapter
 from .viewer import ImageViewer
-from .widgets import TimePlot, LineExtractorPlot, MeasureROI
+from .widgets import ExtractionPlot, MeasureROI, TimePlot
 
 TITLE = (
     "BLITZ: Bulk Loading and Interactive Time series Zonal analysis "
@@ -138,12 +138,6 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction("Restart").triggered.connect(restart)
         menubar.addMenu(file_menu)
-
-        view_menu = QMenu("View", self)
-        crosshair_action = view_menu.addAction("Show / Hide Crosshair")
-        crosshair_action.triggered.connect(self.h_plot.toggle_line)
-        crosshair_action.triggered.connect(self.v_plot.toggle_line)
-        menubar.addMenu(view_menu)
 
         self.setMenuBar(menubar)
 
@@ -286,21 +280,26 @@ class MainWindow(QMainWindow):
         crosshair_label = QLabel("Crosshair")
         crosshair_label.setStyleSheet(style_heading)
         view_layout.addWidget(crosshair_label)
+        crosshair_box = QCheckBox("Show")
+        crosshair_box.setChecked(True)
+        crosshair_box.stateChanged.connect(self.h_plot.toggle_line)
+        crosshair_box.stateChanged.connect(self.v_plot.toggle_line)
+        view_layout.addWidget(crosshair_box)
         width_holay = QHBoxLayout()
         width_label = QLabel("Line width:")
         width_holay.addWidget(width_label)
-        self.width_spinbox_v = QSpinBox()
-        self.width_spinbox_v.setRange(0, 1)
-        self.width_spinbox_v.setValue(0)
-        self.width_spinbox_v.setPrefix("H: ")
-        self.width_spinbox_v.valueChanged.connect(self.v_plot.change_width)
-        width_holay.addWidget(self.width_spinbox_v)
         self.width_spinbox_h = QSpinBox()
         self.width_spinbox_h.setRange(0, 1)
         self.width_spinbox_h.setValue(0)
-        self.width_spinbox_h.setPrefix("V: ")
+        self.width_spinbox_h.setPrefix("H: ")
         self.width_spinbox_h.valueChanged.connect(self.h_plot.change_width)
         width_holay.addWidget(self.width_spinbox_h)
+        self.width_spinbox_v = QSpinBox()
+        self.width_spinbox_v.setRange(0, 1)
+        self.width_spinbox_v.setValue(0)
+        self.width_spinbox_v.setPrefix("V: ")
+        self.width_spinbox_v.valueChanged.connect(self.v_plot.change_width)
+        width_holay.addWidget(self.width_spinbox_v)
         view_layout.addLayout(width_holay)
 
         roi_label = QLabel("Timeline Plot")
@@ -476,9 +475,9 @@ class MainWindow(QMainWindow):
         self.image_viewer = ImageViewer()
         self.dock_viewer.addWidget(self.image_viewer)
 
-        self.h_plot = LineExtractorPlot(self.image_viewer)
+        self.h_plot = ExtractionPlot(self.image_viewer)
         self.dock_h_plot.addWidget(self.h_plot)
-        self.v_plot = LineExtractorPlot(self.image_viewer, vertical=True)
+        self.v_plot = ExtractionPlot(self.image_viewer, vertical=True)
         self.dock_v_plot.addWidget(self.v_plot)
 
         self.measure_roi = MeasureROI(self.image_viewer)

@@ -1,8 +1,8 @@
+import numpy as np
 import pyqtgraph as pg
-from PyQt5.QtCore import QSize, Qt
+from PyQt5.QtCore import QSize, Qt, QPointF
 from PyQt5.QtGui import QKeyEvent, QMouseEvent, QWheelEvent
 from PyQt5.QtWidgets import QSizePolicy, QWidget
-import numpy as np
 
 from .viewer import ImageViewer
 
@@ -176,7 +176,112 @@ class MeasureROI(pg.PolyLineROI):
                 self.line_labels.append(angle_label)
 
 
-class LineExtractorPlot(pg.PlotWidget):
+class ExtractionLine(pg.InfiniteLine):
+
+    def __init__(
+        self,
+        viewer: ImageViewer,
+        vertical: bool = False,
+    ) -> None:
+        self._vertical = vertical
+        super().__init__(
+            angle=90 if vertical else 0,
+            pen=pg.mkPen(
+                color=(120, 120, 120, 200),
+                style=Qt.PenStyle.DashLine,
+                width=3,
+            ),
+            movable=True,
+        )
+        self._viewer = viewer
+        self._viewer.view.addItem(self)
+        self._upper = pg.InfiniteLine(
+            angle=90 if self._vertical else 0,
+            pen=pg.mkPen(
+                color=(75, 75, 75, 200),
+                style=Qt.PenStyle.DotLine,
+                width=3,
+            ),
+            movable=False,
+            hoverPen=pg.mkPen(
+                color=(255, 0, 0, 200),
+                style=Qt.PenStyle.DotLine,
+                width=3,
+            ),
+        )
+        self._lower = pg.InfiniteLine(
+            angle=90 if self._vertical else 0,
+            pen=pg.mkPen(
+                color=(75, 75, 75, 200),
+                style=Qt.PenStyle.DotLine,
+                width=3,
+            ),
+            movable=False,
+            hoverPen=pg.mkPen(
+                color=(255, 0, 0, 200),
+                style=Qt.PenStyle.DotLine,
+                width=3,
+            ),
+        )
+        self._width: int = 0
+        self.sigPositionChanged.connect(self._move_bounds)
+
+    def value(self) -> int:
+        return super().value()  # type: ignore
+
+    @property
+    def width(self) -> int:
+        return self._width
+
+    def setMouseHover(self, hover) -> None:
+        self._lower.setMouseHover(hover)
+        self._upper.setMouseHover(hover)
+        super().setMouseHover(hover)
+
+    def setPos(self, p) -> None:
+        if isinstance(p, (list, tuple, np.ndarray)) and not np.ndim(p) == 0:
+            p = p[0] if self._vertical else p[1]
+        elif isinstance(p, QPointF):
+            p = p.x() if self._vertical else p.y()
+        p = int(p) + 0.5  # type: ignore
+        super().setPos(p)
+
+    def _move_bounds(self) -> None:
+        if self._bounds is not None:
+            self._upper.setPos(self.value() - self._width - 0.5)
+            self._lower.setPos(self.value() + self._width + 0.5)
+
+    def change_width(self, width: int) -> None:
+        if width == self._width or width < 0:
+            return
+        elif width == 0:
+            self._viewer.view.removeItem(self._upper)
+            self._viewer.view.removeItem(self._lower)
+            self._width = 0
+            return
+
+        if self._width == 0:
+            self._viewer.view.addItem(self._upper)
+            self._viewer.view.addItem(self._lower)
+        self._width = width
+        self._move_bounds()
+
+    def toggle(self) -> None:
+        if self.movable:
+            self.setMovable(False)
+            self._viewer.view.removeItem(self)
+            if self._width > 0:
+                self._viewer.view.removeItem(self._upper)
+                self._viewer.view.removeItem(self._lower)
+        else:
+            self.setMovable(True)
+            self._viewer.view.addItem(self)
+            if self._width > 0:
+                self._viewer.view.addItem(self._upper)
+                self._viewer.view.addItem(self._lower)
+
+
+class ExtractionPlot(pg.PlotWidget):
 
     plotItem: pg.PlotItem
 
@@ -197,44 +302,30 @@ class LineExtractorPlot(pg.PlotWidget):
         v_plot_item.showGrid(x=True, y=True, alpha=0.4)
         super().__init__(plotItem=v_plot_item, **kwargs)
 
-        pen = pg.mkPen(
-            color=(100, 100, 100, 200),
-            style=Qt.PenStyle.DashLine,
-            width=3,
-        )
-        self._line = pg.InfiniteLine(
-            angle=90 if vertical else 0,
-            pen=pen,
-            movable=True,
-        )
-        self._line.sigPositionChanged.connect(self.draw_line)
+        self._extractionline = ExtractionLine(viewer=viewer, vertical=vertical)
+        self._extractionline.sigPositionChanged.connect(self.draw_line)
         self._viewer.timeLine.sigPositionChanged.connect(self.draw_line)
         self._viewer.image_changed.connect(self.draw_line)
         self._viewer.image_changed.connect(self.center_line)
-        self._viewer.view.addItem(self._line)
         self.center_line()
 
     def center_line(self) -> None:
-        self._line.setPos(self._viewer.image.shape[1 if self._vert else 2] / 2)
+        self._extractionline.setPos(
+            self._viewer.image.shape[1 if self._vert else 2] / 2
+        )
 
     def change_width(self, width: int) -> None:
-        if width < 0:
-            raise ValueError("Negative width is not allowed")
-        self._width = width
-        pen = pg.mkPen(
-            color=(100, 100, 100, 200),
-            style=Qt.PenStyle.DashLine,
-            width=3*(width+1),
-        )
-        self._line.setPen(pen)
+        self._extractionline.change_width(width)
         self.draw_line()
 
     def draw_line(self) -> None:
-        p = int(self._line.value())  # type: ignore
+        p = int(self._extractionline.value())  # type: ignore
         if not (0 <= p < self._viewer.image.shape[1 if self._vert else 2]):
             return
         self.clear()
-        sp = slice(p - self._width, p + self._width + 1)
+        sp = slice(
+            p - self._extractionline.width, p + self._extractionline.width + 1
+        )
         if self._vert:
             image = self._viewer.now[sp, :].mean(axis=0)
         else:
@@ -260,9 +351,4 @@ class LineExtractorPlot(pg.PlotWidget):
                 self.plotItem.plot(image, pen='gray')
 
     def toggle_line(self) -> None:
-        if self._line.movable:
-            self._line.setMovable(False)
-            self._viewer.view.removeItem(self._line)
-        else:
-            self._line.setMovable(True)
-            self._viewer.view.addItem(self._line)
+        self._extractionline.toggle()
