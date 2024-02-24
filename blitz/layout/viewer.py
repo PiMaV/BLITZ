@@ -83,14 +83,20 @@ class ImageViewer(pg.ImageView):
         self.init_roi()
         self.image_changed.emit()
 
+    def updateImage(self, autoHistogramRange: bool = False) -> None:
+        super().updateImage(autoHistogramRange)
+
     def autoLevels(self) -> None:
         if not self.data.is_greyscale():
+            if self._auto_changed_gradient:
+                self._auto_changed_gradient = False
             return super().autoLevels()
         if (min_ := self.image.min()) < 0 < (max_ := self.image.max()):
             max_ = max(abs(min_), max_)
             min_ = - max_
             self.ui.histogram.gradient.loadPreset('bipolar')
             self.setLevels(min=min_, max=max_)
+            self.ui.histogram.setHistogramRange(min_, max_)
             self._auto_changed_gradient = True
         else:
             if self._auto_changed_gradient:

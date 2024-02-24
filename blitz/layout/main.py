@@ -234,9 +234,14 @@ class MainWindow(QMainWindow):
         self.max_ram_spinbox.setSingleStep(0.1)
         self.max_ram_spinbox.setPrefix("Max. RAM: ")
         file_layout.addWidget(self.max_ram_spinbox)
+        load_btn_lay = QHBoxLayout()
         load_btn = QPushButton("Open File")
         load_btn.pressed.connect(self.browse_file)
-        file_layout.addWidget(load_btn)
+        load_btn_lay.addWidget(load_btn)
+        fload_btn = QPushButton("Open Folder")
+        fload_btn.pressed.connect(self.browse_folder)
+        load_btn_lay.addWidget(fload_btn)
+        file_layout.addLayout(load_btn_lay)
         file_layout.addStretch()
         self.create_option_tab(file_layout, "File")
 
@@ -654,6 +659,14 @@ class MainWindow(QMainWindow):
         if file_path:
             self.last_file_dir = Path(file_path).parent
             self.load_images(Path(file_path))
+
+    def browse_folder(self) -> None:
+        folder_path = QFileDialog.getExistingDirectory(
+            directory=str(self.last_file_dir),
+        )
+        if folder_path:
+            self.last_file_dir = Path(folder_path).parent
+            self.load_images(Path(folder_path))
 
     def browse_lut(self) -> None:
         file, _ = QFileDialog.getOpenFileName(
