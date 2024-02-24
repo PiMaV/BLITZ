@@ -14,6 +14,7 @@ from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
 from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import resources, settings
+from ..data.ops import ReduceOperation
 from ..tools import (LoadingManager, LoggingTextEdit, get_available_ram, log,
                      setup_logger)
 from .tof import TOFAdapter
@@ -342,16 +343,21 @@ class MainWindow(QMainWindow):
         timeline_label = QLabel("Reduction")
         timeline_label.setStyleSheet(style_heading)
         timeop_layout.addWidget(timeline_label)
-        self.op_combobox = QComboBox()
-        for op in self.image_viewer.AVAILABLE_OPERATIONS:
-            self.op_combobox.addItem(op)
-        self.op_combobox.currentIndexChanged.connect(self.operation_changed)
-        timeop_layout.addWidget(self.op_combobox)
+        self.reduce_op_box = QComboBox()
+        self.reduce_op_box.addItem("-")
+        for op in ReduceOperation:
+            self.reduce_op_box.addItem(op.name)
+        self.reduce_op_box.currentIndexChanged.connect(self.operation_changed)
+        timeop_layout.addWidget(self.reduce_op_box)
         norm_label = QLabel("Normalization")
         norm_label.setStyleSheet(style_heading)
         timeop_layout.addWidget(norm_label)
         self.norm_range_box = QCheckBox("Range:")
         self.norm_range_box.setChecked(True)
+        norm_label_op = QLabel("use:")
+        self.norm_op_box = QComboBox()
+        for op in ReduceOperation:
+            self.norm_op_box.addItem(op.name)
         norm_range_label_to = QLabel("-")
         self.norm_range_start = QSpinBox()
         self.norm_range_start.setMinimum(0)
@@ -367,13 +373,16 @@ class MainWindow(QMainWindow):
         self.norm_range_checkbox.stateChanged.connect(
             self.roi_plot.toggle_norm_range
         )
-        range_layout = QHBoxLayout()
-        range_layout.addWidget(self.norm_range_box)
-        range_layout.addWidget(self.norm_range_start)
-        range_layout.addWidget(norm_range_label_to)
-        range_layout.addWidget(self.norm_range_end)
-        range_layout.addWidget(self.norm_range_checkbox)
+        range_layout = QGridLayout()
+        range_layout.addWidget(self.norm_range_box, 0, 0,  1, 1)
+        range_layout.addWidget(self.norm_range_start, 0, 1, 1, 1)
+        range_layout.addWidget(norm_range_label_to, 0, 2, 1, 1)
+        range_layout.addWidget(self.norm_range_end, 0, 3, 1, 1)
+        range_layout.addWidget(self.norm_range_checkbox, 0, 4, 1, 1)
+        range_layout.addWidget(norm_label_op, 1, 1, 1, 3)
+        range_layout.addWidget(self.norm_op_box, 1, 2, 1, 3)
         timeop_layout.addLayout(range_layout)
+        timeop_layout.addSpacing(10)
         self.norm_bg_box = QCheckBox("Background:")
         self.norm_bg_box.setEnabled(False)
         self.bg_input_button = QPushButton("[Select]")
@@ -381,27 +390,25 @@ class MainWindow(QMainWindow):
         bg_layout = QHBoxLayout()
         bg_layout.addWidget(self.norm_bg_box)
         bg_layout.addWidget(self.bg_input_button)
-        # bg_layout.addWidget(self.bg_remove_button)
         timeop_layout.addLayout(bg_layout)
-        self.norm_beta = QDoubleSpinBox()
-        self.norm_beta.setPrefix("beta: ")
+        self.norm_beta = QSpinBox()
+        self.norm_beta.setSuffix("%")
         self.norm_beta.setMinimum(0)
-        self.norm_beta.setMaximum(1)
-        self.norm_beta.setValue(1)
-        self.norm_beta.setSingleStep(0.01)
+        self.norm_beta.setMaximum(100)
+        self.norm_beta.setValue(100)
         self.norm_beta.editingFinished.connect(self._normalization_beta_update)
-        self.norm_subtract_box = QCheckBox("Subtract Mean")
+        self.norm_subtract_box = QCheckBox("Subtract")
         self.norm_subtract_box.clicked.connect(
             lambda: self._normalization("subtract")
         )
-        self.norm_divide_box = QCheckBox("Divide Mean")
+        self.norm_divide_box = QCheckBox("Divide")
         self.norm_divide_box.clicked.connect(
             lambda: self._normalization("divide")
         )
-        norm_layout = QGridLayout()
-        norm_layout.addWidget(self.norm_beta, 0, 0, 2, 1)
-        norm_layout.addWidget(self.norm_subtract_box, 0, 1, 1, 2)
-        norm_layout.addWidget(self.norm_divide_box, 1, 1, 1, 2)
+        norm_layout = QHBoxLayout()
+        norm_layout.addWidget(self.norm_beta)
+        norm_layout.addWidget(self.norm_subtract_box)
+        norm_layout.addWidget(self.norm_divide_box)
         hline = QFrame()
         hline.setFrameShape(QFrame.Shape.HLine)
         hline.setFrameShadow(QFrame.Shadow.Sunken)
@@ -463,20 +470,6 @@ class MainWindow(QMainWindow):
         setup_logger(self.logger)
 
     def setup_image_and_line_viewers(self) -> None:
-        # v_plot_viewbox = pg.ViewBox()
-        # v_plot_viewbox.invertX()
-        # v_plot_viewbox.invertY()
-        # v_plot_item = pg.PlotItem(viewBox=v_plot_viewbox)
-        # v_plot_item.showGrid(x=True, y=True, alpha=0.4)
-        # self.v_plot = pg.PlotWidget(plotItem=v_plot_item)
-        # self.dock_v_plot.addWidget(self.v_plot)
-
-        # h_plot_viewbox = pg.ViewBox()
-        # h_plot_item = pg.PlotItem(viewBox=h_plot_viewbox)
-        # h_plot_item.showGrid(x=True, y=True, alpha=0.4)
-        # self.h_plot = pg.PlotWidget(plotItem=h_plot_item)
-        # self.dock_h_plot.addWidget(self.h_plot)
-
         self.image_viewer = ImageViewer()
         self.dock_viewer.addWidget(self.image_viewer)
 
@@ -524,14 +517,18 @@ class MainWindow(QMainWindow):
         self.flip_x_box.setChecked(False)
         self.flip_y_box.setChecked(False)
         self.transpose_box.setChecked(False)
-        self.op_combobox.setCurrentIndex(0)
+        self.reduce_op_box.setCurrentIndex(0)
+        if self.image_viewer.data.is_single_image():
+            self.reduce_op_box.setEnabled(False)
+        else:
+            self.reduce_op_box.setEnabled(True)
         self.norm_range_box.setChecked(True)
         self.norm_range_box.setEnabled(True)
         self.norm_bg_box.setEnabled(False)
         self.norm_bg_box.setChecked(False)
         self.norm_subtract_box.setChecked(False)
         self.norm_divide_box.setChecked(False)
-        self.norm_beta.setValue(1.0)
+        self.norm_beta.setValue(100)
         self.bg_input_button.setText("[Select]")
         self.norm_range_checkbox.setChecked(False)
         self.image_viewer._background_image = None
@@ -571,7 +568,8 @@ class MainWindow(QMainWindow):
                 right = self.norm_range_end.value()
             self.image_viewer.norm(
                 operation=name,
-                beta=self.norm_beta.value(),
+                use=self.norm_op_box.currentText(),
+                beta=self.norm_beta.value() / 100.0,
                 left=left,
                 right=right,
                 background=self.norm_bg_box.isChecked(),
@@ -579,8 +577,9 @@ class MainWindow(QMainWindow):
             )
 
     def _normalization(self, name: str) -> None:
-        if (not self.norm_range_box.isChecked()
-                and not self.norm_bg_box.isChecked()):
+        if ((not self.norm_range_box.isChecked()
+                and not self.norm_bg_box.isChecked())
+                or self.image_viewer.data.is_single_image()):
             self.norm_subtract_box.setChecked(False)
             self.norm_divide_box.setChecked(False)
             return
@@ -589,13 +588,15 @@ class MainWindow(QMainWindow):
             self.norm_range_box.setEnabled(False)
             self.norm_bg_box.setEnabled(False)
             self.bg_input_button.setEnabled(False)
-            self.op_combobox.setEnabled(False)
+            self.reduce_op_box.setEnabled(False)
+            self.norm_op_box.setEnabled(False)
         else:
             self.norm_range_box.setEnabled(True)
             if self.bg_input_button.text() == "[Remove]":
                 self.norm_bg_box.setEnabled(True)
             self.bg_input_button.setEnabled(True)
-            self.op_combobox.setEnabled(True)
+            self.reduce_op_box.setEnabled(True)
+            self.norm_op_box.setEnabled(True)
         if name == "subtract" and self.norm_divide_box.isChecked():
             self.norm_divide_box.setChecked(False)
         elif name == "divide" and self.norm_subtract_box.isChecked():
@@ -606,7 +607,8 @@ class MainWindow(QMainWindow):
             right = self.norm_range_end.value()
         self.image_viewer.norm(
             operation=name,
-            beta=self.norm_beta.value(),
+            use=self.norm_op_box.currentText(),
+            beta=self.norm_beta.value() / 100.0,
             left=left,
             right=right,
             background=self.norm_bg_box.isChecked(),
@@ -725,19 +727,20 @@ class MainWindow(QMainWindow):
 
     def operation_changed(self) -> None:
         log(f"Available RAM: {get_available_ram():.2f} GB")
-        text = self.op_combobox.currentText()
+        text = self.reduce_op_box.currentText()
         if text != "-":
             self.norm_subtract_box.setEnabled(False)
             self.norm_divide_box.setEnabled(False)
         else:
             self.norm_subtract_box.setEnabled(True)
             self.norm_divide_box.setEnabled(True)
-        with LoadingManager(self, f"Loading {text}...") as lm:
-            self.image_viewer.reduce(
-                self.image_viewer.AVAILABLE_OPERATIONS[text],
-            )
-        log(f"Seconds needed: {lm.duration:.2f}")
-        log(f"Available RAM: {get_available_ram():.2f} GB")
+        if text == "-":
+            self.image_viewer.unravel()
+        else:
+            with LoadingManager(self, f"Loading {text}...") as lm:
+                self.image_viewer.reduce(text)
+            log(f"Seconds needed: {lm.duration:.2f}")
+            log(f"Available RAM: {get_available_ram():.2f} GB")
 
     def update_roi_settings(self) -> None:
         self.measure_roi.show_in_mm = self.mm_checkbox.isChecked()

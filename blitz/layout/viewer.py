@@ -9,20 +9,13 @@ from pyqtgraph import RectROI
 
 from .. import settings
 from ..data.load import DataLoader, ImageData
+from ..data.ops import ReduceOperation
 from ..tools import format_pixel_value, log, wrap_text
 
 
 class ImageViewer(pg.ImageView):
 
     image: np.ndarray
-
-    AVAILABLE_OPERATIONS = {
-        "-": "org",
-        "Minimum": "min",
-        "Maximum": "max",
-        "Mean": "mean",
-        "Standard Deviation": "std",
-    }
 
     file_dropped = pyqtSignal(str)
     image_changed = pyqtSignal()
@@ -139,6 +132,7 @@ class ImageViewer(pg.ImageView):
     def norm(
         self,
         operation: str,
+        use: ReduceOperation | str,
         beta: float = 1.0,
         left: Optional[int] = None,
         right: Optional[int] = None,
@@ -147,6 +141,7 @@ class ImageViewer(pg.ImageView):
     ) -> None:
         self.data.normalize(
             operation=operation,  # type: ignore
+            use=use,
             beta=beta,
             left=left,
             right=right,
@@ -161,15 +156,16 @@ class ImageViewer(pg.ImageView):
         )
         self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
 
-    def reduce(self, operation: str) -> None:
-        match operation:
-            case 'min' | 'max' | 'mean' | 'std':
-                self.data.reduce(operation)
-            case 'org':
-                self.data.unravel()
-            case _:
-                log("Operation not implemented")
-                return
+    def unravel(self) -> None:
+        self.data.unravel()
+        self.setImage(
+            self.data.image,
+            autoRange=False,
+            autoLevels=self._fit_levels,
+        )
+
+    def reduce(self, operation: ReduceOperation | str) -> None:
+        self.data.reduce(operation)
         self.setImage(
             self.data.image,
             autoRange=False,
