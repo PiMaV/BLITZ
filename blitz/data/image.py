@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
 import numpy as np
 import pyqtgraph as pg
@@ -8,9 +8,13 @@ from ..tools import log
 
 class ImageData:
 
-    def __init__(self) -> None:
-        self._image = np.empty((1, ))
-        self._meta = []
+    def __init__(
+        self,
+        image: np.ndarray,
+        metadata: list[dict[str, Any]],
+    ) -> None:
+        self._image = image
+        self._meta = metadata
         self._min: np.ndarray | None = None
         self._max: np.ndarray | None = None
         self._mean: np.ndarray | None = None
@@ -19,21 +23,27 @@ class ImageData:
         self._transposed = False
         self._flipped_x = False
         self._flipped_y = False
-        self._operation_active = None
+        self._reduce_operation = None
+        self._norm: np.ndarray | None = None
+        self._norm_operation: Literal["subtract", "divide"] | None = None
 
-    def set(
-        self,
-        image: np.ndarray,
-        metadata: list[dict[str, Any]],
-    ) -> None:
-        self.reset()
-        self._image = image
-        self._meta = metadata
+    def reset(self) -> None:
+        self._min = None
+        self._max = None
+        self._mean = None
+        self._std = None
+        self._mask = None
+        self._transposed = False
+        self._flipped_x = False
+        self._flipped_y = False
+        self._reduce_operation = None
+        self._norm = None
+        self._norm_operation = None
 
     @property
     def image(self) -> np.ndarray:
         image: np.ndarray
-        match self._operation_active:
+        match self._reduce_operation:
             case 'min':
                 image = self._min  # type: ignore
             case 'max':
@@ -44,6 +54,8 @@ class ImageData:
                 image = self._std  # type: ignore
             case _:
                 image = self._image
+        if self._norm is not None:
+            image = self._norm
         if self._mask is not None:
             image = image[self._mask]
         if self._transposed:
@@ -59,8 +71,18 @@ class ImageData:
         return self._image.shape[0]
 
     @property
+    def shape(self) -> tuple[int, int]:
+        return (self.image.shape[1], self.image.shape[2])
+
+    @property
     def meta(self) -> list[dict[str, Any]]:
         return self._meta
+
+    def is_single_image(self) -> bool:
+        return self._image.shape[0] == 1
+
+    def is_greyscale(self) -> bool:
+        return self._image.ndim == 3
 
     def reduce(self, operation: Literal['min', 'max', 'mean', 'std']) -> None:
         match operation:
@@ -76,10 +98,52 @@ class ImageData:
             case 'std':
                 if self._std is None:
                     self._std = np.expand_dims(self._image.std(0), axis=0)
-        self._operation_active = operation
+        self._reduce_operation = operation
+
+    def normalize(
+        self,
+        operation: Literal["subtract", "divide"],
+        beta: float = 1.0,
+        left: Optional[int] = None,
+        right: Optional[int] = None,
+        reference: Optional["ImageData"] = None,
+        force_calculation: bool = False,
+    ) -> bool:
+        if self._reduce_operation is not None:
+            log("Normalization not possible on reduced data")
+            return False
+        if self._norm_operation == operation and not force_calculation:
+            self._norm_operation = None
+            self._norm = None
+            return True
+        if self._norm_operation is not None:
+            self._norm = None
+        image = self.image
+        mean_range = mean_ref = None
+        if left is not None and right is not None:
+            mean_range = beta * np.mean(image[left:right+1], axis=0)
+        if reference is not None:
+            mean_ref = reference.image.mean(axis=0)
+            if mean_ref.shape != image.shape[1:]:
+                log("Error: Background image has incompatible shape")
+                return False
+        if left is None and right is None and reference is None:
+            return False
+        if operation == "subtract":
+            if mean_range is not None:
+                self._norm = image - mean_range
+            if mean_ref is not None:
+                self._norm = image - mean_ref
+        if operation == "divide":
+            if mean_range is not None:
+                self._norm = image / mean_range
+            if mean_ref is not None:
+                self._norm = image / mean_ref
+        self._norm_operation = operation  # type: ignore
+        return True
 
     def unravel(self) -> None:
-        self._operation_active = None
+        self._reduce_operation = None
 
     def mask(self, roi: pg.ROI) -> None:
         if self._transposed or self._flipped_x or self._flipped_y:
@@ -96,19 +160,12 @@ class ImageData:
             x_stop += self._mask[1].start
             y_start += self._mask[2].start
             y_stop += self._mask[2].start
-        op = self._operation_active
+        op = self._reduce_operation
         self.reset()
         self.reduce(op)  # type: ignore
         self._mask = (
             slice(None, None), slice(x_start, x_stop), slice(y_start, y_stop),
         )
-
-    def reset(self) -> None:
-        self._mask = None
-        self._min = None
-        self._max = None
-        self._mean = None
-        self._std = None
 
     def transpose(self) -> None:
         self._transposed = not self._transposed

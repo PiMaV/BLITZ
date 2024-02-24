@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "BLITZ"
-version = "1.0.1"
+version = "1.0.3"
 description = "Bulk Loading and Interactive Time series Zonal analysis"
 authors = [
     "Richard Krieg <alienkrieg@gmail.com>",

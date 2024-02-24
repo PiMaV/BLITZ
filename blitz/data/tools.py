@@ -1,12 +1,10 @@
-from typing import Any
-
 import cv2
 import numpy as np
 
 
 def resize_and_convert(
     image: np.ndarray,
-    size: int,
+    size: float,
     convert_to_8_bit: bool,
 ) -> np.ndarray:
     h, w = image.shape[:2]
@@ -22,7 +20,7 @@ def resize_and_convert(
 
 def resize_and_convert_to_8_bit(
     array: np.ndarray,
-    size_ratio: int,
+    size_ratio: float,
     convert_to_8_bit: bool,
 ) -> np.ndarray:
     new_shape = tuple(int(dim * size_ratio) for dim in array.shape[:2])
@@ -39,43 +37,6 @@ def adjust_ratio_for_memory(size_estimate: float, ram_size: float) -> float:
         return 1.0
     adjusted_ratio = 2**30 * ram_size / size_estimate
     return adjusted_ratio
-
-
-def create_info_image(
-    message: str = 'Loading failed',
-    height: int = 50,
-    width: int = 280,
-    color: tuple[int, int, int] = (255, 0, 0),
-) -> tuple[np.ndarray, list[dict[str, Any]]]:
-    img = np.zeros((height, width, 3), dtype=np.uint8)
-    cv2.putText(
-        img=img,
-        text=message,
-        org=(5, height//2),
-        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-        fontScale=0.4,
-        color=color,
-        thickness=1,
-    )
-    img = np.expand_dims(img, axis=0)
-    all_metadata = [{
-        "file_size_MB": img.nbytes / 2**20,  # In MB
-        "file_name": "Error.png",  # Filename as frame number
-    }]
-    return img, all_metadata
-
-
-def is_image_grayscale(image: np.ndarray) -> bool:
-    if len(image.shape) == 2:
-        return True
-    if len(image.shape) == 3 and image.shape[2] == 1:
-        return True
-    if len(image.shape) == 3:
-        return bool(
-            np.all(image[:, :, 0] == image[:, :, 1])
-            and np.all(image[:, :, 1] == image[:, :, 2])
-        )
-    return False
 
 
 def smoothen(

@@ -1,370 +1,315 @@
 import json
 import os
-import warnings
 from multiprocessing import Pool, cpu_count
+from pathlib import Path
 from typing import Any, Optional
 
 import cv2
 import numpy as np
-from natsort import natsorted
 
+from .. import settings
 from ..tools import log
-from .tools import (adjust_ratio_for_memory, create_info_image,
-                    is_image_grayscale, resize_and_convert,
+from .image import ImageData
+from .tools import (adjust_ratio_for_memory, resize_and_convert,
                     resize_and_convert_to_8_bit)
 
 IMAGE_EXTENSIONS = (".jpg", ".png", ".jpeg", ".bmp", ".tiff", ".tif")
 VIDEO_EXTENSIONS = (".mp4", ".avi", ".mov")
 ARRAY_EXTENSIONS = (".npy", )
-MULTICORE_THRESHOLD = 1.3 * (2**30)  # in GB
 
 
-def from_file(
-    filepath: Optional[str] = None,
-    size: int = 1,
-    ratio: int = 1,
-    convert_to_8_bit: bool = False,
-    ram_size: int = 1,
-    grayscale: bool = False,
-) -> tuple[np.ndarray, list[dict[str, Any]]]:
-    if filepath is None:
-        data, metadata = create_info_image(
-            message="No data",
-            color=(0, 0, 255),
-        )
-    else:
-        dirname = os.path.dirname(filepath)
-        file_extension = os.path.splitext(filepath)[1].lower()
-        if file_extension in IMAGE_EXTENSIONS:
-            data, metadata = _load_multiple_standard_images(
-                filepath,
-                size,
-                ratio,
-                convert_to_8_bit,
-                ram_size,
-                grayscale,
-            )
-        elif file_extension in ARRAY_EXTENSIONS:
-            data, metadata = _load_numpy_array(
-                dirname,
-                size,
-                ratio,
-                convert_to_8_bit,
-                ram_size,
-                grayscale,
-            )
-        elif file_extension in VIDEO_EXTENSIONS:
-            data, metadata = _load_video(
-                filepath,
-                size,
-                ratio,
-                convert_to_8_bit,
-                ram_size,
-                grayscale,
-            )
+class DataLoader:
+
+    @staticmethod
+    def _is_array(file: Path) -> bool:
+        return file.suffix in ARRAY_EXTENSIONS
+
+    @staticmethod
+    def _is_image(file: Path) -> bool:
+        return file.suffix in IMAGE_EXTENSIONS
+
+    @staticmethod
+    def _is_video(file: Path) -> bool:
+        return file.suffix in VIDEO_EXTENSIONS
+
+    def __init__(
+        self,
+        size_ratio: float = 1.0,
+        subset_ratio: float = 1.0,
+        max_ram: float = 1.0,
+        convert_to_8_bit: bool = False,
+        grayscale: bool = False,
+    ) -> None:
+        self.max_ram = max_ram
+        self.size_ratio = size_ratio
+        self.subset_ratio = subset_ratio
+        self.convert_to_8_bit = convert_to_8_bit
+        self.grayscale = grayscale
+
+    def load(self, path: Optional[Path] = None) -> ImageData:
+        if path is None:
+            return self._from_text("No data")
+
+        if path.is_dir():
+            return self._load_folder(path)
         else:
-            warnings.warn(
-                f"Unsupported or unknown file type: {filepath}",
-                UserWarning,
-            )
-            data, metadata = create_info_image(message="Filetype unsupported.")
+            return self._load_file(path)
 
-    data = np.swapaxes(data, 1, 2)
-    return data, metadata
-
-
-def random(
-    shape: tuple[int, ...] = (33, 150, 70),
-) -> tuple[np.ndarray, list[dict[str, Any]]]:
-    data = np.random.normal(size=shape)
-    all_metadata = []
-
-    for i in range(shape[0]):
-        metadata = {
-            "file_size_MB": data[i].nbytes / 2**20,  # in MB
-            "size": f"{data[i].shape[0]}x{data[i].shape[1]}",
-            "dtype": str(data[i].dtype),
-            "bit_depth": data[i].dtype.itemsize * 8,  # in bits
-            "color_space": "Random",  # or whatever makes sense in your context
-            "file_name": f"Frame_{i}.npy"  # filename as frame number
-        }
-        all_metadata.append(metadata)
-
-    return data, all_metadata
-
-
-def _load_image(
-    file_path: str,
-    format: int = cv2.IMREAD_UNCHANGED,
-) -> Optional[np.ndarray]:
-    try:
-        img = cv2.imread(file_path, format)
-    except Exception:
-        return None
-    if img is None:
-        return None
-    if len(img.shape) == 3:
-        if img.shape[2] == 3:
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        elif img.shape[2] == 4:
-            img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
-    return img
-
-
-def _load_image_with_metadata(
-    f: str,
-    dirname: str,
-    size: int,
-    convert_to_8_bit: bool,
-    load_format: int,
-) -> tuple[Optional[np.ndarray], Optional[dict[str, Any]]]:
-    image_data = _load_image(os.path.join(dirname, f), load_format)
-    if image_data is None:
-        return None, None
-    image_data = resize_and_convert(image_data, size, convert_to_8_bit)
-    metadata = {
-        "file_size_MB": os.path.getsize(os.path.join(dirname, f)) / 2**20,
-        "size": f"{image_data.shape[0]}x{image_data.shape[1]}",
-        "dtype": str(image_data.dtype),
-        "bit_depth": image_data.dtype.itemsize * 8,
-        "color_space": "RGB" if len(image_data.shape) == 3 else "Grayscale",
-        "file_name": f,
-    }
-    return image_data, metadata
-
-
-def _load_multiple_standard_images(
-    filepath: str,
-    size: int,
-    ratio: float,
-    convert_to_8_bit: bool,
-    ram_size: int,
-    grayscale: bool,
-    nr_img_to_go_multicore: int = 333,
-) -> tuple[np.ndarray, list[dict[str, Any]]]:
-    dirname = os.path.dirname(filepath)
-    file_extension = os.path.splitext(filepath)[1].lower()
-    image_files = [
-        f for f in os.listdir(dirname)
-        if os.path.isfile(os.path.join(dirname, f))
-            and os.path.splitext(f)[1].lower() == file_extension
-    ]
-    image_files = natsorted(image_files)
-
-    if grayscale:
-        selected_image = cv2.imread(
-            filepath,
-            cv2.IMREAD_ANYDEPTH | cv2.IMREAD_GRAYSCALE,
-        )
-    else:
-        selected_image = cv2.imread(filepath, cv2.IMREAD_UNCHANGED)
-
-    selected_image = resize_and_convert(selected_image, size, convert_to_8_bit)
-    is_grayscale = is_image_grayscale(selected_image)
-
-    total_size_estimate = len(image_files) * size**2 * (
-        selected_image.size if convert_to_8_bit else selected_image.nbytes
-    )
-
-    adjusted_ratio = adjust_ratio_for_memory(total_size_estimate, ram_size)
-
-    # Use the smaller ratio
-    ratio = min(ratio, adjusted_ratio)
-    full_dataset_size = len(image_files)
-    image_files = image_files[::int(np.ceil(1/ratio))]
-    log(f"Loading {len(image_files)}/{full_dataset_size} images")
-
-    load_format = (
-        cv2.IMREAD_ANYDEPTH | cv2.IMREAD_GRAYSCALE
-        if is_grayscale else cv2.IMREAD_UNCHANGED
-    )
-
-    faulty_images = []
-    valid_data_with_metadata = []
-
-    if (len(image_files) > nr_img_to_go_multicore
-            or total_size_estimate > MULTICORE_THRESHOLD):
-        pool = Pool(cpu_count())
-        results = pool.starmap(
-            _load_image_with_metadata,
-            [(f, dirname, size, convert_to_8_bit, load_format)
-             for f in image_files]
-        )
-        pool.close()
-        pool.join()
-    else:
-        results = [
-            _load_image_with_metadata(
-                f, dirname, size, convert_to_8_bit, load_format
-            ) for f in image_files
-        ]
-
-    for result in results:
-        if (result[0] is not None
-                and result[0].shape[:2] == selected_image.shape[:2]):
-            valid_data_with_metadata.append(result)
+    def _load_file(self, path: Path) -> ImageData:
+        if DataLoader._is_array(path):
+            return self._load_array(path)
+        elif DataLoader._is_image(path):
+            image, metadata = self._load_image(path)
+            return ImageData(image[np.newaxis, ...], [metadata])
+        elif DataLoader._is_video(path):
+            return self._load_video(path)
         else:
-            faulty_images.append(
-                result[1]["file_name"] if result[1] is not None else "Unknown"
+            log("Error: Unsupported file type")
+            return self._from_text("Unsupported file type", color=(255, 0, 0))
+
+    def _load_folder(self, path: Path) -> ImageData:
+        content = [f for f in path.iterdir()]
+        if len(set(f.suffix for f in content)) > 1:
+            log("Error: folder contains multiple file types")
+            return self._from_text("Error loading files", color=(255, 0, 0))
+
+        if DataLoader._is_image(content[0]):
+            sample, _ = self._load_image(content[0])
+            total_size_estimate = len(content) * self.size_ratio**2 * (
+                sample.size if self.convert_to_8_bit else sample.nbytes
             )
+            load_function = self._load_image
+        elif DataLoader._is_array(content[0]):
+            sample, _ = self._load_single_array(content[0])
+            total_size_estimate = sample.nbytes * len(content)
+            load_function = self._load_single_array
+        else:
+            log("Error: Unknown file extension in folder")
+            return self._from_text("Unsupported file type", color=(255, 0, 0))
 
-    if valid_data_with_metadata:
-        images = np.stack([img for img, _ in valid_data_with_metadata])
-        all_metadata = [meta for _, meta in valid_data_with_metadata]
-    else:
-        log("Could not load any valid images")
-        images, all_metadata = create_info_image()
+        adjusted_ratio = adjust_ratio_for_memory(
+            total_size_estimate, self.max_ram,
+        )
+        ratio = min(self.subset_ratio, adjusted_ratio)
+        full_dataset_size = len(content)
+        content = content[::int(np.ceil(1 / ratio))]
+        log(f"Loading {len(content)}/{full_dataset_size} files")
 
-    if faulty_images:
-        log(f"Could not load {len(faulty_images)} images: {faulty_images}")
+        if (len(content) > settings.get("data/multicore_files_threshold")
+                or total_size_estimate >
+                    settings.get("data/multicore_size_threshold")):
+            with Pool(cpu_count()) as pool:
+                results = pool.starmap(
+                    load_function,
+                    [(f, ) for f in content],
+                )
+            matrices, metadata = zip(*results)
+        else:
+            matrices, metadata = [], []
+            for f in content:
+                matrix, meta = load_function(f)
+                matrices.append(matrix)
+                metadata.append(meta)
 
-    return images, all_metadata
+        try:
+            matrices = np.stack(matrices)
+        except:
+            log("Error loading files: shapes of images do not match")
+            return self._from_text("Error loading files", color=(255, 0, 0))
+        return ImageData(matrices, metadata)
 
-
-def _load_numpy_array(
-    folder_path,
-    size,
-    ratio,
-    convert_to_8_bit,
-    ram_size,
-    grayscale,
-) -> tuple[np.ndarray, list[dict[str, Any]]]:
-    if grayscale:
-        log("Warning: Grayscale not implemented for numpy arrays yet")
-    array_files = [f for f in os.listdir(folder_path) if f.endswith('.npy')]
-
-    first_array = np.load(os.path.join(folder_path, array_files[0]))
-    avg_array_size = first_array.nbytes  # in bytes
-
-    total_size_estimate = avg_array_size * len(array_files)
-
-    adjusted_ratio = adjust_ratio_for_memory(total_size_estimate, ram_size)
-
-    # Use the smaller ratio
-    ratio = min(ratio, adjusted_ratio)
-    full_dataset_size = len(array_files)
-    array_files = array_files[::int(np.ceil(1/ratio))]
-    log(f"Loading {len(array_files)}/{full_dataset_size} arrays")
-
-    matrix_list = []
-    metadata_list = []
-
-    if len(array_files) > 333 or total_size_estimate > MULTICORE_THRESHOLD:
-        multiprocessing = True
-    else:
-        multiprocessing = False
-
-    if multiprocessing:
-        with Pool(cpu_count()) as pool:
-            results = pool.starmap(
-                _load_and_process_file,
-                [(f, folder_path, size, convert_to_8_bit) for f in array_files]
-            )
-        matrix_list, metadata_sublists = zip(*results)
-        metadata_list.extend(metadata_sublists)
-    else:
-        for f in array_files:
-            array = np.load(os.path.join(folder_path, f))
-            resized_array = resize_and_convert_to_8_bit(
-                array,
-                size,
-                convert_to_8_bit,
-            )
-            matrix_list.append(resized_array)
-            metadata = {
-                'filename': f,
-                'shape': resized_array.shape,
-                'dtype': resized_array.dtype,
-            }
-            metadata_list.append(metadata)
-
-    matrix = np.stack(matrix_list)  # type: ignore
-    return matrix, metadata_list
-
-
-def _load_and_process_file(
-    f: str,
-    folder_path: str,
-    size: int,
-    convert_to_8_bit: bool,
-) -> tuple[np.ndarray, dict[str, Any]]:
-    array = np.load(os.path.join(folder_path, f))
-    resized_array = resize_and_convert_to_8_bit(array, size, convert_to_8_bit)
-    metadata = {
-        'filename': f,
-        'shape': resized_array.shape,
-        'dtype': resized_array.dtype,
-    }
-    return resized_array, metadata
-
-
-def _load_video(
-    filepath: str,
-    size: int,
-    ratio: float,
-    convert_to_8_bit: bool,
-    ram_size: int,
-    grayscale: bool,
-) -> tuple[np.ndarray, list[dict[str, Any]]]:
-    cap = cv2.VideoCapture(filepath)
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = int(cap.get(cv2.CAP_PROP_FPS))
-    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    codec = int(cap.get(cv2.CAP_PROP_FOURCC))
-    fourcc_str = "".join([chr((codec >> 8 * i) & 0xFF) for i in range(4)])
-    cap.release()
-
-    memory_estimate = width * height * 3 * frame_count
-    log(f"Estimated size to load: {memory_estimate / 2**20:.2f} MB")
-    adjusted_ratio = adjust_ratio_for_memory(memory_estimate, ram_size)
-
-    ratio = min(ratio, adjusted_ratio)
-    if ratio == 1:
-        log("No adjustment to ratio required, loading the full dataset")
-    else:
-        log(f"Adjusted ratio for subset extraction: {ratio:.4f}")
-
-    skip_frames = int(1 / ratio) - 1
-
-    video = cv2.VideoCapture(filepath)
-    frames = []
-    metadata = []
-
-    while True:
-        ret, frame = video.read()
-        if not ret:
-            break
-
-        frame_number = len(frames)  # current frame number starting from 0
-        frames.append(resize_and_convert(
-            cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) if not grayscale else (
-                cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    def _load_image(self, path: Path) -> tuple[np.ndarray, dict[str, Any]]:
+        image = cv2.imread(
+            str(path),
+            cv2.IMREAD_UNCHANGED if not self.grayscale else (
+                cv2.IMREAD_ANYDEPTH | cv2.IMREAD_GRAYSCALE
             ),
-            size,
-            convert_to_8_bit
-        ))
+        )
+        if image.ndim == 3:
+            if image.shape[2] == 3:
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            elif image.shape[2] == 4:
+                image = cv2.cvtColor(image, cv2.COLOR_BGRA2RGB)
 
-        single_frame_metadata = {
-            "file_size_MB": os.path.getsize(filepath) / 2**20,
-            "file_name": str(frame_number),
-            "size": f"{frame.shape[0]}x{frame.shape[1]}",
-            "dtype": str(frame.dtype),
-            "bit_depth": frame.dtype.itemsize * 8,
-            "color_space": "RGB" if len(frame.shape) == 3 else "Grayscale",
-            "fps": fps,
-            "frame_count": frame_count,
-            "reduced_frame_count": len(frames),
-            "codec": fourcc_str
+        image = resize_and_convert(
+            image,
+            self.size_ratio,
+            self.convert_to_8_bit,
+        )
+        metadata = {
+            "file_name": path.name,
+            "file_size_MB": os.path.getsize(path) / 2**20,
+            "size": f"{image.shape[0]}x{image.shape[1]}",
+            "dtype": str(image.dtype),
+            "bit_depth": image.dtype.itemsize * 8,
+            "grayscale": image.ndim == 2,
         }
-        metadata.append(single_frame_metadata)
 
-        # skip the next `skip_frames` number of frames without decoding.
-        for _ in range(skip_frames):
-            video.grab()
+        return np.swapaxes(image, 0, 1), metadata
 
-    video.release()
-    return np.stack(frames), metadata
+    def _load_video(self, path: Path) -> ImageData:
+        cap = cv2.VideoCapture(str(path))
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = int(cap.get(cv2.CAP_PROP_FPS))
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        codec = int(cap.get(cv2.CAP_PROP_FOURCC))
+        fourcc_str = "".join([chr((codec >> 8 * i) & 0xFF) for i in range(4)])
+        cap.release()
+
+        memory_estimate = width * height * 3 * frame_count
+        log(f"Estimated size to load: {memory_estimate / 2**20:.2f} MB")
+        adjusted_ratio = adjust_ratio_for_memory(
+            memory_estimate,
+            self.max_ram,
+        )
+
+        ratio = min(self.subset_ratio, adjusted_ratio)
+        if ratio == 1:
+            log("No adjustment to ratio required, loading the full dataset")
+        else:
+            log(f"Adjusted ratio for subset extraction: {ratio:.4f}")
+
+        skip_frames = int(1 / ratio) - 1
+
+        video = cv2.VideoCapture(str(path))
+        frames = []
+        metadata = []
+
+        while True:
+            ret, frame = video.read()
+            if not ret:
+                break
+
+            frame_number = len(frames)  # current frame number starting from 0
+            frames.append(resize_and_convert(
+                cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    if not self.grayscale else
+                    cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY),
+                self.size_ratio,
+                self.convert_to_8_bit,
+            ))
+
+            metadata.append({
+                "file_name": str(frame_number),
+                "file_size_MB": os.path.getsize(path) / 2**20,
+                "size": f"{frame.shape[0]}x{frame.shape[1]}",
+                "dtype": str(frame.dtype),
+                "bit_depth": frame.dtype.itemsize * 8,
+                "color_space": "RGB" if len(frame.shape) == 3 else "Grayscale",
+                "fps": fps,
+                "frame_count": frame_count,
+                "reduced_frame_count": len(frames),
+                "codec": fourcc_str,
+            })
+
+            # skip the next `skip_frames` number of frames without decoding.
+            for _ in range(skip_frames):
+                video.grab()
+
+        video.release()
+        return ImageData(np.swapaxes(np.stack(frames), 1, 2), metadata)
+
+    def _load_array(self, path: Path) -> ImageData:
+        array: np.ndarray = np.load(path)
+        match array.ndim:
+            case 4:
+                if self.grayscale:
+                    weights = np.array([0.2989, 0.5870, 0.1140])
+                    array = np.sum(array * weights, axis=-1)
+            case 3:
+                if not self.grayscale:
+                    if array.shape[2] != 3:
+                        log("Warning: File does not contain color images, "
+                            "loading as grayscale")
+                    else:
+                        array = array[np.newaxis, ...]
+            case 2:
+                if not self.grayscale:
+                    log("Warning: Loading files as grayscale images")
+                array = array[np.newaxis, ...]
+            case _:
+                log(f"Error: Unsupported array shape {array.shape}")
+                return self._from_text(
+                    "Error loading files", color=(255, 0, 0)
+                )
+        # now the first dimension is time
+        function_ = lambda x: resize_and_convert_to_8_bit(
+            x,
+            self.size_ratio,
+            self.convert_to_8_bit,
+        )
+        total_size_estimate = array[0].nbytes * array.shape[0]
+        if (array.shape[0] > settings.get("data/multicore_files_threshold")
+                or total_size_estimate >
+                    settings.get("data/multicore_size_threshold")):
+            with Pool(cpu_count()) as pool:
+                matrices = pool.starmap(
+                    function_,
+                    [(a, ) for a in array],
+                )
+        else:
+            matrices = []
+            for a in array:
+                matrix = function_(a)
+                matrices.append(matrix)
+
+        array = np.swapaxes(np.stack(matrices), 1, 2)
+        metadata = [{
+            'file_name': path.name + f"-{i}",
+            'shape': array.shape,
+            'dtype': array.dtype,
+        } for i in range(array.shape[0])]
+        return ImageData(array, metadata)
+
+    def _load_single_array(
+        self,
+        path: Path,
+    ) -> tuple[np.ndarray, dict[str, Any]]:
+        array: np.ndarray = np.load(path)
+        if array.ndim >= 4 or (array.ndim == 3 and array.shape[2] != 3):
+            log(f"Error: Unsupported array shape {array.shape}")
+            data = self._from_text("Error loading files", color=(255, 0, 0))
+            return data.image[0], data.meta[0]
+
+        if array.ndim == 3 and self.grayscale:
+            weights = np.array([0.2989, 0.5870, 0.1140])
+            array = np.sum(array * weights, axis=-1)
+
+        array = np.swapaxes(resize_and_convert_to_8_bit(
+            array,
+            self.size_ratio,
+            self.convert_to_8_bit,
+        ), 0, 1)
+        metadata = {
+            'file_name': path.name,
+            'shape': array.shape,
+            'dtype': array.dtype,
+        }
+        return array, metadata
+
+    def _from_text(
+        self,
+        text: str,
+        height: int = 50,
+        width: int = 280,
+        color: tuple[int, int, int] = (0, 0, 255),
+    ) -> ImageData:
+        img = np.zeros((height, width, 3), dtype=np.uint8)
+        cv2.putText(
+            img=img,
+            text=text,
+            org=(5, height//2),
+            fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+            fontScale=0.4,
+            color=color,
+            thickness=1,
+        )
+        metadata = [{
+            "file_name": "-",
+            "file_size_MB": img.nbytes / 2**20,  # In MB
+        }]
+        return ImageData(np.swapaxes(img[np.newaxis, ...], 1, 2), metadata)
 
 
 def tof_from_json(file_path: str) -> np.ndarray:
