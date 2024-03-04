@@ -17,6 +17,8 @@ _default_settings = {
     "data/multicore_size_threshold": 1.3 * (2**30),
     "data/multicore_files_threshold": 333,
 
+    "web/timeout_server_message": 180,
+
     "app/restart_exit_code": -12341234,
 }
 

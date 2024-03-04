@@ -7,10 +7,10 @@ from PyQt5.QtCore import QCoreApplication, Qt
 from PyQt5.QtGui import QFont, QIcon, QKeySequence
 from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
                              QDoubleSpinBox, QFileDialog, QFrame, QGridLayout,
-                             QHBoxLayout, QLabel, QLayout, QMainWindow, QMenu,
-                             QMenuBar, QPushButton, QScrollArea, QShortcut,
-                             QSpinBox, QStatusBar, QStyle, QTabWidget,
-                             QVBoxLayout, QWidget)
+                             QHBoxLayout, QLabel, QLayout, QLineEdit,
+                             QMainWindow, QMenu, QMenuBar, QPushButton,
+                             QScrollArea, QShortcut, QSpinBox, QStatusBar,
+                             QStyle, QTabWidget, QVBoxLayout, QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import resources, settings
@@ -243,6 +243,23 @@ class MainWindow(QMainWindow):
         fload_btn.pressed.connect(self.browse_folder)
         load_btn_lay.addWidget(fload_btn)
         file_layout.addLayout(load_btn_lay)
+        connect_label = QLabel("Web Connection")
+        connect_label.setStyleSheet(style_heading)
+        file_layout.addWidget(connect_label)
+        address_label = QLabel("Address:")
+        self.address_edit = QLineEdit()
+        token_label = QLabel("Token:")
+        self.token_edit = QLineEdit()
+        connect_button = QPushButton("Connect")
+        connect_button.pressed.connect(self.load_web_images)
+        connect_lay = QGridLayout()
+        connect_lay.addWidget(address_label, 0, 0, 1, 1)
+        connect_lay.addWidget(self.address_edit, 0, 1, 1, 1)
+        connect_lay.addWidget(token_label, 1, 0, 1, 1)
+        connect_lay.addWidget(token_label, 1, 0, 1, 1)
+        connect_lay.addWidget(self.token_edit, 1, 1, 1, 1)
+        connect_lay.addWidget(connect_button, 2, 0, 2, 1)
+        file_layout.addLayout(connect_lay)
         file_layout.addStretch()
         self.create_option_tab(file_layout, "File")
 
@@ -702,6 +719,17 @@ class MainWindow(QMainWindow):
                     indent=4,
                 )
             self._lut_file = str(file)
+
+    def load_web_images(self) -> None:
+        self.image_viewer.load_web_data(
+            address=self.address_edit.text(),
+            token=self.token_edit.text(),
+            size_ratio=self.size_ratio_spinbox.value(),
+            subset_ratio=self.subset_ratio_spinbox.value(),
+            max_ram=self.max_ram_spinbox.value(),
+            convert_to_8_bit=self.load_8bit_checkbox.isChecked(),
+            grayscale=self.load_grayscale_checkbox.isChecked(),
+        )
 
     def load_images_adapter(self, file_path: Optional[Path] = None) -> None:
         self.load_images(Path(file_path) if file_path is not None else None)

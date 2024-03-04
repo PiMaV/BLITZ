@@ -10,6 +10,7 @@ from pyqtgraph import RectROI
 from .. import settings
 from ..data.load import DataLoader, ImageData
 from ..data.ops import ReduceOperation
+from ..data.web import WebDataLoader
 from ..tools import format_pixel_value, log, wrap_text
 
 
@@ -104,6 +105,11 @@ class ImageViewer(pg.ImageView):
 
     def load_data(self, path: Optional[Path] = None, **kwargs) -> None:
         self.data = DataLoader(**kwargs).load(path)
+        self.setImage(self.data.image)
+        self.autoRange()
+
+    def load_web_data(self, address: str, token: str, **kwargs) -> None:
+        self.data = WebDataLoader(address, token).load(**kwargs)
         self.setImage(self.data.image)
         self.autoRange()
 

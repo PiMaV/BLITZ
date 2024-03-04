@@ -48,7 +48,7 @@ class DataLoader:
 
     def load(self, path: Optional[Path] = None) -> ImageData:
         if path is None:
-            return self._from_text("No data")
+            return DataLoader.from_text("No data")
 
         if path.is_dir():
             return self._load_folder(path)
@@ -65,13 +65,19 @@ class DataLoader:
             return self._load_video(path)
         else:
             log("Error: Unsupported file type")
-            return self._from_text("Unsupported file type", color=(255, 0, 0))
+            return DataLoader.from_text(
+                "Unsupported file type",
+                color=(255, 0, 0),
+            )
 
     def _load_folder(self, path: Path) -> ImageData:
         content = [f for f in path.iterdir()]
         if len(set(f.suffix for f in content)) > 1:
             log("Error: folder contains multiple file types")
-            return self._from_text("Error loading files", color=(255, 0, 0))
+            return DataLoader.from_text(
+                "Error loading files",
+                color=(255, 0, 0),
+            )
 
         if DataLoader._is_image(content[0]):
             sample, _ = self._load_image(content[0])
@@ -85,7 +91,10 @@ class DataLoader:
             load_function = self._load_single_array
         else:
             log("Error: Unknown file extension in folder")
-            return self._from_text("Unsupported file type", color=(255, 0, 0))
+            return DataLoader.from_text(
+                "Unsupported file type",
+                color=(255, 0, 0),
+            )
 
         adjusted_ratio = adjust_ratio_for_memory(
             total_size_estimate, self.max_ram,
@@ -115,7 +124,10 @@ class DataLoader:
             matrices = np.stack(matrices)
         except:
             log("Error loading files: shapes of images do not match")
-            return self._from_text("Error loading files", color=(255, 0, 0))
+            return DataLoader.from_text(
+                "Error loading files",
+                color=(255, 0, 0),
+            )
         return ImageData(matrices, metadata)
 
     def _load_image(self, path: Path) -> tuple[np.ndarray, dict[str, Any]]:
@@ -230,7 +242,7 @@ class DataLoader:
                 array = array[np.newaxis, ...]
             case _:
                 log(f"Error: Unsupported array shape {array.shape}")
-                return self._from_text(
+                return DataLoader.from_text(
                     "Error loading files", color=(255, 0, 0)
                 )
         # now the first dimension is time
@@ -269,7 +281,10 @@ class DataLoader:
         array: np.ndarray = np.load(path)
         if array.ndim >= 4 or (array.ndim == 3 and array.shape[2] != 3):
             log(f"Error: Unsupported array shape {array.shape}")
-            data = self._from_text("Error loading files", color=(255, 0, 0))
+            data = DataLoader.from_text(
+                "Error loading files",
+                color=(255, 0, 0),
+            )
             return data.image[0], data.meta[0]
 
         if array.ndim == 3 and self.grayscale:
@@ -288,8 +303,8 @@ class DataLoader:
         }
         return array, metadata
 
-    def _from_text(
-        self,
+    @staticmethod
+    def from_text(
         text: str,
         height: int = 50,
         width: int = 280,
