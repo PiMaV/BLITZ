@@ -18,6 +18,8 @@ _default_settings = {
     "data/multicore_files_threshold": 333,
 
     "web/timeout_server_message": 180,
+    "web/connect_attempts": 5,
+    "web/download_attempts": 5,
 
     "app/restart_exit_code": -12341234,
 }

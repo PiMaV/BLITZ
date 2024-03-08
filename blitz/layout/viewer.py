@@ -108,10 +108,16 @@ class ImageViewer(pg.ImageView):
         self.setImage(self.data.image)
         self.autoRange()
 
-    def load_web_data(self, address: str, token: str, **kwargs) -> None:
-        self.data = WebDataLoader(address, token).load(**kwargs)
+    def _load_from_web(self, img: ImageData) -> None:
+        self.data = img
         self.setImage(self.data.image)
         self.autoRange()
+        self._web_connection.deleteLater()
+
+    def listen_to(self, address: str, token: str, **kwargs) -> None:
+        self._web_connection = WebDataLoader(address, token, **kwargs)
+        self._web_connection.image_received.connect(self._load_from_web)
+        self._web_connection.start()
 
     def load_background_file(self, path: Path) -> bool:
         self._background_image = DataLoader().load(path)

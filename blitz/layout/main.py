@@ -651,7 +651,6 @@ class MainWindow(QMainWindow):
         cb = QApplication.clipboard()
         cb.clear()
         cb.setText(self.position_label.text())
-        self.spinner.start()
 
     def update_statusbar_position(self, pos: tuple[int, int]) -> None:
         x, y, value = self.image_viewer.get_position_info(pos)
@@ -721,14 +720,9 @@ class MainWindow(QMainWindow):
             self._lut_file = str(file)
 
     def load_web_images(self) -> None:
-        self.image_viewer.load_web_data(
+        self.image_viewer.listen_to(
             address=self.address_edit.text(),
             token=self.token_edit.text(),
-            size_ratio=self.size_ratio_spinbox.value(),
-            subset_ratio=self.subset_ratio_spinbox.value(),
-            max_ram=self.max_ram_spinbox.value(),
-            convert_to_8_bit=self.load_8bit_checkbox.isChecked(),
-            grayscale=self.load_grayscale_checkbox.isChecked(),
         )
 
     def load_images_adapter(self, file_path: Optional[Path] = None) -> None:
