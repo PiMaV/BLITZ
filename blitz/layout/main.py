@@ -14,7 +14,9 @@ from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
 from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import resources, settings
+from ..data.image import ImageData
 from ..data.ops import ReduceOperation
+from ..data.web import WebDataLoader
 from ..tools import (LoadingManager, LoggingTextEdit, get_available_ram, log,
                      setup_logger)
 from .tof import TOFAdapter
@@ -250,15 +252,15 @@ class MainWindow(QMainWindow):
         self.address_edit = QLineEdit()
         token_label = QLabel("Token:")
         self.token_edit = QLineEdit()
-        connect_button = QPushButton("Connect")
-        connect_button.pressed.connect(self.load_web_images)
+        self.connect_button = QPushButton("Connect")
+        self.connect_button.pressed.connect(self.start_web_connection)
         connect_lay = QGridLayout()
         connect_lay.addWidget(address_label, 0, 0, 1, 1)
         connect_lay.addWidget(self.address_edit, 0, 1, 1, 1)
         connect_lay.addWidget(token_label, 1, 0, 1, 1)
         connect_lay.addWidget(token_label, 1, 0, 1, 1)
         connect_lay.addWidget(self.token_edit, 1, 1, 1, 1)
-        connect_lay.addWidget(connect_button, 2, 0, 2, 1)
+        connect_lay.addWidget(self.connect_button, 2, 0, 2, 1)
         file_layout.addLayout(connect_lay)
         file_layout.addStretch()
         self.create_option_tab(file_layout, "File")
@@ -719,11 +721,26 @@ class MainWindow(QMainWindow):
                 )
             self._lut_file = str(file)
 
-    def load_web_images(self) -> None:
-        self.image_viewer.listen_to(
-            address=self.address_edit.text(),
-            token=self.token_edit.text(),
-        )
+    def start_web_connection(self) -> None:
+        address = self.address_edit.text()
+        token = self.token_edit.text()
+
+        self._web_connection = WebDataLoader(address, token)
+        self._web_connection.image_received.connect(self.end_web_connection)
+        self._web_connection.start()
+        self.connect_button.setText("Listening...")
+        self.connect_button.setEnabled(False)
+        self.address_edit.setEnabled(False)
+        self.token_edit.setEnabled(False)
+
+    def end_web_connection(self, img: ImageData | None) -> None:
+        if img is not None:
+            self.image_viewer.set_image(img)
+        self.address_edit.setEnabled(True)
+        self.token_edit.setEnabled(True)
+        self.connect_button.setEnabled(True)
+        self.connect_button.setText("Connect")
+        self._web_connection.deleteLater()
 
     def load_images_adapter(self, file_path: Optional[Path] = None) -> None:
         self.load_images(Path(file_path) if file_path is not None else None)

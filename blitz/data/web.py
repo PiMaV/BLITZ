@@ -9,7 +9,6 @@ from socketio.exceptions import ConnectionError, TimeoutError
 
 from ..settings import get
 from ..tools import log
-from .image import ImageData
 from .load import DataLoader
 
 
@@ -46,15 +45,12 @@ class _WebSocket(QObject):
                     timeout=get("web/timeout_server_message"),
                 )
             except TimeoutError:
-                log(
-                    "No message received, "
-                    f"Attempt {attempts+1}/{get('web/connect_attempts')}"
-                )
+                log("No message received")
             else:
                 if message[0] == "send_file_message":
                     self.message_received.emit(message[1]["file_name"])
+                    return
                 else:
-                    print(message)
                     log("Unknown server message, aborting")
         self.message_received.emit(None)
 
@@ -68,7 +64,6 @@ class _WebDownloader(QObject):
         self._target = target_address
 
     def download(self) -> None:
-        print("downloading")
         response = None
         attempts = 0
         while attempts < get("web/download_attempts"):
@@ -92,6 +87,7 @@ class _WebDownloader(QObject):
             with open(cache_file, 'wb') as f:
                 f.write(response.content)
             self.download_finished.emit(cache_file)
+            return
         elif response is None:
             log("Server cannot be reached, aborting")
         else:
@@ -101,14 +97,15 @@ class _WebDownloader(QObject):
 
 class WebDataLoader(QObject):
 
-    image_received = pyqtSignal(ImageData)
+    image_received = pyqtSignal(object)
 
-    def __init__(self, target_address: str, token: str) -> None:
+    def __init__(self, target_address: str, token: str, **kwargs) -> None:
         super().__init__()
         self._target = target_address
         self._token = token
         self._connect_thread = QThread()
         self._download_thread = QThread()
+        self._load_kwargs = kwargs
 
     def _start_connect(self) -> None:
         self._socket = _WebSocket(self._target)
@@ -118,18 +115,19 @@ class WebDataLoader(QObject):
         self._connect_thread.start()
 
     def _finish_connect(self, file_name: str | None) -> None:
-        print(f"finished connect: {file_name!r}")
         self._connect_thread.quit()
         self._connect_thread.wait()
         if file_name is not None:
             self._start_download(file_name)
+        else:
+            self.image_received.emit(None)
 
     def _start_download(self, file_name: str):
         target = self._target
         if not target.endswith("/"):
             target += "/"
-        target += f"getfile/{file_name}"
-        target += f"?token={self._token}"
+        target += f"{self._token}"
+        target += f"?filename={file_name}"
 
         self._downloader = _WebDownloader(target)
         self._downloader.moveToThread(self._download_thread)
@@ -141,9 +139,11 @@ class WebDataLoader(QObject):
         self._download_thread.quit()
         self._download_thread.wait()
         if path is not None:
-            img = DataLoader().load(path)
+            img = DataLoader(**self._load_kwargs).load(path)
             os.remove(path)
             self.image_received.emit(img)
+        else:
+            self.image_received.emit(None)
 
     def start(self) -> None:
         self._start_connect()
