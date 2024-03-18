@@ -22,15 +22,15 @@ class DataLoader:
 
     @staticmethod
     def _is_array(file: Path) -> bool:
-        return file.suffix in ARRAY_EXTENSIONS
+        return file.suffix.lower() in ARRAY_EXTENSIONS
 
     @staticmethod
     def _is_image(file: Path) -> bool:
-        return file.suffix in IMAGE_EXTENSIONS
+        return file.suffix.lower() in IMAGE_EXTENSIONS
 
     @staticmethod
     def _is_video(file: Path) -> bool:
-        return file.suffix in VIDEO_EXTENSIONS
+        return file.suffix.lower() in VIDEO_EXTENSIONS
 
     def __init__(
         self,

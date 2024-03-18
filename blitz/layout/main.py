@@ -233,7 +233,7 @@ class MainWindow(QMainWindow):
         file_layout.addWidget(self.subset_ratio_spinbox)
         self.max_ram_spinbox = QDoubleSpinBox()
         self.max_ram_spinbox.setRange(.1, .8 * get_available_ram())
-        self.max_ram_spinbox.setValue(1)
+        self.max_ram_spinbox.setValue(settings.get("data/max_ram"))
         self.max_ram_spinbox.setSingleStep(0.1)
         self.max_ram_spinbox.setPrefix("Max. RAM: ")
         file_layout.addWidget(self.max_ram_spinbox)
@@ -450,11 +450,14 @@ class MainWindow(QMainWindow):
         self.pixel_spinbox = QSpinBox()
         self.pixel_spinbox.setPrefix("Pixels: ")
         self.pixel_spinbox.setMinimum(1)
+        self.pixel_spinbox.setMaximum(1000)
         self.pixel_spinbox.valueChanged.connect(self.update_roi_settings)
         converter_layout = QHBoxLayout()
         converter_layout.addWidget(self.pixel_spinbox)
         self.mm_spinbox = QDoubleSpinBox()
         self.mm_spinbox.setPrefix("in mm: ")
+        self.mm_spinbox.setMinimum(1.0)
+        self.mm_spinbox.setMaximum(100_000.0)
         self.mm_spinbox.setValue(1.0)
         self.mm_spinbox.valueChanged.connect(self.update_roi_settings)
         converter_layout.addWidget(self.mm_spinbox)
@@ -526,7 +529,7 @@ class MainWindow(QMainWindow):
             self.update_statusbar_position
         )
         self.image_viewer.timeLine.sigPositionChanged.connect(
-            self.update_statusbar_frame
+            self.update_statusbar
         )
         self.v_plot.setYLink(self.image_viewer.getView())
         self.h_plot.setXLink(self.image_viewer.getView())
@@ -554,7 +557,7 @@ class MainWindow(QMainWindow):
         self.measure_checkbox.setChecked(False)
         self.norm_range_start.setValue(0)
         self.norm_range_start.setMaximum(self.image_viewer.data.n_images-1)
-        self.norm_range_end.setMaximum(self.image_viewer.data.n_images)
+        self.norm_range_end.setMaximum(self.image_viewer.data.n_images-1)
         self.norm_range_end.setValue(self.image_viewer.data.n_images-1)
         self.roi_drop_checkbox.setChecked(
             self.image_viewer.is_roi_on_drop_update()
@@ -624,14 +627,17 @@ class MainWindow(QMainWindow):
         if self.norm_range_box.isChecked():
             left = self.norm_range_start.value()
             right = self.norm_range_end.value()
-        self.image_viewer.norm(
-            operation=name,
-            use=self.norm_op_box.currentText(),
-            beta=self.norm_beta.value() / 100.0,
-            left=left,
-            right=right,
-            background=self.norm_bg_box.isChecked(),
-        )
+        with LoadingManager(self, "Calculating ...") as lm:
+            normalized = self.image_viewer.norm(
+                operation=name,
+                use=self.norm_op_box.currentText(),
+                beta=self.norm_beta.value() / 100.0,
+                left=left,
+                right=right,
+                background=self.norm_bg_box.isChecked(),
+            )
+        if normalized:
+            log(f"Reduction finished in {lm.duration:.2f}s")
 
     def search_background_file(self) -> None:
         if self.bg_input_button.text() == "[Select]":
@@ -658,10 +664,12 @@ class MainWindow(QMainWindow):
         x, y, value = self.image_viewer.get_position_info(pos)
         self.position_label.setText(f"X: {x} | Y: {y} | Value: {value}")
 
-    def update_statusbar_frame(self) -> None:
+    def update_statusbar(self) -> None:
         frame, max_frame, name = self.image_viewer.get_frame_info()
         self.frame_label.setText(f"Frame: {frame} / {max_frame}")
         self.file_label.setText(f"File: {name}")
+        x, y, value = self.image_viewer.get_position_info()
+        self.position_label.setText(f"X: {x} | Y: {y} | Value: {value}")
 
     def browse_tof(self) -> None:
         path, _ = QFileDialog.getOpenFileName()
@@ -724,6 +732,8 @@ class MainWindow(QMainWindow):
     def start_web_connection(self) -> None:
         address = self.address_edit.text()
         token = self.token_edit.text()
+        if not address or not token:
+            return
 
         self._web_connection = WebDataLoader(address, token)
         self._web_connection.image_received.connect(self.end_web_connection)
@@ -761,7 +771,7 @@ class MainWindow(QMainWindow):
             log(f"Loaded {data_size_MB:.2f} MB")
             log(f"Available RAM: {get_available_ram():.2f} GB")
             log(f"Seconds needed: {lm.duration:.2f}")
-            self.update_statusbar_frame()
+            self.update_statusbar()
             self.reset_options()
 
     def operation_changed(self) -> None:
@@ -800,3 +810,4 @@ class MainWindow(QMainWindow):
             "window/docks",
             self.dock_area.saveState(),
         )
+        settings.set("data/max_ram", self.max_ram_spinbox.value())

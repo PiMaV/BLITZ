@@ -91,7 +91,7 @@ class ImageData:
         if self._norm_operation == operation and not force_calculation:
             self._norm_operation = None
             self._norm = None
-            return True
+            return False
         if self._norm_operation is not None:
             self._norm = None
         image = self.image

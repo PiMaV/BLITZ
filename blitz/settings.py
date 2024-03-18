@@ -16,6 +16,7 @@ _default_settings = {
 
     "data/multicore_size_threshold": 1.3 * (2**30),
     "data/multicore_files_threshold": 333,
+    "data/max_ram": 1.0,
 
     "web/timeout_server_message": 180,
     "web/connect_attempts": 5,

@@ -143,8 +143,8 @@ class ImageViewer(pg.ImageView):
         right: Optional[int] = None,
         background: bool = False,
         force_calculation: bool = False,
-    ) -> None:
-        self.data.normalize(
+    ) -> bool:
+        normalized = self.data.normalize(
             operation=operation,  # type: ignore
             use=use,
             beta=beta,
@@ -160,6 +160,7 @@ class ImageViewer(pg.ImageView):
             autoLevels=self._fit_levels,
         )
         self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
+        return normalized
 
     def unravel(self) -> None:
         self.data.unravel()
@@ -251,8 +252,10 @@ class ImageViewer(pg.ImageView):
 
     def get_position_info(
         self,
-        pos: tuple[int, int],
+        pos: Optional[tuple[int, int]] = None,
     ) -> tuple[float, float, str | None]:
+        if pos is None:
+            pos = self.ui.graphicsView.lastMousePos
         img_coords = self.view.vb.mapSceneToView(pos)
         x, y = int(img_coords.x()), int(img_coords.y())
         if (0 <= x < self.image.shape[1] and 0 <= y < self.image.shape[2]):
