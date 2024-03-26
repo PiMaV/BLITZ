@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -23,10 +24,9 @@ from .tof import TOFAdapter
 from .viewer import ImageViewer
 from .widgets import ExtractionPlot, MeasureROI, TimePlot
 
-TITLE = (
-    "BLITZ: Bulk Loading and Interactive Time series Zonal analysis "
-    "(INP Greifswald)"
-)
+
+branch_name = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip().decode('utf-8')
+TITLE = f"BLITZ: (B)ulk (L)oading & (I)nteractive (T)ime series (Z)onal analysis - INP Greifswald [{branch_name}]"
 
 
 def restart(self) -> None:
