@@ -25,8 +25,8 @@ from .viewer import ImageViewer
 from .widgets import ExtractionPlot, MeasureROI, TimePlot
 
 
-branch_name = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip().decode('utf-8')
-TITLE = f"BLITZ: (B)ulk (L)oading & (I)nteractive (T)ime series (Z)onal analysis - INP Greifswald [{branch_name}]"
+BRANCH_NAME = "v1.1.0" #= subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip().decode('utf-8')
+TITLE = f"BLITZ: (B)ulk (L)oading & (I)nteractive (T)ime series (Z)onal analysis - INP Greifswald [{BRANCH_NAME}]"
 
 
 def restart(self) -> None:
