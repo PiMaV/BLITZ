@@ -255,6 +255,11 @@ class MainWindow(QMainWindow):
         self.token_edit = QLineEdit()
         self.connect_button = QPushButton("Connect")
         self.connect_button.pressed.connect(self.start_web_connection)
+        self.disconnect_button = QPushButton("Disconnect")
+        self.disconnect_button.pressed.connect(
+            lambda: self.end_web_connection(None)
+        )
+        self.disconnect_button.setEnabled(False)
         connect_lay = QGridLayout()
         connect_lay.addWidget(address_label, 0, 0, 1, 1)
         connect_lay.addWidget(self.address_edit, 0, 1, 1, 1)
@@ -262,6 +267,7 @@ class MainWindow(QMainWindow):
         connect_lay.addWidget(token_label, 1, 0, 1, 1)
         connect_lay.addWidget(self.token_edit, 1, 1, 1, 1)
         connect_lay.addWidget(self.connect_button, 2, 0, 2, 1)
+        connect_lay.addWidget(self.disconnect_button, 2, 1, 2, 1)
         file_layout.addLayout(connect_lay)
         file_layout.addStretch()
         self.create_option_tab(file_layout, "File")
@@ -739,19 +745,23 @@ class MainWindow(QMainWindow):
         self._web_connection = WebDataLoader(address, token)
         self._web_connection.image_received.connect(self.end_web_connection)
         self._web_connection.start()
-        self.connect_button.setText("Listening...")
         self.connect_button.setEnabled(False)
+        self.connect_button.setText("Listening...")
+        self.disconnect_button.setEnabled(True)
         self.address_edit.setEnabled(False)
         self.token_edit.setEnabled(False)
 
     def end_web_connection(self, img: ImageData | None) -> None:
         if img is not None:
             self.image_viewer.set_image(img)
-        self.address_edit.setEnabled(True)
-        self.token_edit.setEnabled(True)
-        self.connect_button.setEnabled(True)
-        self.connect_button.setText("Connect")
-        self._web_connection.deleteLater()
+        else:
+            self._web_connection.stop()
+            self.address_edit.setEnabled(True)
+            self.token_edit.setEnabled(True)
+            self.connect_button.setEnabled(True)
+            self.connect_button.setText("Connect")
+            self.disconnect_button.setEnabled(False)
+            self._web_connection.deleteLater()
 
     def load_images_adapter(self, file_path: Optional[Path] = None) -> None:
         self.load_images(Path(file_path) if file_path is not None else None)

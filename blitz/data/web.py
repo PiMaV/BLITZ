@@ -7,52 +7,62 @@ from PyQt5.QtCore import QObject, QThread, pyqtSignal
 from requests.exceptions import ConnectTimeout
 from socketio.exceptions import ConnectionError, TimeoutError
 
-from ..settings import get
+from .. import settings
 from ..tools import log
 from .load import DataLoader
 
 
 class _WebSocket(QObject):
 
+    server_connected = pyqtSignal()
     message_received = pyqtSignal(object)
 
     def __init__(self, target_address: str) -> None:
         super().__init__()
         self._target = target_address
+        self._listening = True
+        self.sio = socketio.SimpleClient()
+
+    @property
+    def listening(self) -> bool:
+        return self._listening
+
+    @listening.setter
+    def listening(self, listening: bool) -> None:
+        self._listening = listening
 
     def listen(self) -> None:
         log("BLITZ listening to incoming data")
-        with socketio.SimpleClient() as sio:
-            attempts = 0
-            while not sio.connected and attempts < get("web/connect_attempts"):
-                try:
-                    sio.connect(
-                        self._target.replace("http", "ws"),
-                        wait_timeout=2,
-                    )
-                except ConnectionError:
-                    log(
-                        "Unable to connect to server, "
-                        f"Attempt {attempts+1}/{get('web/connect_attempts')}"
-                    )
-                    attempts += 1
-            if not sio.connected:
-                log("Server cannot be reached, aborting")
-                self.message_received.emit(None)
-                return
+        max_attempts = settings.get("web/connect_attempts")
+        attempts = 0
+        while not self.sio.connected and attempts < max_attempts:
             try:
-                message = sio.receive(
-                    timeout=get("web/timeout_server_message"),
+                self.sio.connect(
+                    self._target.replace("http", "ws"),
+                    wait_timeout=2,
                 )
+            except ConnectionError:
+                log(
+                    "Unable to connect to server, "
+                    f"Attempt {attempts+1}/{max_attempts}"
+                )
+                attempts += 1
+        if not self.sio.connected:
+            log("Server cannot be reached, aborting", color="red")
+            self.message_received.emit(None)
+            return
+        self.server_connected.emit()
+
+        while self.listening:
+            try:
+                message = self.sio.receive(timeout=1)
             except TimeoutError:
-                log("No message received")
+                pass
             else:
                 if message[0] == "send_file_message":
                     self.message_received.emit(message[1]["file_name"])
-                    return
                 else:
-                    log("Unknown server message, aborting")
-        self.message_received.emit(None)
+                    log("Unknown server message, aborting", color="red")
 
 
 class _WebDownloader(QObject):
@@ -66,14 +76,13 @@ class _WebDownloader(QObject):
     def download(self) -> None:
         response = None
         attempts = 0
-        while attempts < get("web/download_attempts"):
+        max_attempts = settings.get('web/download_attempts')
+        while attempts < max_attempts:
             try:
                 response = requests.get(self._target, timeout=2)
             except ConnectTimeout:
-                log(
-                    "Unable to connect to server, "
-                    f"Attempt {attempts+1}/{get('web/download_attempts')}"
-                )
+                log("Unable to connect to server, "
+                    f"Attempt {attempts+1}/{max_attempts}")
                 attempts += 1
             else:
                 break
@@ -89,9 +98,9 @@ class _WebDownloader(QObject):
             self.download_finished.emit(cache_file)
             return
         elif response is None:
-            log("Server cannot be reached, aborting")
+            log("Server cannot be reached, aborting", color="red")
         else:
-            log("No such file at server address, aborting")
+            log("No such file at server address, aborting", color="red")
         self.download_finished.emit(None)
 
 
@@ -107,7 +116,7 @@ class WebDataLoader(QObject):
         self._download_thread = QThread()
         self._load_kwargs = kwargs
 
-    def _start_connect(self) -> None:
+    def _start_listening(self) -> None:
         self._socket = _WebSocket(self._target)
         self._socket.moveToThread(self._connect_thread)
         self._connect_thread.started.connect(self._socket.listen)
@@ -115,12 +124,12 @@ class WebDataLoader(QObject):
         self._connect_thread.start()
 
     def _finish_connect(self, file_name: str | None) -> None:
-        self._connect_thread.quit()
-        self._connect_thread.wait()
         if file_name is not None:
             self._start_download(file_name)
         else:
             self.image_received.emit(None)
+            self._connect_thread.quit()
+            self._connect_thread.wait()
 
     def _start_download(self, file_name: str):
         target = self._target
@@ -142,8 +151,11 @@ class WebDataLoader(QObject):
             img = DataLoader(**self._load_kwargs).load(path)
             os.remove(path)
             self.image_received.emit(img)
-        else:
-            self.image_received.emit(None)
 
     def start(self) -> None:
-        self._start_connect()
+        self._start_listening()
+
+    def stop(self) -> None:
+        self._socket.listening = False
+        self._connect_thread.quit()
+        self._connect_thread.wait()
