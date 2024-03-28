@@ -64,20 +64,21 @@ class DataLoader:
         elif DataLoader._is_video(path):
             return self._load_video(path)
         else:
-            log("Error: Unsupported file type")
+            log("Error: Unsupported file type", color="red")
             return DataLoader.from_text(
                 "Unsupported file type",
                 color=(255, 0, 0),
             )
 
     def _load_folder(self, path: Path) -> ImageData:
-        content = [f for f in path.iterdir()]
-        if len(set(f.suffix for f in content)) > 1:
-            log("Error: folder contains multiple file types")
-            return DataLoader.from_text(
-                "Error loading files",
-                color=(255, 0, 0),
-            )
+        content = [f for f in path.iterdir() if not f.is_dir()]
+        suffixes = {s: len([f for f in content if f.suffix == s])
+                    for s in set(f.suffix for f in content)}
+        most_frequent_suffix = max(suffixes, key=suffixes.get)  # type: ignore
+        if len(suffixes) > 1:
+            log("Warning: folder contains multiple file types; "
+                f"Loading all {most_frequent_suffix!r} files")
+            content = [f for f in content if f.suffix == most_frequent_suffix]
 
         if DataLoader._is_image(content[0]):
             sample, _ = self._load_image(content[0])
@@ -90,7 +91,7 @@ class DataLoader:
             total_size_estimate = sample.nbytes * len(content)
             load_function = self._load_single_array
         else:
-            log("Error: Unknown file extension in folder")
+            log("Error: Unknown file extension in folder", color="red")
             return DataLoader.from_text(
                 "Unsupported file type",
                 color=(255, 0, 0),
@@ -102,7 +103,7 @@ class DataLoader:
         ratio = min(self.subset_ratio, adjusted_ratio)
         full_dataset_size = len(content)
         content = content[::int(np.ceil(1 / ratio))]
-        log(f"Loading {len(content)}/{full_dataset_size} files")
+        log(f"Loading {len(content)}/{full_dataset_size} files", color="green")
 
         if (len(content) > settings.get("data/multicore_files_threshold")
                 or total_size_estimate >
@@ -123,7 +124,10 @@ class DataLoader:
         try:
             matrices = np.stack(matrices)
         except:
-            log("Error loading files: shapes of images do not match")
+            log(
+                "Error loading files: shapes of images do not match",
+                color="red",
+            )
             return DataLoader.from_text(
                 "Error loading files",
                 color=(255, 0, 0),
@@ -180,7 +184,8 @@ class DataLoader:
         if ratio == 1:
             log("No adjustment to ratio required, loading the full dataset")
         else:
-            log(f"Adjusted ratio for subset extraction: {ratio:.4f}")
+            log(f"Adjusted ratio for subset extraction: {ratio:.4f}",
+                color="green")
 
         skip_frames = int(1 / ratio) - 1
 
@@ -233,15 +238,17 @@ class DataLoader:
                 if not self.grayscale:
                     if array.shape[2] != 3:
                         log("Warning: File does not contain color images, "
-                            "loading as grayscale")
+                            "loading as grayscale", color="green")
                     else:
                         array = array[np.newaxis, ...]
             case 2:
                 if not self.grayscale:
-                    log("Warning: Loading files as grayscale images")
+                    log("Warning: Loading files as grayscale images",
+                        color="green")
                 array = array[np.newaxis, ...]
             case _:
-                log(f"Error: Unsupported array shape {array.shape}")
+                log(f"Error: Unsupported array shape {array.shape}",
+                    color="red")
                 return DataLoader.from_text(
                     "Error loading files", color=(255, 0, 0)
                 )
@@ -280,7 +287,7 @@ class DataLoader:
     ) -> tuple[np.ndarray, dict[str, Any]]:
         array: np.ndarray = np.load(path)
         if array.ndim >= 4 or (array.ndim == 3 and array.shape[2] != 3):
-            log(f"Error: Unsupported array shape {array.shape}")
+            log(f"Error: Unsupported array shape {array.shape}", color="red")
             data = DataLoader.from_text(
                 "Error loading files",
                 color=(255, 0, 0),

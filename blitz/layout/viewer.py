@@ -3,14 +3,14 @@ from typing import Any, Optional
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtCore import QPoint, pyqtSignal
 from PyQt5.QtGui import QDropEvent
 from pyqtgraph import RectROI
 
 from .. import settings
 from ..data.load import DataLoader, ImageData
 from ..data.ops import ReduceOperation
-from ..tools import format_pixel_value, log, wrap_text
+from ..tools import fit_text, format_pixel_value, log
 
 
 class ImageViewer(pg.ImageView):
@@ -18,6 +18,7 @@ class ImageViewer(pg.ImageView):
     image: np.ndarray
 
     file_dropped = pyqtSignal(str)
+    image_size_changed = pyqtSignal()
     image_changed = pyqtSignal()
 
     def __init__(self) -> None:
@@ -106,16 +107,18 @@ class ImageViewer(pg.ImageView):
         self.data = DataLoader(**kwargs).load(path)
         self.setImage(self.data.image)
         self.autoRange()
+        self.image_size_changed.emit()
 
     def set_image(self, img: ImageData) -> None:
         self.data = img
         self.setImage(self.data.image)
         self.autoRange()
+        self.image_size_changed.emit()
 
     def load_background_file(self, path: Path) -> bool:
         self._background_image = DataLoader().load(path)
         if not self._background_image.is_single_image():
-            log("Error: Background is not a single image")
+            log("Error: Background is not a single image", color="red")
             self._background_image = None
             return False
         return True
@@ -182,7 +185,7 @@ class ImageViewer(pg.ImageView):
         if operation in ['transpose', 'flip_x', 'flip_y']:
             getattr(self.data, operation)()
         else:
-            log("Operation not implemented")
+            raise RuntimeError(f"Operation {operation!r} not implemented")
             return
         self.setImage(
             self.data.image,
@@ -190,6 +193,8 @@ class ImageViewer(pg.ImageView):
             autoRange=False,
             autoLevels=self._fit_levels,
         )
+        if operation == 'transpose':
+            self.image_size_changed.emit()
 
     def reset(self) -> None:
         self.data.reset()
@@ -197,6 +202,7 @@ class ImageViewer(pg.ImageView):
             self.data.image,
             autoLevels=self._fit_levels,
         )
+        self.image_size_changed.emit()
 
     def apply_mask(self) -> None:
         if self.mask is None:
@@ -208,6 +214,7 @@ class ImageViewer(pg.ImageView):
             keep_timestep=True,
             autoLevels=self._fit_levels,
         )
+        self.image_size_changed.emit()
 
     def toggle_mask(self) -> None:
         if self.mask is None:
@@ -255,7 +262,10 @@ class ImageViewer(pg.ImageView):
         pos: Optional[tuple[int, int]] = None,
     ) -> tuple[float, float, str | None]:
         if pos is None:
-            pos = self.ui.graphicsView.lastMousePos
+            if self.ui.graphicsView.lastMousePos is not None:
+                pos = self.ui.graphicsView.lastMousePos
+            else:
+                pos = QPoint(0, 0)
         img_coords = self.view.vb.mapSceneToView(pos)
         x, y = int(img_coords.x()), int(img_coords.y())
         if (0 <= x < self.image.shape[1] and 0 <= y < self.image.shape[2]):
@@ -266,11 +276,11 @@ class ImageViewer(pg.ImageView):
 
     def get_frame_info(self) -> tuple[int, int, str]:
         current_image = int(self.currentIndex)
-        name = wrap_text(
+        name = fit_text(
             self.data.meta[self.currentIndex].get(
                 'file_name', str(current_image)
             ),
-            max_length=40,
+            max_length=settings.get("viewer/max_file_name_length"),
         )
         return current_image, self.image.shape[0]-1, name
 

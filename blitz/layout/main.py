@@ -1,5 +1,4 @@
 import json
-import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -14,7 +13,7 @@ from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
                              QStyle, QTabWidget, QVBoxLayout, QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
 
-from .. import resources, settings
+from .. import __version__, resources, settings
 from ..data.image import ImageData
 from ..data.ops import ReduceOperation
 from ..data.web import WebDataLoader
@@ -24,9 +23,10 @@ from .tof import TOFAdapter
 from .viewer import ImageViewer
 from .widgets import ExtractionPlot, MeasureROI, TimePlot
 
-
-BRANCH_NAME = "v1.1.0" #= subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip().decode('utf-8')
-TITLE = f"BLITZ: (B)ulk (L)oading & (I)nteractive (T)ime series (Z)onal analysis - INP Greifswald [{BRANCH_NAME}]"
+TITLE = (
+    "BLITZ: (B)ulk (L)oading & (I)nteractive (T)ime series (Z)onal analysis "
+    f"- INP Greifswald [{__version__}]"
+)
 
 
 def restart(self) -> None:
@@ -71,7 +71,7 @@ class MainWindow(QMainWindow):
         self.shortcut_copy.activated.connect(self.on_strgC)
 
         self.reset_options()
-        log("Welcome to BLITZ")
+        log("Welcome to BLITZ", color="pink")
 
     def setup_docks(self) -> None:
         border_size = int(0.25 * self.width() / 2)
@@ -145,7 +145,7 @@ class MainWindow(QMainWindow):
         self.setMenuBar(menubar)
 
         font_status = QFont()
-        font_status.setPointSize(9)
+        font_status.setPointSize(settings.get("viewer/font_size_status_bar"))
 
         statusbar = QStatusBar()
         self.position_label = QLabel("")
@@ -188,7 +188,8 @@ class MainWindow(QMainWindow):
                 self.image_viewer.load_lut_config(lut_config)
                 self._lut_file = file
             except:
-                log("Failed to load LUT config given in the .ini file")
+                log("Failed to load LUT config given in the .ini file",
+                    color="red")
 
     def setup_option_dock(self) -> None:
         self.option_tabwidget = QTabWidget()
@@ -481,15 +482,15 @@ class MainWindow(QMainWindow):
         self.option_tabwidget.addTab(scrollarea, name)
 
     def setup_logger(self) -> None:
-        self.logger = LoggingTextEdit()
-        self.logger.setReadOnly(True)
+        logger = LoggingTextEdit()
+        logger.setReadOnly(True)
 
         file_info_widget = QWidget()
         layout = QVBoxLayout()
-        layout.addWidget(self.logger)
+        layout.addWidget(logger)
         file_info_widget.setLayout(layout)
         self.dock_status.addWidget(file_info_widget)
-        setup_logger(self.logger)
+        setup_logger(logger)
 
     def setup_image_and_line_viewers(self) -> None:
         self.image_viewer = ImageViewer()
@@ -710,7 +711,7 @@ class MainWindow(QMainWindow):
                 self._lut_file = file
             except:
                 log("LUT could not be loaded. Make sure it is an "
-                    "appropriately structured '.json' file.")
+                    "appropriately structured '.json' file.", color="red")
 
     def save_lut(self) -> None:
         path = QFileDialog.getExistingDirectory(
@@ -784,7 +785,8 @@ class MainWindow(QMainWindow):
             self.norm_subtract_box.setEnabled(True)
             self.norm_divide_box.setEnabled(True)
         if text == "-":
-            self.image_viewer.unravel()
+            with LoadingManager(self, f"Unpacking ..."):
+                self.image_viewer.unravel()
         else:
             with LoadingManager(self, f"Loading {text}...") as lm:
                 self.image_viewer.reduce(text)
