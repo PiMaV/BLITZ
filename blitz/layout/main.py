@@ -616,11 +616,17 @@ class MainWindow(QMainWindow):
                 or self.norm_subtract_box.isChecked()):
             self.norm_range_box.setEnabled(False)
             self.norm_bg_box.setEnabled(False)
+            self.norm_range_start.setEnabled(False)
+            self.norm_range_end.setEnabled(False)
+            self.norm_range_checkbox.setEnabled(False)
             self.bg_input_button.setEnabled(False)
             self.reduce_op_box.setEnabled(False)
             self.norm_op_box.setEnabled(False)
         else:
             self.norm_range_box.setEnabled(True)
+            self.norm_range_start.setEnabled(True)
+            self.norm_range_end.setEnabled(True)
+            self.norm_range_checkbox.setEnabled(True)
             if self.bg_input_button.text() == "[Remove]":
                 self.norm_bg_box.setEnabled(True)
             self.bg_input_button.setEnabled(True)
