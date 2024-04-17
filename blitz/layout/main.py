@@ -26,6 +26,7 @@ class MainWindow(QMainWindow):
         self.ui.setup_UI(self)
 
         self.last_file_dir = Path.cwd()
+        self._lut_file: str = ""
 
         self.setup_connections()
         self.reset_options()
@@ -48,14 +49,16 @@ class MainWindow(QMainWindow):
         self.shortcut_copy.activated.connect(self.on_strgC)
 
         # menu connections
-        self.ui.action_open.triggered.connect(self.browse_file)
-        self.ui.action_load.triggered.connect(self.browse_tof)
+        self.ui.action_open_file.triggered.connect(self.browse_file)
+        self.ui.action_open_folder.triggered.connect(self.browse_folder)
+        self.ui.action_load_tof.triggered.connect(self.browse_tof)
         self.ui.action_export.triggered.connect(
             self.ui.image_viewer.exportClicked
         )
         self.ui.action_write_ini.triggered.connect(settings.export)
         self.ui.action_write_ini.triggered.connect(self.sync_settings)
         self.ui.action_select_ini.triggered.connect(settings.select)
+        self.ui.action_select_ini.triggered.connect(restart)
         self.ui.action_restart.triggered.connect(restart)
 
         # image_viewer connections
@@ -400,11 +403,11 @@ class MainWindow(QMainWindow):
         with LoadingManager(self, text) as lm:
             self.ui.image_viewer.load_data(
                 file_path,
-                size_ratio=self.ui.size_ratio_spinbox.value(),
-                subset_ratio=self.ui.subset_ratio_spinbox.value(),
-                max_ram=self.ui.max_ram_spinbox.value(),
-                convert_to_8_bit=self.ui.load_8bit_checkbox.isChecked(),
-                grayscale=self.ui.load_grayscale_checkbox.isChecked(),
+                size_ratio=self.ui.spinbox_load_size.value(),
+                subset_ratio=self.ui.spinbox_load_subset.value(),
+                max_ram=self.ui.spinbox_max_ram.value(),
+                convert_to_8_bit=self.ui.checkbox_load_8bit.isChecked(),
+                grayscale=self.ui.checkbox_load_grayscale.isChecked(),
             )
         if file_path is not None:
             data_size_MB = self.ui.image_viewer.data.image.nbytes / 2**20
@@ -451,4 +454,4 @@ class MainWindow(QMainWindow):
             "window/docks",
             self.ui.dock_area.saveState(),
         )
-        settings.set("data/max_ram", self.ui.max_ram_spinbox.value())
+        settings.set("data/max_ram", self.ui.spinbox_max_ram.value())

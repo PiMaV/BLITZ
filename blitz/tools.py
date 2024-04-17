@@ -8,6 +8,8 @@ from PyQt5.QtGui import QColor, QTextCharFormat
 from PyQt5.QtWidgets import (QApplication, QDialog, QLabel, QTextEdit,
                              QVBoxLayout)
 
+from . import settings
+
 LOGGER: Any = None
 
 
@@ -49,6 +51,7 @@ class LoggingTextEdit(QTextEdit):
         cursor.movePosition(cursor.MoveOperation.End)
         format = QTextCharFormat()
         format.setForeground(QColor(color))
+        format.setFontPointSize(settings.get("viewer/font_size_log"))
         cursor.mergeCharFormat(format)
         if message != "\n":
             cursor.insertText(f"> {message}\n")

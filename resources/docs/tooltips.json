@@ -1,0 +1,43 @@
+{
+    "action_open_file": "Select a single file containing one or more images (.png, .npy, ...).",
+    "action_open_folder": "Select a folder containing multiple (single-image) files.",
+    "action_load_tof": "Load a tof .json file that is recorded additionally to the data.",
+    "action_export": "Export the currently displayed images to the selected folder.",
+    "action_write_ini": "Writes an .ini file with all current configurations. Saving it to the same folder as the application will automatically load it at the next start.",
+    "action_select_ini": "Select an .ini file. Restart the application manually to apply all visual changes of the .ini file.",
+    "action_restart": "Manually restart the application.",
+
+    "checkbox_autofit": "If checked, automatically adjusts the color lookup table to the displayed colors in the image. If negative values appear, this also switches to another gradient preset, which is useful for normalization.",
+    "button_load_lut": "Loads a LUT from a .json file.",
+    "button_export_lut": "Saves the current LUT to a .json file. If an .ini file is selected, this LUT gets loaded automatically the next time the application is opened.",
+
+    "button_open_file": "Select a single file containing one or more images (.png, .npy, ...).",
+    "button_open_folder": "Select a folder containing multiple (single-image) files.",
+    "checkbox_load_8bit": "Load each image as 8bit.",
+    "checkbox_load_grayscale": "Assume each image is grayscale.",
+    "spinbox_load_size": "Adjust the relative size of each image.",
+    "spinbox_load_subset": "Adjust the relative number of images loaded.",
+    "spinbox_max_ram": "Set an upper bound for memory used by the application.",
+
+    "button_connect": "Connect to the given server address. Keeps listening until manually disconnected.",
+    "button_disconnect": "Disconnect from the server.",
+
+    "spinbox_width_h": "Changes the area of the horizontal line. The upper plot shows the mean over all vertical pixels at one position.",
+    "spinbox_width_v": "Changes the area of the vertical line. The left plot shows the mean over all horizontal pixels at one position.",
+
+    "checkbox_roi_drop": "Whether to update the ROI plot (lower window) upon dragging the ROI or only on drop (releasing the mouse button).",
+
+    "label_reduce": "Operations that reduce the dimensionality of the dataset (i.e. remove the time axis) by calculating some metric over all images.",
+    "combobox_reduce": "Calculate a metric on the time axis, e.g. mean of all images loaded. This visualizes a single image.",
+
+    "checkbox_norm_range": "Select this to perform a normalization over the given time interval / image indices. Subtracts or divides each image by the mean of all images in the interval.",
+    "checkbox_norm_show_range": "Show a blue box in the timeline to select a time interval.",
+
+    "checkbox_norm_bg": "Select this to subtract or divide each image by a given background image.",
+    "button_bg_input": "Select an image that is of same size as the currently loaded data.",
+    "spinbox_norm_beta": "Percentage of the image that is subtracted or divided.",
+    "checkbox_norm_subtract": "Subtract the selected image from all images.",
+    "checkbox_norm_divide": "Divide all images by the selected image. Make sure that no division-by-zero occurs.",
+
+    "checkbox_mm": "Convert all lengths in millimeters instead of pixels based on a known scale."
+}

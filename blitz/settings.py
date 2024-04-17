@@ -14,6 +14,7 @@ _default_settings = {
     "viewer/ROI_on_drop_threshold": 500_000,
     "viewer/LUT_source": "",
     "viewer/font_size_status_bar": 10,
+    "viewer/font_size_log": 10,
     "viewer/max_file_name_length": 40,
 
     "data/multicore_size_threshold": 1.3 * (2**30),

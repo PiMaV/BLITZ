@@ -1,11 +1,14 @@
+import json
+
 import pyqtgraph as pg
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QFile
 from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
                              QDoubleSpinBox, QFrame, QGridLayout, QHBoxLayout,
                              QLabel, QLayout, QLineEdit, QMenu, QMenuBar,
                              QPushButton, QScrollArea, QSpinBox, QStatusBar,
-                             QStyle, QTabWidget, QVBoxLayout, QWidget)
+                             QStyle, QTabWidget, QToolTip, QVBoxLayout,
+                             QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import __version__, resources, settings
@@ -53,6 +56,7 @@ class UI_MainWindow(QWidget):
 
         self.setup_lut_dock()
         self.setup_option_dock()
+        self.assign_tooltips()
 
     def setup_docks(self) -> None:
         border_size = int(0.25 * self.width() / 2)
@@ -156,8 +160,11 @@ class UI_MainWindow(QWidget):
         self.menubar = QMenuBar()
 
         file_menu = QMenu("File", self)
-        self.action_open = file_menu.addAction("Open...")
-        self.action_load = file_menu.addAction("Load TOF")
+        file_menu.setToolTipsVisible(True)
+        self.action_open_file = file_menu.addAction("Open File")
+        self.action_open_folder = file_menu.addAction("Open Folder")
+        self.action_load_tof = file_menu.addAction("Load TOF")
+        file_menu.addSeparator()
         self.action_export = file_menu.addAction("Export")
         file_menu.addSeparator()
         self.action_write_ini = file_menu.addAction("Write .ini")
@@ -184,7 +191,6 @@ class UI_MainWindow(QWidget):
         self.statusbar.addWidget(self.loading_label)
 
     def setup_lut_dock(self) -> None:
-        self._lut_file: str = ""
         self.image_viewer.ui.histogram.setParent(None)
         self.dock_lookup.addWidget(self.image_viewer.ui.histogram)
         self.checkbox_autofit = QCheckBox("Auto-Fit")
@@ -217,13 +223,14 @@ class UI_MainWindow(QWidget):
         self.option_tabwidget = QTabWidget()
         self.dock_option.addWidget(self.option_tabwidget)
 
-        style_heading = (
-            "background-color: rgb(50, 50, 78);"
-            "qproperty-alignment: AlignCenter;"
-            "border-bottom: 5px solid rgb(13, 0, 26);"
-            "font-size: 14pt;"
-            "font: bold;"
-        )
+        style_heading = """QLabel {
+            background-color: rgb(50, 50, 78);
+            qproperty-alignment: AlignCenter;
+            border-bottom: 5px solid rgb(13, 0, 26);
+            font-size: 14pt;
+            font: bold;
+        }"""
+
         style_options = (
             "font-size: 9pt;"
         )
@@ -232,34 +239,34 @@ class UI_MainWindow(QWidget):
 
         # --- File ---
         file_layout = QVBoxLayout()
-        load_label = QLabel("Load Options")
+        load_label = QLabel("Loading")
         load_label.setStyleSheet(style_heading)
         file_layout.addWidget(load_label)
         load_hlay = QHBoxLayout()
-        self.load_8bit_checkbox = QCheckBox("8 bit")
-        load_hlay.addWidget(self.load_8bit_checkbox)
-        self.load_grayscale_checkbox = QCheckBox("Grayscale")
-        self.load_grayscale_checkbox.setChecked(True)
-        load_hlay.addWidget(self.load_grayscale_checkbox)
+        self.checkbox_load_8bit = QCheckBox("8 bit")
+        load_hlay.addWidget(self.checkbox_load_8bit)
+        self.checkbox_load_grayscale = QCheckBox("Grayscale")
+        self.checkbox_load_grayscale.setChecked(True)
+        load_hlay.addWidget(self.checkbox_load_grayscale)
         file_layout.addLayout(load_hlay)
-        self.size_ratio_spinbox = QDoubleSpinBox()
-        self.size_ratio_spinbox.setRange(0, 1)
-        self.size_ratio_spinbox.setValue(1)
-        self.size_ratio_spinbox.setSingleStep(0.1)
-        self.size_ratio_spinbox.setPrefix("Size-ratio: ")
-        file_layout.addWidget(self.size_ratio_spinbox)
-        self.subset_ratio_spinbox = QDoubleSpinBox()
-        self.subset_ratio_spinbox.setRange(0, 1)
-        self.subset_ratio_spinbox.setValue(1)
-        self.subset_ratio_spinbox.setSingleStep(0.1)
-        self.subset_ratio_spinbox.setPrefix("Subset-ratio: ")
-        file_layout.addWidget(self.subset_ratio_spinbox)
-        self.max_ram_spinbox = QDoubleSpinBox()
-        self.max_ram_spinbox.setRange(.1, .8 * get_available_ram())
-        self.max_ram_spinbox.setValue(settings.get("data/max_ram"))
-        self.max_ram_spinbox.setSingleStep(0.1)
-        self.max_ram_spinbox.setPrefix("Max. RAM: ")
-        file_layout.addWidget(self.max_ram_spinbox)
+        self.spinbox_load_size = QDoubleSpinBox()
+        self.spinbox_load_size.setRange(0, 1)
+        self.spinbox_load_size.setValue(1)
+        self.spinbox_load_size.setSingleStep(0.1)
+        self.spinbox_load_size.setPrefix("Size-ratio: ")
+        file_layout.addWidget(self.spinbox_load_size)
+        self.spinbox_load_subset = QDoubleSpinBox()
+        self.spinbox_load_subset.setRange(0, 1)
+        self.spinbox_load_subset.setValue(1)
+        self.spinbox_load_subset.setSingleStep(0.1)
+        self.spinbox_load_subset.setPrefix("Subset-ratio: ")
+        file_layout.addWidget(self.spinbox_load_subset)
+        self.spinbox_max_ram = QDoubleSpinBox()
+        self.spinbox_max_ram.setRange(.1, .8 * get_available_ram())
+        self.spinbox_max_ram.setValue(settings.get("data/max_ram"))
+        self.spinbox_max_ram.setSingleStep(0.1)
+        self.spinbox_max_ram.setPrefix("Max. RAM: ")
+        file_layout.addWidget(self.spinbox_max_ram)
         load_btn_lay = QHBoxLayout()
         self.button_open_file = QPushButton("Open File")
         load_btn_lay.addWidget(self.button_open_file)
@@ -351,16 +358,16 @@ class UI_MainWindow(QWidget):
         checkbox_layout.addWidget(self.checkbox_tof)
         checkbox_layout.addStretch()
         view_layout.addLayout(checkbox_layout)
-        self.checkbox_roi_drop = QCheckBox("Update ROI only on Drop")
+        self.checkbox_roi_drop = QCheckBox("Update on drop")
         view_layout.addWidget(self.checkbox_roi_drop)
         view_layout.addStretch()
         self.create_option_tab(view_layout, "View")
 
         # --- Timeline Operation ---
         timeop_layout = QVBoxLayout()
-        timeline_label = QLabel("Reduction")
-        timeline_label.setStyleSheet(style_heading)
-        timeop_layout.addWidget(timeline_label)
+        self.label_reduce = QLabel("Reduction")
+        self.label_reduce.setStyleSheet(style_heading)
+        timeop_layout.addWidget(self.label_reduce)
         self.combobox_reduce = QComboBox()
         self.combobox_reduce.addItem("-")
         for op in ReduceOperation:
@@ -446,3 +453,26 @@ class UI_MainWindow(QWidget):
 
         tools_layout.addStretch()
         self.create_option_tab(tools_layout, "Tools")
+
+    def assign_tooltips(self) -> None:
+        file = QFile(":/docs/tooltips.json")
+        file.open(QFile.OpenModeFlag.ReadOnly)
+        tips = json.loads(bytes(file.readAll()))
+
+        for widget, tip in tips.items():
+            try:
+                self.__getattribute__(widget).setStyleSheet(
+                    self.__getattribute__(widget).styleSheet()
+                    + """QToolTip {
+                        border: 2px solid green;
+                        padding: 2px;
+                        border-radius: 3px;
+                        font-size: 12pt;
+                        opacity: 200;
+                        color: rgb(20, 20, 20);
+                        background-color: rgb(200, 200, 200);
+                    }"""
+                )
+            except:
+                pass
+            self.__getattribute__(widget).setToolTip(tip)

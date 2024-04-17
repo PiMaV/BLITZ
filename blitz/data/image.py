@@ -94,7 +94,7 @@ class ImageData:
             return False
         if self._norm_operation is not None:
             self._norm = None
-        image = self.image
+        image = self._image
         range_img = reference_img = None
         if left is not None and right is not None:
             range_img = beta * get(use)(image[left:right+1]).astype(np.double)
