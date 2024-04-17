@@ -2,31 +2,15 @@ import json
 from pathlib import Path
 from typing import Optional
 
-import pyqtgraph as pg
-from PyQt5.QtCore import QCoreApplication, Qt
-from PyQt5.QtGui import QFont, QIcon, QKeySequence
-from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
-                             QDoubleSpinBox, QFileDialog, QFrame, QGridLayout,
-                             QHBoxLayout, QLabel, QLayout, QLineEdit,
-                             QMainWindow, QMenu, QMenuBar, QPushButton,
-                             QScrollArea, QShortcut, QSpinBox, QStatusBar,
-                             QStyle, QTabWidget, QVBoxLayout, QWidget)
-from pyqtgraph.dockarea import Dock, DockArea
+from PyQt5.QtCore import QCoreApplication
+from PyQt5.QtGui import QKeySequence
+from PyQt5.QtWidgets import QApplication, QFileDialog, QMainWindow, QShortcut
 
-from .. import __version__, resources, settings
+from .. import __version__, settings
 from ..data.image import ImageData
-from ..data.ops import ReduceOperation
 from ..data.web import WebDataLoader
-from ..tools import (LoadingManager, LoggingTextEdit, get_available_ram, log,
-                     setup_logger)
-from .tof import TOFAdapter
-from .viewer import ImageViewer
-from .widgets import ExtractionPlot, MeasureROI, TimePlot
-
-TITLE = (
-    "BLITZ: (B)ulk (L)oading & (I)nteractive (T)ime series (Z)onal analysis "
-    f"- INP Greifswald [{__version__}]"
-)
+from ..tools import LoadingManager, get_available_ram, log
+from .ui import UI_MainWindow
 
 
 def restart(self) -> None:
@@ -37,661 +21,300 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle(TITLE)
-        self.setWindowIcon(QIcon(":/icon/blitz.ico"))
 
-        screen_geometry = QApplication.primaryScreen().availableGeometry()
-        relative_size = settings.get("window/relative_size")
-        width = int(screen_geometry.width() * relative_size)
-        height = int(screen_geometry.height() * relative_size)
-        self.setGeometry(
-            (screen_geometry.width() - width) // 2,
-            (screen_geometry.height() - height) // 2,
-            width,
-            height,
-        )
-        if relative_size == 1.0:
-            self.showMaximized()
-
-        self.dock_area = DockArea()
-        self.setup_docks()
-        self.setCentralWidget(self.dock_area)
-
-        self.setup_logger()
-        self.setup_image_and_line_viewers()
-        self.setup_lut_dock()
+        self.ui = UI_MainWindow()
+        self.ui.setup_UI(self)
 
         self.last_file_dir = Path.cwd()
 
-        self.setup_option_dock()
-        self.setup_menu_and_status_bar()
-        self.image_viewer.file_dropped.connect(self.load_images_adapter)
-
-        self.shortcut_copy = QShortcut(QKeySequence("Ctrl+C"), self)
-        self.shortcut_copy.activated.connect(self.on_strgC)
-
+        self.setup_connections()
         self.reset_options()
-        log("Welcome to BLITZ", color="pink")
 
-    def setup_docks(self) -> None:
-        border_size = int(0.25 * self.width() / 2)
-        viewer_height = self.height() - 2 * border_size
-
-        self.dock_lookup = Dock(
-            "LUT",
-            size=(border_size, 0.6*viewer_height),
-            hideTitle=True,
-        )
-        self.dock_option = Dock(
-            "Options",
-            size=(border_size, 0.4*viewer_height),
-            hideTitle=True,
-        )
-        self.dock_status = Dock(
-            "File Metadata",
-            size=(border_size, border_size),
-            hideTitle=True,
-        )
-        self.dock_v_plot = Dock(
-            "V Plot",
-            size=(border_size, viewer_height),
-            hideTitle=True,
-        )
-        image_viewer_size = int(0.75 * self.width())
-        self.dock_h_plot = Dock(
-            "H Plot",
-            size=(image_viewer_size, border_size),
-            hideTitle=True,
-        )
-        self.dock_viewer = Dock(
-            "Image Viewer",
-            size=(image_viewer_size, viewer_height),
-            hideTitle=True,
-        )
-        self.dock_t_line = Dock(
-            "Timeline",
-            size=(image_viewer_size, border_size),
-            hideTitle=True,
-        )
-
-        self.dock_area.addDock(self.dock_t_line, 'bottom')
-        self.dock_area.addDock(self.dock_viewer, 'top', self.dock_t_line)
-        self.dock_area.addDock(self.dock_v_plot, 'left', self.dock_viewer)
-        self.dock_area.addDock(self.dock_lookup, 'right', self.dock_viewer)
-        self.dock_area.addDock(self.dock_option, 'top', self.dock_lookup)
-        self.dock_area.addDock(self.dock_h_plot, 'top', self.dock_viewer)
-        self.dock_area.addDock(self.dock_status, 'top', self.dock_v_plot)
-        if (docks_arrangement := settings.get("window/docks")):
-            self.dock_area.restoreState(docks_arrangement)
-
-    def setup_menu_and_status_bar(self) -> None:
-        menubar = QMenuBar()
-
-        file_menu = QMenu("File", self)
-        file_menu.addAction("Open...").triggered.connect(self.browse_file)
-        file_menu.addAction("Load TOF").triggered.connect(self.browse_tof)
-        file_menu.addAction("Export").triggered.connect(
-            self.image_viewer.exportClicked
-        )
-        file_menu.addSeparator()
-        write_ini_action = file_menu.addAction("Write .ini")
-        write_ini_action.triggered.connect(settings.export)
-        write_ini_action.triggered.connect(self.sync_settings)
-        file_menu.addAction("Select .ini").triggered.connect(settings.select)
-        file_menu.addSeparator()
-        file_menu.addAction("Restart").triggered.connect(restart)
-        menubar.addMenu(file_menu)
-
-        self.setMenuBar(menubar)
-
-        font_status = QFont()
-        font_status.setPointSize(settings.get("viewer/font_size_status_bar"))
-
-        statusbar = QStatusBar()
-        self.position_label = QLabel("")
-        self.position_label.setFont(font_status)
-        statusbar.addPermanentWidget(self.position_label)
-        self.frame_label = QLabel("")
-        self.frame_label.setFont(font_status)
-        statusbar.addWidget(self.frame_label)
-        self.file_label = QLabel("")
-        self.file_label.setFont(font_status)
-        statusbar.addWidget(self.file_label)
-        self.loading_label = QLabel("")
-        self.loading_label.setFont(font_status)
-        statusbar.addWidget(self.loading_label)
-
-        self.setStatusBar(statusbar)
-
-    def setup_lut_dock(self) -> None:
-        self._lut_file: str = ""
-        self.image_viewer.ui.histogram.setParent(None)
-        self.dock_lookup.addWidget(self.image_viewer.ui.histogram)
-        levels_box = QCheckBox("Auto-Fit")
-        levels_box.setChecked(True)
-        levels_box.stateChanged.connect(self.image_viewer.toggle_fit_levels)
-        lut_button_container = QWidget(self)
-        load_button = QPushButton("Load")
-        load_button.pressed.connect(self.browse_lut)
-        export_button = QPushButton("Export")
-        export_button.pressed.connect(self.save_lut)
-        lut_button_layout = QGridLayout()
-        lut_button_layout.addWidget(levels_box, 0, 0)
-        lut_button_layout.addWidget(load_button, 0, 1)
-        lut_button_layout.addWidget(export_button, 0, 2)
-        lut_button_container.setLayout(lut_button_layout)
-        self.dock_lookup.addWidget(lut_button_container)
         if (file := settings.get("viewer/LUT_source")) != "":
             try:
                 with open(file, "r", encoding="utf-8") as f:
                     lut_config = json.load(f)
-                self.image_viewer.load_lut_config(lut_config)
+                self.ui.image_viewer.load_lut_config(lut_config)
                 self._lut_file = file
             except:
                 log("Failed to load LUT config given in the .ini file",
                     color="red")
 
-    def setup_option_dock(self) -> None:
-        self.option_tabwidget = QTabWidget()
-        self.dock_option.addWidget(self.option_tabwidget)
+        log("Welcome to BLITZ", color="pink")
 
-        style_heading = (
-            "background-color: rgb(50, 50, 78);"
-            "qproperty-alignment: AlignCenter;"
-            "border-bottom: 5px solid rgb(13, 0, 26);"
-            "font-size: 14pt;"
-            "font: bold;"
+    def setup_connections(self) -> None:
+        # MainWindow connections
+        self.shortcut_copy = QShortcut(QKeySequence("Ctrl+C"), self)
+        self.shortcut_copy.activated.connect(self.on_strgC)
+
+        # menu connections
+        self.ui.action_open.triggered.connect(self.browse_file)
+        self.ui.action_load.triggered.connect(self.browse_tof)
+        self.ui.action_export.triggered.connect(
+            self.ui.image_viewer.exportClicked
         )
-        style_options = (
-            "font-size: 9pt;"
+        self.ui.action_write_ini.triggered.connect(settings.export)
+        self.ui.action_write_ini.triggered.connect(self.sync_settings)
+        self.ui.action_select_ini.triggered.connect(settings.select)
+        self.ui.action_restart.triggered.connect(restart)
+
+        # image_viewer connections
+        self.ui.image_viewer.file_dropped.connect(self.load_images_adapter)
+        self.ui.norm_range.sigRegionChanged.connect(
+            self.update_norm_range_labels
         )
-
-        self.option_tabwidget.setStyleSheet(style_options)
-
-        # --- File ---
-        file_layout = QVBoxLayout()
-        load_label = QLabel("Load Options")
-        load_label.setStyleSheet(style_heading)
-        file_layout.addWidget(load_label)
-        load_hlay = QHBoxLayout()
-        self.load_8bit_checkbox = QCheckBox("8 bit")
-        load_hlay.addWidget(self.load_8bit_checkbox)
-        self.load_grayscale_checkbox = QCheckBox("Grayscale")
-        self.load_grayscale_checkbox.setChecked(True)
-        load_hlay.addWidget(self.load_grayscale_checkbox)
-        file_layout.addLayout(load_hlay)
-        self.size_ratio_spinbox = QDoubleSpinBox()
-        self.size_ratio_spinbox.setRange(0, 1)
-        self.size_ratio_spinbox.setValue(1)
-        self.size_ratio_spinbox.setSingleStep(0.1)
-        self.size_ratio_spinbox.setPrefix("Size-ratio: ")
-        file_layout.addWidget(self.size_ratio_spinbox)
-        self.subset_ratio_spinbox = QDoubleSpinBox()
-        self.subset_ratio_spinbox.setRange(0, 1)
-        self.subset_ratio_spinbox.setValue(1)
-        self.subset_ratio_spinbox.setSingleStep(0.1)
-        self.subset_ratio_spinbox.setPrefix("Subset-ratio: ")
-        file_layout.addWidget(self.subset_ratio_spinbox)
-        self.max_ram_spinbox = QDoubleSpinBox()
-        self.max_ram_spinbox.setRange(.1, .8 * get_available_ram())
-        self.max_ram_spinbox.setValue(settings.get("data/max_ram"))
-        self.max_ram_spinbox.setSingleStep(0.1)
-        self.max_ram_spinbox.setPrefix("Max. RAM: ")
-        file_layout.addWidget(self.max_ram_spinbox)
-        load_btn_lay = QHBoxLayout()
-        load_btn = QPushButton("Open File")
-        load_btn.pressed.connect(self.browse_file)
-        load_btn_lay.addWidget(load_btn)
-        fload_btn = QPushButton("Open Folder")
-        fload_btn.pressed.connect(self.browse_folder)
-        load_btn_lay.addWidget(fload_btn)
-        file_layout.addLayout(load_btn_lay)
-        connect_label = QLabel("Web Connection")
-        connect_label.setStyleSheet(style_heading)
-        file_layout.addWidget(connect_label)
-        address_label = QLabel("Address:")
-        self.address_edit = QLineEdit()
-        token_label = QLabel("Token:")
-        self.token_edit = QLineEdit()
-        self.connect_button = QPushButton("Connect")
-        self.connect_button.pressed.connect(self.start_web_connection)
-        self.disconnect_button = QPushButton("Disconnect")
-        self.disconnect_button.pressed.connect(
-            lambda: self.end_web_connection(None)
-        )
-        self.disconnect_button.setEnabled(False)
-        connect_lay = QGridLayout()
-        connect_lay.addWidget(address_label, 0, 0, 1, 1)
-        connect_lay.addWidget(self.address_edit, 0, 1, 1, 1)
-        connect_lay.addWidget(token_label, 1, 0, 1, 1)
-        connect_lay.addWidget(token_label, 1, 0, 1, 1)
-        connect_lay.addWidget(self.token_edit, 1, 1, 1, 1)
-        connect_lay.addWidget(self.connect_button, 2, 0, 2, 1)
-        connect_lay.addWidget(self.disconnect_button, 2, 1, 2, 1)
-        file_layout.addLayout(connect_lay)
-        file_layout.addStretch()
-        self.create_option_tab(file_layout, "File")
-
-        # --- View ---
-        view_layout = QVBoxLayout()
-        mask_label = QLabel("View")
-        mask_label.setStyleSheet(style_heading)
-        view_layout.addWidget(mask_label)
-        viewchange_layout = QHBoxLayout()
-        self.flip_x_box = QCheckBox("Flip x")
-        self.flip_x_box.clicked.connect(
-            lambda: self.image_viewer.manipulate("flip_x")
-        )
-        viewchange_layout.addWidget(self.flip_x_box)
-        self.flip_y_box = QCheckBox("Flip y")
-        self.flip_y_box.clicked.connect(
-            lambda: self.image_viewer.manipulate("flip_y")
-        )
-        viewchange_layout.addWidget(self.flip_y_box)
-        self.transpose_box = QCheckBox("Transpose")
-        self.transpose_box.clicked.connect(
-            lambda: self.image_viewer.manipulate("transpose")
-        )
-        viewchange_layout.addWidget(self.transpose_box)
-        view_layout.addLayout(viewchange_layout)
-        mask_label = QLabel("Mask")
-        mask_label.setStyleSheet(style_heading)
-        view_layout.addWidget(mask_label)
-        mask_holay = QHBoxLayout()
-        self.mask_checkbox = QCheckBox("Show")
-        self.mask_checkbox.clicked.connect(self.image_viewer.toggle_mask)
-        mask_holay.addWidget(self.mask_checkbox)
-        apply_btn = QPushButton("Apply")
-        apply_btn.pressed.connect(self.image_viewer.apply_mask)
-        apply_btn.pressed.connect(lambda: self.mask_checkbox.setChecked(False))
-        mask_holay.addWidget(apply_btn)
-        reset_btn = QPushButton("Reset")
-        reset_btn.pressed.connect(self.image_viewer.reset)
-        mask_holay.addWidget(reset_btn)
-        view_layout.addLayout(mask_holay)
-        crosshair_label = QLabel("Crosshair")
-        crosshair_label.setStyleSheet(style_heading)
-        view_layout.addWidget(crosshair_label)
-        crosshair_box = QCheckBox("Show")
-        crosshair_box.setChecked(True)
-        crosshair_box.stateChanged.connect(self.h_plot.toggle_line)
-        crosshair_box.stateChanged.connect(self.v_plot.toggle_line)
-        view_layout.addWidget(crosshair_box)
-        width_holay = QHBoxLayout()
-        width_label = QLabel("Line width:")
-        width_holay.addWidget(width_label)
-        self.width_spinbox_h = QSpinBox()
-        self.width_spinbox_h.setRange(0, 1)
-        self.width_spinbox_h.setValue(0)
-        self.width_spinbox_h.setPrefix("H: ")
-        self.width_spinbox_h.valueChanged.connect(self.h_plot.change_width)
-        width_holay.addWidget(self.width_spinbox_h)
-        self.width_spinbox_v = QSpinBox()
-        self.width_spinbox_v.setRange(0, 1)
-        self.width_spinbox_v.setValue(0)
-        self.width_spinbox_v.setPrefix("V: ")
-        self.width_spinbox_v.valueChanged.connect(self.v_plot.change_width)
-        width_holay.addWidget(self.width_spinbox_v)
-        view_layout.addLayout(width_holay)
-
-        roi_label = QLabel("Timeline Plot")
-        roi_label.setStyleSheet(style_heading)
-        view_layout.addWidget(roi_label)
-        self.image_viewer.ui.roiBtn.setParent(None)
-        self.image_viewer.ui.roiBtn = QCheckBox("ROI")
-        self.roi_checkbox = self.image_viewer.ui.roiBtn
-        self.roi_checkbox.stateChanged.connect(self.image_viewer.roiClicked)
-        self.roi_checkbox.setChecked(True)
-        self.tof_checkbox = QCheckBox("TOF")
-        # NOTE: the order of connection here matters
-        # roiClicked shows the plot again
-        self.tof_checkbox.stateChanged.connect(self.tof_adapter.toggle_plot)
-        self.tof_checkbox.setEnabled(False)
-        checkbox_layout = QHBoxLayout()
-        checkbox_layout.addStretch()
-        checkbox_layout.addWidget(self.roi_checkbox)
-        checkbox_layout.addStretch()
-        checkbox_layout.addWidget(self.tof_checkbox)
-        checkbox_layout.addStretch()
-        view_layout.addLayout(checkbox_layout)
-        self.roi_drop_checkbox = QCheckBox("Update ROI only on Drop")
-        self.roi_drop_checkbox.stateChanged.connect(
-            lambda: self.image_viewer.toggle_roi_update_frequency(
-                self.roi_drop_checkbox.isChecked()
-            )
-        )
-        view_layout.addWidget(self.roi_drop_checkbox)
-        view_layout.addStretch()
-        self.create_option_tab(view_layout, "View")
-
-        # --- Timeline Operation ---
-        timeop_layout = QVBoxLayout()
-        timeline_label = QLabel("Reduction")
-        timeline_label.setStyleSheet(style_heading)
-        timeop_layout.addWidget(timeline_label)
-        self.reduce_op_box = QComboBox()
-        self.reduce_op_box.addItem("-")
-        for op in ReduceOperation:
-            self.reduce_op_box.addItem(op.name)
-        self.reduce_op_box.currentIndexChanged.connect(self.operation_changed)
-        timeop_layout.addWidget(self.reduce_op_box)
-        norm_label = QLabel("Normalization")
-        norm_label.setStyleSheet(style_heading)
-        timeop_layout.addWidget(norm_label)
-        self.norm_range_box = QCheckBox("Range:")
-        self.norm_range_box.setChecked(True)
-        norm_label_op = QLabel("use:")
-        self.norm_op_box = QComboBox()
-        for op in ReduceOperation:
-            self.norm_op_box.addItem(op.name)
-        norm_range_label_to = QLabel("-")
-        self.norm_range_start = QSpinBox()
-        self.norm_range_start.setMinimum(0)
-        self.norm_range_end = QSpinBox()
-        self.norm_range_end.setMinimum(1)
-        self.norm_range_start.valueChanged.connect(self.update_norm_range)
-        self.norm_range_end.valueChanged.connect(self.update_norm_range)
-        self.norm_range_checkbox = QCheckBox("")
-        map_ = getattr(QStyle, "SP_DesktopIcon")
-        self.norm_range_checkbox.setIcon(
-            self.norm_range_checkbox.style().standardIcon(map_)  # type: ignore
-        )
-        self.norm_range_checkbox.stateChanged.connect(
-            self.roi_plot.toggle_norm_range
-        )
-        range_layout = QGridLayout()
-        range_layout.addWidget(self.norm_range_box, 0, 0,  1, 1)
-        range_layout.addWidget(self.norm_range_start, 0, 1, 1, 1)
-        range_layout.addWidget(norm_range_label_to, 0, 2, 1, 1)
-        range_layout.addWidget(self.norm_range_end, 0, 3, 1, 1)
-        range_layout.addWidget(self.norm_range_checkbox, 0, 4, 1, 1)
-        range_layout.addWidget(norm_label_op, 1, 1, 1, 3)
-        range_layout.addWidget(self.norm_op_box, 1, 2, 1, 3)
-        timeop_layout.addLayout(range_layout)
-        timeop_layout.addSpacing(10)
-        self.norm_bg_box = QCheckBox("Background:")
-        self.norm_bg_box.setEnabled(False)
-        self.bg_input_button = QPushButton("[Select]")
-        self.bg_input_button.clicked.connect(self.search_background_file)
-        bg_layout = QHBoxLayout()
-        bg_layout.addWidget(self.norm_bg_box)
-        bg_layout.addWidget(self.bg_input_button)
-        timeop_layout.addLayout(bg_layout)
-        self.norm_beta = QSpinBox()
-        self.norm_beta.setSuffix("%")
-        self.norm_beta.setMinimum(0)
-        self.norm_beta.setMaximum(100)
-        self.norm_beta.setValue(100)
-        self.norm_beta.editingFinished.connect(self._normalization_beta_update)
-        self.norm_subtract_box = QCheckBox("Subtract")
-        self.norm_subtract_box.clicked.connect(
-            lambda: self._normalization("subtract")
-        )
-        self.norm_divide_box = QCheckBox("Divide")
-        self.norm_divide_box.clicked.connect(
-            lambda: self._normalization("divide")
-        )
-        norm_layout = QHBoxLayout()
-        norm_layout.addWidget(self.norm_beta)
-        norm_layout.addWidget(self.norm_subtract_box)
-        norm_layout.addWidget(self.norm_divide_box)
-        hline = QFrame()
-        hline.setFrameShape(QFrame.Shape.HLine)
-        hline.setFrameShadow(QFrame.Shadow.Sunken)
-        timeop_layout.addWidget(hline)
-        timeop_layout.addLayout(norm_layout)
-        timeop_layout.addStretch()
-        self.create_option_tab(timeop_layout, "Time")
-
-        # --- Tools ---
-        tools_layout = QVBoxLayout()
-        roi_label = QLabel("Measure Tool")
-        roi_label.setStyleSheet(style_heading)
-        tools_layout.addWidget(roi_label)
-        self.measure_checkbox = QCheckBox("Show")
-        self.measure_checkbox.stateChanged.connect(self.measure_roi.toggle)
-        tools_layout.addWidget(self.measure_checkbox)
-        self.mm_checkbox = QCheckBox("Display in mm")
-        self.mm_checkbox.stateChanged.connect(self.update_roi_settings)
-        tools_layout.addWidget(self.mm_checkbox)
-        self.pixel_spinbox = QSpinBox()
-        self.pixel_spinbox.setPrefix("Pixels: ")
-        self.pixel_spinbox.setMinimum(1)
-        self.pixel_spinbox.setMaximum(1000)
-        self.pixel_spinbox.valueChanged.connect(self.update_roi_settings)
-        converter_layout = QHBoxLayout()
-        converter_layout.addWidget(self.pixel_spinbox)
-        self.mm_spinbox = QDoubleSpinBox()
-        self.mm_spinbox.setPrefix("in mm: ")
-        self.mm_spinbox.setMinimum(1.0)
-        self.mm_spinbox.setMaximum(100_000.0)
-        self.mm_spinbox.setValue(1.0)
-        self.mm_spinbox.valueChanged.connect(self.update_roi_settings)
-        converter_layout.addWidget(self.mm_spinbox)
-        tools_layout.addLayout(converter_layout)
-
-        tools_layout.addStretch()
-        self.create_option_tab(tools_layout, "Tools")
-
-    def create_option_tab(self, layout: QLayout, name: str) -> None:
-        scrollarea = QScrollArea()
-        scrollarea.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        scrollarea.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAsNeeded
-        )
-        container = QWidget()
-        container.setLayout(layout)
-        scrollarea.setWidget(container)
-        scrollarea.setWidgetResizable(True)
-        self.option_tabwidget.addTab(scrollarea, name)
-
-    def setup_logger(self) -> None:
-        logger = LoggingTextEdit()
-        logger.setReadOnly(True)
-
-        file_info_widget = QWidget()
-        layout = QVBoxLayout()
-        layout.addWidget(logger)
-        file_info_widget.setLayout(layout)
-        self.dock_status.addWidget(file_info_widget)
-        setup_logger(logger)
-
-    def setup_image_and_line_viewers(self) -> None:
-        self.image_viewer = ImageViewer()
-        self.dock_viewer.addWidget(self.image_viewer)
-
-        self.h_plot = ExtractionPlot(self.image_viewer)
-        self.dock_h_plot.addWidget(self.h_plot)
-        self.v_plot = ExtractionPlot(self.image_viewer, vertical=True)
-        self.dock_v_plot.addWidget(self.v_plot)
-
-        self.measure_roi = MeasureROI(self.image_viewer)
-
-        # create a new timeline replacing roiPlot
-        self.norm_range = pg.LinearRegionItem()
-        self.norm_range.sigRegionChanged.connect(self.update_norm_range_labels)
-        self.norm_range.setZValue(0)
-        self.roi_plot = TimePlot(
-            self.dock_t_line,
-            self.image_viewer,
-            self.norm_range,
-        )
-        self.roi_plot.showGrid(x=True, y=True, alpha=0.4)
-        self.image_viewer.ui.roiPlot.setParent(None)
-        self.image_viewer.ui.roiPlot = self.roi_plot
-        while len(self.image_viewer.roiCurves) > 0:
-            c = self.image_viewer.roiCurves.pop()
-            c.scene().removeItem(c)
-        # this decoy prevents an error being thrown in the ImageView
-        timeline_decoy = pg.PlotWidget(self.image_viewer.ui.splitter)
-        timeline_decoy.hide()
-        self.dock_t_line.addWidget(self.roi_plot)
-        self.image_viewer.ui.menuBtn.setParent(None)
-
-        self.tof_adapter = TOFAdapter(self.roi_plot)
-
-        self.image_viewer.scene.sigMouseMoved.connect(
+        self.ui.image_viewer.scene.sigMouseMoved.connect(
             self.update_statusbar_position
         )
-        self.image_viewer.timeLine.sigPositionChanged.connect(
+        self.ui.image_viewer.timeLine.sigPositionChanged.connect(
             self.update_statusbar
         )
-        self.v_plot.setYLink(self.image_viewer.getView())
-        self.h_plot.setXLink(self.image_viewer.getView())
+
+        # lut connections
+        self.ui.checkbox_autofit.stateChanged.connect(
+            self.ui.image_viewer.toggle_fit_levels
+        )
+        self.ui.button_load_lut.pressed.connect(self.browse_lut)
+        self.ui.button_export_lut.pressed.connect(self.save_lut)
+
+        # option connections
+        self.ui.button_open_file.pressed.connect(self.browse_file)
+        self.ui.button_open_folder.pressed.connect(self.browse_folder)
+        self.ui.button_connect.pressed.connect(self.start_web_connection)
+        self.ui.button_disconnect.pressed.connect(
+            lambda: self.end_web_connection(None)
+        )
+        self.ui.checkbox_flipx.clicked.connect(
+            lambda: self.ui.image_viewer.manipulate("flip_x")
+        )
+        self.ui.checkbox_flipy.clicked.connect(
+            lambda: self.ui.image_viewer.manipulate("flip_y")
+        )
+        self.ui.checkbox_transpose.clicked.connect(
+            lambda: self.ui.image_viewer.manipulate("transpose")
+        )
+        self.ui.checkbox_mask.clicked.connect(self.ui.image_viewer.toggle_mask)
+        self.ui.button_apply_mask.pressed.connect(
+            self.ui.image_viewer.apply_mask
+        )
+        self.ui.button_apply_mask.pressed.connect(
+            lambda: self.ui.checkbox_mask.setChecked(False)
+        )
+        self.ui.button_reset_mask.pressed.connect(self.ui.image_viewer.reset)
+        self.ui.checkbox_crosshair.stateChanged.connect(
+            self.ui.h_plot.toggle_line
+        )
+        self.ui.checkbox_crosshair.stateChanged.connect(
+            self.ui.v_plot.toggle_line
+        )
+        self.ui.spinbox_width_h.valueChanged.connect(
+            self.ui.h_plot.change_width
+        )
+        self.ui.spinbox_width_v.valueChanged.connect(
+            self.ui.v_plot.change_width
+        )
+        self.ui.checkbox_roi.stateChanged.connect(
+            self.ui.image_viewer.roiClicked
+        )
+        self.ui.checkbox_tof.stateChanged.connect(
+            self.ui.tof_adapter.toggle_plot
+        )
+        self.ui.checkbox_roi_drop.stateChanged.connect(
+            lambda: self.ui.image_viewer.toggle_roi_update_frequency(
+                self.ui.checkbox_roi_drop.isChecked()
+            )
+        )
+        self.ui.combobox_reduce.currentIndexChanged.connect(
+            self.operation_changed
+        )
+        self.ui.spinbox_norm_range_start.valueChanged.connect(
+            self.update_norm_range
+        )
+        self.ui.spinbox_norm_range_end.valueChanged.connect(
+            self.update_norm_range
+        )
+        self.ui.checkbox_norm_show_range.stateChanged.connect(
+            self.ui.roi_plot.toggle_norm_range
+        )
+        self.ui.button_bg_input.clicked.connect(self.search_background_file)
+        self.ui.spinbox_norm_beta.editingFinished.connect(
+            self._normalization_beta_update
+        )
+        self.ui.checkbox_norm_subtract.clicked.connect(
+            lambda: self._normalization("subtract")
+        )
+        self.ui.checkbox_norm_divide.clicked.connect(
+            lambda: self._normalization("divide")
+        )
+        self.ui.checkbox_measure_roi.stateChanged.connect(
+            self.ui.measure_roi.toggle
+        )
+        self.ui.checkbox_mm.stateChanged.connect(self.update_roi_settings)
+        self.ui.spinbox_pixel.valueChanged.connect(self.update_roi_settings)
+        self.ui.spinbox_mm.valueChanged.connect(self.update_roi_settings)
 
     def reset_options(self) -> None:
-        self.mask_checkbox.setChecked(False)
-        self.flip_x_box.setChecked(False)
-        self.flip_y_box.setChecked(False)
-        self.transpose_box.setChecked(False)
-        self.reduce_op_box.setCurrentIndex(0)
-        if self.image_viewer.data.is_single_image():
-            self.reduce_op_box.setEnabled(False)
+        self.ui.button_apply_mask.setChecked(False)
+        self.ui.checkbox_flipx.setChecked(False)
+        self.ui.checkbox_flipy.setChecked(False)
+        self.ui.checkbox_transpose.setChecked(False)
+        self.ui.combobox_reduce.setCurrentIndex(0)
+        if self.ui.image_viewer.data.is_single_image():
+            self.ui.combobox_reduce.setEnabled(False)
         else:
-            self.reduce_op_box.setEnabled(True)
-        self.norm_range_box.setChecked(True)
-        self.norm_range_box.setEnabled(True)
-        self.norm_bg_box.setEnabled(False)
-        self.norm_bg_box.setChecked(False)
-        self.norm_subtract_box.setChecked(False)
-        self.norm_divide_box.setChecked(False)
-        self.norm_beta.setValue(100)
-        self.bg_input_button.setText("[Select]")
-        self.norm_range_checkbox.setChecked(False)
-        self.image_viewer._background_image = None
-        self.measure_checkbox.setChecked(False)
-        self.norm_range_start.setValue(0)
-        self.norm_range_start.setMaximum(self.image_viewer.data.n_images-1)
-        self.norm_range_end.setMaximum(self.image_viewer.data.n_images-1)
-        self.norm_range_end.setValue(self.image_viewer.data.n_images-1)
-        self.roi_drop_checkbox.setChecked(
-            self.image_viewer.is_roi_on_drop_update()
+            self.ui.combobox_reduce.setEnabled(True)
+        self.ui.checkbox_norm_range.setChecked(True)
+        self.ui.checkbox_norm_range.setEnabled(True)
+        self.ui.checkbox_norm_bg.setEnabled(False)
+        self.ui.checkbox_norm_bg.setChecked(False)
+        self.ui.checkbox_norm_subtract.setChecked(False)
+        self.ui.checkbox_norm_divide.setChecked(False)
+        self.ui.spinbox_norm_beta.setValue(100)
+        self.ui.button_bg_input.setText("[Select]")
+        self.ui.checkbox_norm_show_range.setChecked(False)
+        self.ui.image_viewer._background_image = None
+        self.ui.checkbox_measure_roi.setChecked(False)
+        self.ui.spinbox_norm_range_start.setValue(0)
+        self.ui.spinbox_norm_range_start.setMaximum(
+            self.ui.image_viewer.data.n_images-1
         )
-        self.width_spinbox_v.setRange(0, self.image_viewer.data.shape[0] // 2)
-        self.width_spinbox_h.setRange(0, self.image_viewer.data.shape[1] // 2)
+        self.ui.spinbox_norm_range_end.setMaximum(
+            self.ui.image_viewer.data.n_images-1
+        )
+        self.ui.spinbox_norm_range_end.setValue(
+            self.ui.image_viewer.data.n_images-1
+        )
+        self.ui.checkbox_roi_drop.setChecked(
+            self.ui.image_viewer.is_roi_on_drop_update()
+        )
+        self.ui.spinbox_width_v.setRange(
+            0, self.ui.image_viewer.data.shape[0] // 2
+        )
+        self.ui.spinbox_width_h.setRange(
+            0, self.ui.image_viewer.data.shape[1] // 2
+        )
 
     def update_norm_range_labels(self) -> None:
-        norm_range_ = self.norm_range.getRegion()
+        norm_range_ = self.ui.norm_range.getRegion()
         left, right = map(round, norm_range_)  # type: ignore
-        self.norm_range_start.setValue(left)
-        self.norm_range_end.setValue(right)
-        self.norm_range.setRegion((left, right))
+        self.ui.spinbox_norm_range_start.setValue(left)
+        self.ui.spinbox_norm_range_end.setValue(right)
+        self.ui.norm_range.setRegion((left, right))
 
     def update_norm_range(self) -> None:
-        self.norm_range.setRegion(
-            (self.norm_range_start.value(), self.norm_range_end.value())
+        self.ui.norm_range.setRegion(
+            (self.ui.spinbox_norm_range_start.value(),
+             self.ui.spinbox_norm_range_end.value())
         )
 
     def _normalization_beta_update(self) -> None:
         name = None
-        if self.norm_subtract_box.isChecked():
+        if self.ui.checkbox_norm_subtract.isChecked():
             name = "subtract"
-        if self.norm_divide_box.isChecked():
+        if self.ui.checkbox_norm_divide.isChecked():
             name = "divide"
         if name is not None:
             left = right = None
-            if self.norm_range_box.isChecked():
-                left = self.norm_range_start.value()
-                right = self.norm_range_end.value()
-            self.image_viewer.norm(
+            if self.ui.checkbox_norm_range.isChecked():
+                left = self.ui.spinbox_norm_range_start.value()
+                right = self.ui.spinbox_norm_range_end.value()
+            self.ui.image_viewer.norm(
                 operation=name,
-                use=self.norm_op_box.currentText(),
-                beta=self.norm_beta.value() / 100.0,
+                use=self.ui.combobox_norm.currentText(),
+                beta=self.ui.spinbox_norm_beta.value() / 100.0,
                 left=left,
                 right=right,
-                background=self.norm_bg_box.isChecked(),
+                background=self.ui.checkbox_norm_bg.isChecked(),
                 force_calculation=True,
             )
 
     def _normalization(self, name: str) -> None:
-        if ((not self.norm_range_box.isChecked()
-                and not self.norm_bg_box.isChecked())
-                or self.image_viewer.data.is_single_image()):
-            self.norm_subtract_box.setChecked(False)
-            self.norm_divide_box.setChecked(False)
+        if ((not self.ui.checkbox_norm_range.isChecked()
+                and not self.ui.checkbox_norm_bg.isChecked())
+                or self.ui.image_viewer.data.is_single_image()):
+            self.ui.checkbox_norm_subtract.setChecked(False)
+            self.ui.checkbox_norm_divide.setChecked(False)
             return
-        if (self.norm_divide_box.isChecked()
-                or self.norm_subtract_box.isChecked()):
-            self.norm_range_box.setEnabled(False)
-            self.norm_bg_box.setEnabled(False)
-            self.norm_range_start.setEnabled(False)
-            self.norm_range_end.setEnabled(False)
-            self.norm_range_checkbox.setEnabled(False)
-            self.bg_input_button.setEnabled(False)
-            self.reduce_op_box.setEnabled(False)
-            self.norm_op_box.setEnabled(False)
+        if (self.ui.checkbox_norm_divide.isChecked()
+                or self.ui.checkbox_norm_subtract.isChecked()):
+            self.ui.checkbox_norm_range.setEnabled(False)
+            self.ui.checkbox_norm_bg.setEnabled(False)
+            self.ui.spinbox_norm_range_start.setEnabled(False)
+            self.ui.spinbox_norm_range_end.setEnabled(False)
+            self.ui.checkbox_norm_range.setEnabled(False)
+            self.ui.button_bg_input.setEnabled(False)
+            self.ui.combobox_reduce.setEnabled(False)
+            self.ui.combobox_norm.setEnabled(False)
         else:
-            self.norm_range_box.setEnabled(True)
-            self.norm_range_start.setEnabled(True)
-            self.norm_range_end.setEnabled(True)
-            self.norm_range_checkbox.setEnabled(True)
-            if self.bg_input_button.text() == "[Remove]":
-                self.norm_bg_box.setEnabled(True)
-            self.bg_input_button.setEnabled(True)
-            self.reduce_op_box.setEnabled(True)
-            self.norm_op_box.setEnabled(True)
-        if name == "subtract" and self.norm_divide_box.isChecked():
-            self.norm_divide_box.setChecked(False)
-        elif name == "divide" and self.norm_subtract_box.isChecked():
-            self.norm_subtract_box.setChecked(False)
+            self.ui.checkbox_norm_range.setEnabled(True)
+            self.ui.spinbox_norm_range_start.setEnabled(True)
+            self.ui.spinbox_norm_range_end.setEnabled(True)
+            self.ui.checkbox_norm_range.setEnabled(True)
+            if self.ui.button_bg_input.text() == "[Remove]":
+                self.ui.checkbox_norm_bg.setEnabled(True)
+            self.ui.button_bg_input.setEnabled(True)
+            self.ui.combobox_reduce.setEnabled(True)
+            self.ui.combobox_norm.setEnabled(True)
+        if name == "subtract" and self.ui.checkbox_norm_divide.isChecked():
+            self.ui.checkbox_norm_divide.setChecked(False)
+        elif name == "divide" and self.ui.checkbox_norm_subtract.isChecked():
+            self.ui.checkbox_norm_subtract.setChecked(False)
         left = right = None
-        if self.norm_range_box.isChecked():
-            left = self.norm_range_start.value()
-            right = self.norm_range_end.value()
+        if self.ui.checkbox_norm_range.isChecked():
+            left = self.ui.spinbox_norm_range_start.value()
+            right = self.ui.spinbox_norm_range_end.value()
         with LoadingManager(self, "Calculating ...") as lm:
-            normalized = self.image_viewer.norm(
+            normalized = self.ui.image_viewer.norm(
                 operation=name,
-                use=self.norm_op_box.currentText(),
-                beta=self.norm_beta.value() / 100.0,
+                use=self.ui.combobox_norm.currentText(),
+                beta=self.ui.spinbox_norm_beta.value() / 100.0,
                 left=left,
                 right=right,
-                background=self.norm_bg_box.isChecked(),
+                background=self.ui.checkbox_norm_bg.isChecked(),
             )
         if normalized:
             log(f"Reduction finished in {lm.duration:.2f}s")
 
     def search_background_file(self) -> None:
-        if self.bg_input_button.text() == "[Select]":
+        if self.ui.button_bg_input.text() == "[Select]":
             file, _ = QFileDialog.getOpenFileName(
                 caption="Choose Background File",
                 directory=str(self.last_file_dir),
             )
-            if file and self.image_viewer.load_background_file(Path(file)):
-                self.bg_input_button.setText("[Remove]")
-                self.norm_bg_box.setEnabled(True)
-                self.norm_bg_box.setChecked(True)
+            if file and self.ui.image_viewer.load_background_file(Path(file)):
+                self.ui.button_bg_input.setText("[Remove]")
+                self.ui.checkbox_norm_bg.setEnabled(True)
+                self.ui.checkbox_norm_bg.setChecked(True)
         else:
-            self.norm_bg_box.setEnabled(False)
-            self.norm_bg_box.setChecked(False)
-            self.image_viewer.unload_background_file()
-            self.bg_input_button.setText("[Select]")
+            self.ui.checkbox_norm_bg.setEnabled(False)
+            self.ui.checkbox_norm_bg.setChecked(False)
+            self.ui.image_viewer.unload_background_file()
+            self.ui.button_bg_input.setText("[Select]")
 
     def on_strgC(self) -> None:
         cb = QApplication.clipboard()
         cb.clear()
-        cb.setText(self.position_label.text())
+        cb.setText(self.ui.position_label.text())
 
     def update_statusbar_position(self, pos: tuple[int, int]) -> None:
-        x, y, value = self.image_viewer.get_position_info(pos)
-        self.position_label.setText(f"X: {x} | Y: {y} | Value: {value}")
+        x, y, value = self.ui.image_viewer.get_position_info(pos)
+        self.ui.position_label.setText(f"X: {x} | Y: {y} | Value: {value}")
 
     def update_statusbar(self) -> None:
-        frame, max_frame, name = self.image_viewer.get_frame_info()
-        self.frame_label.setText(f"Frame: {frame} / {max_frame}")
-        self.file_label.setText(f"File: {name}")
-        x, y, value = self.image_viewer.get_position_info()
-        self.position_label.setText(f"X: {x} | Y: {y} | Value: {value}")
+        frame, max_frame, name = self.ui.image_viewer.get_frame_info()
+        self.ui.frame_label.setText(f"Frame: {frame} / {max_frame}")
+        self.ui.file_label.setText(f"File: {name}")
+        x, y, value = self.ui.image_viewer.get_position_info()
+        self.ui.position_label.setText(f"X: {x} | Y: {y} | Value: {value}")
 
     def browse_tof(self) -> None:
         path, _ = QFileDialog.getOpenFileName()
         if not path:
             return
         with LoadingManager(self, "Loading TOF data..."):
-            self.tof_adapter.set_data(path, self.image_viewer.data.meta)
-        self.tof_checkbox.setEnabled(True)
-        self.tof_checkbox.setChecked(True)
+            self.ui.tof_adapter.set_data(path, self.ui.image_viewer.data.meta)
+        self.ui.checkbox_tof.setEnabled(True)
+        self.ui.checkbox_tof.setChecked(True)
 
     def browse_file(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
@@ -719,7 +342,7 @@ class MainWindow(QMainWindow):
             try:
                 with open(file, "r", encoding="utf-8") as f:
                     lut_config = json.load(f)
-                self.image_viewer.load_lut_config(lut_config)
+                self.ui.image_viewer.load_lut_config(lut_config)
                 self._lut_file = file
             except:
                 log("LUT could not be loaded. Make sure it is an "
@@ -731,7 +354,7 @@ class MainWindow(QMainWindow):
             directory=str(self.last_file_dir),
         )
         if path:
-            lut_config = self.image_viewer.get_lut_config()
+            lut_config = self.ui.image_viewer.get_lut_config()
             file = Path(path) / "lut_config.json"
             with open(file, "w", encoding="utf-8") as f:
                 lut_config = json.dump(
@@ -743,30 +366,30 @@ class MainWindow(QMainWindow):
             self._lut_file = str(file)
 
     def start_web_connection(self) -> None:
-        address = self.address_edit.text()
-        token = self.token_edit.text()
+        address = self.ui.address_edit.text()
+        token = self.ui.token_edit.text()
         if not address or not token:
             return
 
         self._web_connection = WebDataLoader(address, token)
         self._web_connection.image_received.connect(self.end_web_connection)
         self._web_connection.start()
-        self.connect_button.setEnabled(False)
-        self.connect_button.setText("Listening...")
-        self.disconnect_button.setEnabled(True)
-        self.address_edit.setEnabled(False)
-        self.token_edit.setEnabled(False)
+        self.ui.button_connect.setEnabled(False)
+        self.ui.button_connect.setText("Listening...")
+        self.ui.button_disconnect.setEnabled(True)
+        self.ui.address_edit.setEnabled(False)
+        self.ui.token_edit.setEnabled(False)
 
     def end_web_connection(self, img: ImageData | None) -> None:
         if img is not None:
-            self.image_viewer.set_image(img)
+            self.ui.image_viewer.set_image(img)
         else:
             self._web_connection.stop()
-            self.address_edit.setEnabled(True)
-            self.token_edit.setEnabled(True)
-            self.connect_button.setEnabled(True)
-            self.connect_button.setText("Connect")
-            self.disconnect_button.setEnabled(False)
+            self.ui.address_edit.setEnabled(True)
+            self.ui.token_edit.setEnabled(True)
+            self.ui.button_connect.setEnabled(True)
+            self.ui.button_connect.setText("Connect")
+            self.ui.button_disconnect.setEnabled(False)
             self._web_connection.deleteLater()
 
     def load_images_adapter(self, file_path: Optional[Path] = None) -> None:
@@ -775,16 +398,16 @@ class MainWindow(QMainWindow):
     def load_images(self, file_path: Optional[Path] = None) -> None:
         text = f"Loading {'...' if file_path is None else file_path}"
         with LoadingManager(self, text) as lm:
-            self.image_viewer.load_data(
+            self.ui.image_viewer.load_data(
                 file_path,
-                size_ratio=self.size_ratio_spinbox.value(),
-                subset_ratio=self.subset_ratio_spinbox.value(),
-                max_ram=self.max_ram_spinbox.value(),
-                convert_to_8_bit=self.load_8bit_checkbox.isChecked(),
-                grayscale=self.load_grayscale_checkbox.isChecked(),
+                size_ratio=self.ui.size_ratio_spinbox.value(),
+                subset_ratio=self.ui.subset_ratio_spinbox.value(),
+                max_ram=self.ui.max_ram_spinbox.value(),
+                convert_to_8_bit=self.ui.load_8bit_checkbox.isChecked(),
+                grayscale=self.ui.load_grayscale_checkbox.isChecked(),
             )
         if file_path is not None:
-            data_size_MB = self.image_viewer.data.image.nbytes / 2**20
+            data_size_MB = self.ui.image_viewer.data.image.nbytes / 2**20
             log(f"Loaded {data_size_MB:.2f} MB")
             log(f"Available RAM: {get_available_ram():.2f} GB")
             log(f"Seconds needed: {lm.duration:.2f}")
@@ -793,29 +416,29 @@ class MainWindow(QMainWindow):
 
     def operation_changed(self) -> None:
         log(f"Available RAM: {get_available_ram():.2f} GB")
-        text = self.reduce_op_box.currentText()
+        text = self.ui.combobox_reduce.currentText()
         if text != "-":
-            self.norm_subtract_box.setEnabled(False)
-            self.norm_divide_box.setEnabled(False)
+            self.ui.checkbox_norm_subtract.setEnabled(False)
+            self.ui.checkbox_norm_divide.setEnabled(False)
         else:
-            self.norm_subtract_box.setEnabled(True)
-            self.norm_divide_box.setEnabled(True)
+            self.ui.checkbox_norm_subtract.setEnabled(True)
+            self.ui.checkbox_norm_divide.setEnabled(True)
         if text == "-":
             with LoadingManager(self, f"Unpacking ..."):
-                self.image_viewer.unravel()
+                self.ui.image_viewer.unravel()
         else:
             with LoadingManager(self, f"Loading {text}...") as lm:
-                self.image_viewer.reduce(text)
+                self.ui.image_viewer.reduce(text)
             log(f"Seconds needed: {lm.duration:.2f}")
             log(f"Available RAM: {get_available_ram():.2f} GB")
 
     def update_roi_settings(self) -> None:
-        self.measure_roi.show_in_mm = self.mm_checkbox.isChecked()
-        self.measure_roi.n_px = self.pixel_spinbox.value()
-        self.measure_roi.px_in_mm = self.mm_spinbox.value()
-        if not self.measure_checkbox.isChecked():
+        self.ui.measure_roi.show_in_mm = self.ui.checkbox_mm.isChecked()
+        self.ui.measure_roi.n_px = self.ui.spinbox_pixel.value()
+        self.ui.measure_roi.px_in_mm = self.ui.spinbox_mm.value()
+        if not self.ui.checkbox_measure_roi.isChecked():
             return
-        self.measure_roi.update_labels()
+        self.ui.measure_roi.update_labels()
 
     def sync_settings(self) -> None:
         settings.set("viewer/LUT_source", self._lut_file)
@@ -826,6 +449,6 @@ class MainWindow(QMainWindow):
         )
         settings.set(
             "window/docks",
-            self.dock_area.saveState(),
+            self.ui.dock_area.saveState(),
         )
-        settings.set("data/max_ram", self.max_ram_spinbox.value())
+        settings.set("data/max_ram", self.ui.max_ram_spinbox.value())
