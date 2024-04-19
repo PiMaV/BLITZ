@@ -17,9 +17,10 @@ release](https://github.com/CodeSchmiedeHGW/BLITZ/releases/latest)
 ![GIF_Animation](resources/public/BLITZ_Record.gif)
 
 ## Compiling and Developing
-
-It is recommended to use [poetry](https://python-poetry.org/) for local development. After cloning
-this repository, create a virtual environment, install all dependencies and run the application.
+- Clone this repository
+- Create and activate virtual environment
+- `pip install poetry` (It is recommended to use [poetry](https://python-poetry.org/) for local development.)
+- install all dependencies (`poetry install` ) and run the application.
 
 ```shell
 $ git clone https://github.com/CodeSchmiedeHGW/BLITZ.git
