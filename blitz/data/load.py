@@ -2,14 +2,14 @@ import json
 import os
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import cv2
 import numpy as np
 
 from .. import settings
 from ..tools import log
-from .image import ImageData
+from .image import ImageData, MetaData, VideoMetaData
 from .tools import (adjust_ratio_for_memory, resize_and_convert,
                     resize_and_convert_to_8_bit)
 
@@ -55,12 +55,28 @@ class DataLoader:
         else:
             return self._load_file(path)
 
+    def _log_arguments(self, data: ImageData) -> None:
+        args = [
+            ("8bit", str(self.convert_to_8_bit)),
+            ("grayscale", str(data.meta[0].color_model == "grayscale")),
+            ("max. RAM", round(self.max_ram, 4)),
+            ("Size-ratio", round(self.size_ratio, 4)),
+            ("Subset-ratio", round(self.subset_ratio, 4)),
+        ]
+        string = 20*"-" + "\n"
+        for x, y in args:
+            string += "  |{:<12} {:>5}|\n".format(x, y)
+        string += "  " + 20*"-"
+        log(string, color="green")
+
     def _load_file(self, path: Path) -> ImageData:
         if DataLoader._is_array(path):
             return self._load_array(path)
         elif DataLoader._is_image(path):
             image, metadata = self._load_image(path)
-            return ImageData(image[np.newaxis, ...], [metadata])
+            done = ImageData(image[np.newaxis, ...], [metadata])
+            self._log_arguments(done)
+            return done
         elif DataLoader._is_video(path):
             return self._load_video(path)
         else:
@@ -132,9 +148,11 @@ class DataLoader:
                 "Error loading files",
                 color=(255, 0, 0),
             )
-        return ImageData(matrices, metadata)
+        done = ImageData(matrices, metadata)
+        self._log_arguments(done)
+        return done
 
-    def _load_image(self, path: Path) -> tuple[np.ndarray, dict[str, Any]]:
+    def _load_image(self, path: Path) -> tuple[np.ndarray, MetaData]:
         image = cv2.imread(
             str(path),
             cv2.IMREAD_UNCHANGED if not self.grayscale else (
@@ -152,15 +170,14 @@ class DataLoader:
             self.size_ratio,
             self.convert_to_8_bit,
         )
-        metadata = {
-            "file_name": path.name,
-            "file_size_MB": os.path.getsize(path) / 2**20,
-            "size": f"{image.shape[0]}x{image.shape[1]}",
-            "dtype": str(image.dtype),
-            "bit_depth": image.dtype.itemsize * 8,
-            "grayscale": image.ndim == 2,
-        }
-
+        metadata = MetaData(
+            file_name=path.name,
+            file_size_MB=os.path.getsize(path) / 2**20,
+            size=(image.shape[0], image.shape[1]),
+            dtype=image.dtype,
+            bit_depth=8*image.dtype.itemsize,
+            color_model= "grayscale" if image.ndim == 2 else "rgb",
+        )
         return np.swapaxes(image, 0, 1), metadata
 
     def _load_video(self, path: Path) -> ImageData:
@@ -207,33 +224,38 @@ class DataLoader:
                 self.convert_to_8_bit,
             ))
 
-            metadata.append({
-                "file_name": str(frame_number),
-                "file_size_MB": os.path.getsize(path) / 2**20,
-                "size": f"{frame.shape[0]}x{frame.shape[1]}",
-                "dtype": str(frame.dtype),
-                "bit_depth": frame.dtype.itemsize * 8,
-                "color_space": "RGB" if len(frame.shape) == 3 else "Grayscale",
-                "fps": fps,
-                "frame_count": frame_count,
-                "reduced_frame_count": len(frames),
-                "codec": fourcc_str,
-            })
+            metadata.append(VideoMetaData(
+                file_name=str(frame_number),
+                file_size_MB=os.path.getsize(path) / 2**20,
+                size=(frame.shape[0], frame.shape[1]),
+                dtype=frame.dtype,  # type: ignore
+                bit_depth=8*frame.dtype.itemsize,
+                color_model="rgb" if len(frame.shape) == 3 else "grayscale",
+                fps=fps,
+                frame_count=frame_count,
+                reduced_frame_count=len(frames),
+                codec=fourcc_str,
+            ))
 
             # skip the next `skip_frames` number of frames without decoding.
             for _ in range(skip_frames):
                 video.grab()
 
         video.release()
-        return ImageData(np.swapaxes(np.stack(frames), 1, 2), metadata)
+        done = ImageData(np.swapaxes(np.stack(frames), 1, 2), metadata)
+        self._log_arguments(done)
+        return done
 
     def _load_array(self, path: Path) -> ImageData:
         array: np.ndarray = np.load(path)
+        gray = True
         match array.ndim:
             case 4:
                 if self.grayscale:
                     weights = np.array([0.2989, 0.5870, 0.1140])
                     array = np.sum(array * weights, axis=-1)
+                else:
+                    gray = False
             case 3:
                 if not self.grayscale:
                     if array.shape[2] != 3:
@@ -241,6 +263,7 @@ class DataLoader:
                             "loading as grayscale", color="green")
                     else:
                         array = array[np.newaxis, ...]
+                        gray = False
             case 2:
                 if not self.grayscale:
                     log("Warning: Loading files as grayscale images",
@@ -274,17 +297,22 @@ class DataLoader:
                 matrices.append(matrix)
 
         array = np.swapaxes(np.stack(matrices), 1, 2)
-        metadata = [{
-            'file_name': path.name + f"-{i}",
-            'shape': array.shape,
-            'dtype': array.dtype,
-        } for i in range(array.shape[0])]
-        return ImageData(array, metadata)
+        metadata = [MetaData(
+            file_name=path.name + f"-{i}",
+            file_size_MB=os.path.getsize(path)/2**20,
+            size=array[i].shape[:2],
+            dtype=array.dtype,
+            color_model="grayscale" if gray else "rgb",
+            bit_depth=8*array.dtype.itemsize,
+        ) for i in range(array.shape[0])]
+        done = ImageData(array, metadata)
+        self._log_arguments(done)
+        return done
 
     def _load_single_array(
         self,
         path: Path,
-    ) -> tuple[np.ndarray, dict[str, Any]]:
+    ) -> tuple[np.ndarray, MetaData]:
         array: np.ndarray = np.load(path)
         if array.ndim >= 4 or (array.ndim == 3 and array.shape[2] != 3):
             log(f"Error: Unsupported array shape {array.shape}", color="red")
@@ -294,20 +322,25 @@ class DataLoader:
             )
             return data.image[0], data.meta[0]
 
+        gray = False
         if array.ndim == 3 and self.grayscale:
             weights = np.array([0.2989, 0.5870, 0.1140])
             array = np.sum(array * weights, axis=-1)
+            gray = True
 
         array = np.swapaxes(resize_and_convert_to_8_bit(
             array,
             self.size_ratio,
             self.convert_to_8_bit,
         ), 0, 1)
-        metadata = {
-            'file_name': path.name,
-            'shape': array.shape,
-            'dtype': array.dtype,
-        }
+        metadata = MetaData(
+            file_name=path.name,
+            file_size_MB=os.path.getsize(path)/2**20,
+            size=array.shape[:2],  # type: ignore
+            dtype=array.dtype,
+            bit_depth=8*array.dtype.itemsize,
+            color_model="grayscale" if gray else "rgb",
+        )
         return array, metadata
 
     @staticmethod
@@ -327,10 +360,14 @@ class DataLoader:
             color=color,
             thickness=1,
         )
-        metadata = [{
-            "file_name": "-",
-            "file_size_MB": img.nbytes / 2**20,  # In MB
-        }]
+        metadata = [MetaData(
+            file_name="-",
+            file_size_MB=img.nbytes/2**20,
+            size=(height, width),
+            dtype=np.uint8,
+            bit_depth=8*img.dtype.itemsize,
+            color_model="rgb",
+        )]
         return ImageData(np.swapaxes(img[np.newaxis, ...], 1, 2), metadata)
 
 

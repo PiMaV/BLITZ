@@ -1,4 +1,5 @@
-from typing import Any, Literal, Optional
+from dataclasses import dataclass
+from typing import Literal, Optional
 
 import numpy as np
 import pyqtgraph as pg
@@ -7,12 +8,30 @@ from ..tools import log
 from .ops import ReduceDict, ReduceOperation, get
 
 
+@dataclass(kw_only=True)
+class MetaData:
+    file_name: str
+    file_size_MB: float
+    size: tuple[int, int]
+    dtype: type
+    bit_depth: int
+    color_model: Literal["rgb", "grayscale"]
+
+
+@dataclass(kw_only=True)
+class VideoMetaData(MetaData):
+    fps: int
+    frame_count: int
+    reduced_frame_count: int
+    codec: str
+
+
 class ImageData:
 
     def __init__(
         self,
         image: np.ndarray,
-        metadata: list[dict[str, Any]],
+        metadata: list[MetaData],
     ) -> None:
         self._image = image
         self._meta = metadata
@@ -63,7 +82,7 @@ class ImageData:
         return (self.image.shape[1], self.image.shape[2])
 
     @property
-    def meta(self) -> list[dict[str, Any]]:
+    def meta(self) -> list[MetaData]:
         return self._meta
 
     def is_single_image(self) -> bool:

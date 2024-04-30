@@ -4,7 +4,7 @@ from typing import Any, Optional, Self, Sequence
 
 import numpy as np
 import psutil
-from PyQt5.QtGui import QColor, QTextCharFormat
+from PyQt5.QtGui import QColor, QFont, QTextCharFormat
 from PyQt5.QtWidgets import (QApplication, QDialog, QLabel, QTextEdit,
                              QVBoxLayout)
 
@@ -50,6 +50,7 @@ class LoggingTextEdit(QTextEdit):
         cursor = self.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
         format = QTextCharFormat()
+        format.setFont(QFont("Courier New"))
         format.setForeground(QColor(color))
         format.setFontPointSize(settings.get("viewer/font_size_log"))
         cursor.mergeCharFormat(format)

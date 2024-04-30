@@ -277,9 +277,7 @@ class ImageViewer(pg.ImageView):
     def get_frame_info(self) -> tuple[int, int, str]:
         current_image = int(self.currentIndex)
         name = fit_text(
-            self.data.meta[self.currentIndex].get(
-                'file_name', str(current_image)
-            ),
+            self.data.meta[self.currentIndex].file_name,
             max_length=settings.get("viewer/max_file_name_length"),
         )
         return current_image, self.image.shape[0]-1, name

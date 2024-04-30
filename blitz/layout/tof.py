@@ -1,8 +1,9 @@
-from typing import Any, Optional
+from typing import Optional
 
 import numpy as np
 import pyqtgraph as pg
 
+from ..data.image import MetaData, VideoMetaData
 from ..data.load import tof_from_json
 from ..data.tools import smoothen
 from ..tools import log
@@ -58,18 +59,17 @@ class TOFAdapter:
     def set_data(
         self,
         path: str,
-        video_metadata: Optional[list[dict[str, Any]]] = None,
+        video_metadata: Optional[list[MetaData]] = None,
         smoothing_level: int = 3,
     ) -> None:
         data = tof_from_json(path)
-        if (video_metadata is not None
-                and "fps" in video_metadata[0]
-                and "frame_count" in video_metadata[0]):
+        if (video_metadata is not None and len(video_metadata) > 0
+                and isinstance(video_metadata[0], VideoMetaData)):
             data = self._sync_to_video(
                 data,
-                from_n_frames=video_metadata[0]["frame_count"],
+                from_n_frames=video_metadata[0].frame_count,
                 to_n_frames=len(video_metadata),
-                fps=video_metadata[0]["fps"],
+                fps=video_metadata[0].fps,
             )
 
         x_data = data[:, 0]
