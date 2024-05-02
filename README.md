@@ -28,6 +28,13 @@ $ poetry install
 $ poetry run python -m blitz
 ```
 
+You can create a binary executable from the python files using `pyinstaller` with the following
+options.
+
+```shell
+$ pyinstaller --onefile --noconsole --icon=./resources/icon/blitz.ico blitz_main.py
+```
+
 ## Additional Resources
 
 - Visit [INPTDAT](https://www.inptdat.de) for additional images or publishing your own.
