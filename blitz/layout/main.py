@@ -136,12 +136,15 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_norm_range_end.valueChanged.connect(
             self.update_norm_range
         )
+        self.ui.combobox_norm.currentIndexChanged.connect(
+            self._normalization_update
+        )
         self.ui.checkbox_norm_show_range.stateChanged.connect(
             self.ui.roi_plot.toggle_norm_range
         )
         self.ui.button_bg_input.clicked.connect(self.search_background_file)
         self.ui.spinbox_norm_beta.editingFinished.connect(
-            self._normalization_beta_update
+            self._normalization_update
         )
         self.ui.checkbox_norm_subtract.clicked.connect(
             lambda: self._normalization("subtract")
@@ -209,8 +212,9 @@ class MainWindow(QMainWindow):
             (self.ui.spinbox_norm_range_start.value(),
              self.ui.spinbox_norm_range_end.value())
         )
+        self._normalization_update()
 
-    def _normalization_beta_update(self) -> None:
+    def _normalization_update(self) -> None:
         name = None
         if self.ui.checkbox_norm_subtract.isChecked():
             name = "subtract"
@@ -242,22 +246,14 @@ class MainWindow(QMainWindow):
                 or self.ui.checkbox_norm_subtract.isChecked()):
             self.ui.checkbox_norm_range.setEnabled(False)
             self.ui.checkbox_norm_bg.setEnabled(False)
-            self.ui.spinbox_norm_range_start.setEnabled(False)
-            self.ui.spinbox_norm_range_end.setEnabled(False)
-            self.ui.checkbox_norm_range.setEnabled(False)
             self.ui.button_bg_input.setEnabled(False)
             self.ui.combobox_reduce.setEnabled(False)
-            self.ui.combobox_norm.setEnabled(False)
         else:
-            self.ui.checkbox_norm_range.setEnabled(True)
-            self.ui.spinbox_norm_range_start.setEnabled(True)
-            self.ui.spinbox_norm_range_end.setEnabled(True)
             self.ui.checkbox_norm_range.setEnabled(True)
             if self.ui.button_bg_input.text() == "[Remove]":
                 self.ui.checkbox_norm_bg.setEnabled(True)
             self.ui.button_bg_input.setEnabled(True)
             self.ui.combobox_reduce.setEnabled(True)
-            self.ui.combobox_norm.setEnabled(True)
         if name == "subtract" and self.ui.checkbox_norm_divide.isChecked():
             self.ui.checkbox_norm_divide.setChecked(False)
         elif name == "divide" and self.ui.checkbox_norm_subtract.isChecked():
