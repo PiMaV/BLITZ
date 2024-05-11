@@ -143,7 +143,8 @@ class ImageData:
 
     def mask(self, roi: pg.ROI) -> None:
         if self._transposed or self._flipped_x or self._flipped_y:
-            log("Masking not available while data is flipped or transposed")
+            log("Masking not available while data is flipped or transposed",
+                color="red")
             return
         pos = roi.pos()
         size = roi.size()

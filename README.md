@@ -12,7 +12,10 @@ BLITZ offers:
 [Most recent
 release](https://github.com/CodeSchmiedeHGW/BLITZ/releases/latest)
 
-## GIF Animation showing the key features of BLITZ
+## Documentation and examples
+
+We provide a short [walkthrough](docs/walkthrough.md) through BLITZ explaining all core functionalities.
+
 (Click if animation is not playing)
 ![GIF_Animation](resources/public/BLITZ_Record.gif)
 
