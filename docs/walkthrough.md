@@ -4,24 +4,24 @@ The images below show a basic example of using the program with an example image
 
 ### File loading and GUI
 
-![walkthrough_01](docs/images/walkthrough_01.png)
+![walkthrough_01](images/walkthrough_01.png)
 
 ### Manipulations and Masking
 
-![walkthrough_02](docs/images/walkthrough_02.png)
+![walkthrough_02](images/walkthrough_02.png)
 
 ### Reduction
 
-![walkthrough_03](docs/images/walkthrough_03.png)
+![walkthrough_03](images/walkthrough_03.png)
 
 ### Normalization
 
-![walkthrough_04](docs/images/walkthrough_04.png)
+![walkthrough_04](images/walkthrough_04.png)
 
 ### Tools
 
-![walkthrough_05](docs/images/walkthrough_05.png)
+![walkthrough_05](images/walkthrough_05.png)
 
 ### Color table
 
-![walkthrough_06](docs/images/walkthrough_06.png)
+![walkthrough_06](images/walkthrough_06.png)
