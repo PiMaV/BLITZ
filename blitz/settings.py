@@ -21,8 +21,9 @@ _default_settings = {
     "data/multicore_files_threshold": 333,
     "data/max_ram": 1.0,
 
-    "web/connect_attempts": 5,
-    "web/download_attempts": 5,
+    "web/connect_attempts": 3,
+    "web/connect_timeout": 1,
+    "web/download_attempts": 3,
 
     "app/restart_exit_code": -12341234,
 }

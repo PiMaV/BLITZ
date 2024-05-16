@@ -14,7 +14,6 @@ from .load import DataLoader
 
 class _WebSocket(QObject):
 
-    server_connected = pyqtSignal()
     message_received = pyqtSignal(object)
 
     def __init__(self, target_address: str) -> None:
@@ -32,26 +31,27 @@ class _WebSocket(QObject):
         self._listening = listening
 
     def listen(self) -> None:
-        log("BLITZ listening to incoming data")
+        log("[NET] Attempting to connect...")
         max_attempts = settings.get("web/connect_attempts")
         attempts = 0
         while not self.sio.connected and attempts < max_attempts:
             try:
                 self.sio.connect(
                     self._target.replace("http", "ws"),
-                    wait_timeout=2,
+                    wait_timeout=settings.get("web/connect_timeout"),
                 )
             except ConnectionError:
                 log(
-                    "Unable to connect to server, "
-                    f"Attempt {attempts+1}/{max_attempts}"
+                    "[NET] Unable to connect, "
+                    f"Attempt {attempts+1}/{max_attempts}",
+                    color="red",
                 )
                 attempts += 1
         if not self.sio.connected:
-            log("Server cannot be reached, aborting", color="red")
+            log("[NET] Cannot be connected, aborting", color="red")
             self.message_received.emit(None)
             return
-        self.server_connected.emit()
+        log("[NET] Listening to incoming data", color="green")
 
         while self.listening:
             try:
@@ -62,7 +62,7 @@ class _WebSocket(QObject):
                 if message[0] == "send_file_message":
                     self.message_received.emit(message[1]["file_name"])
                 else:
-                    log("Unknown server message, aborting", color="red")
+                    log("[NET] Unknown message, aborting", color="red")
 
 
 class _WebDownloader(QObject):
@@ -81,7 +81,7 @@ class _WebDownloader(QObject):
             try:
                 response = requests.get(self._target, timeout=2)
             except ConnectTimeout:
-                log("Unable to connect to server, "
+                log("[NET] Unable to reach server, "
                     f"Attempt {attempts+1}/{max_attempts}")
                 attempts += 1
             else:
@@ -98,9 +98,9 @@ class _WebDownloader(QObject):
             self.download_finished.emit(cache_file)
             return
         elif response is None:
-            log("Server cannot be reached, aborting", color="red")
+            log("[NET] Cannot be reached, aborting", color="red")
         else:
-            log("No such file at server address, aborting", color="red")
+            log("[NET] No such file available, aborting", color="red")
         self.download_finished.emit(None)
 
 

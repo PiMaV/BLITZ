@@ -273,7 +273,7 @@ class UI_MainWindow(QWidget):
         self.button_open_folder = QPushButton("Open Folder")
         load_btn_lay.addWidget(self.button_open_folder)
         file_layout.addLayout(load_btn_lay)
-        connect_label = QLabel("Web Connection")
+        connect_label = QLabel("Network")
         connect_label.setStyleSheet(style_heading)
         file_layout.addWidget(connect_label)
         address_label = QLabel("Address:")

@@ -202,7 +202,7 @@ class DataLoader:
             log("No adjustment to ratio required, loading the full dataset")
         else:
             log(f"Adjusted ratio for subset extraction: {ratio:.4f}",
-                color="green")
+                color="orange")
 
         skip_frames = int(1 / ratio) - 1
 
@@ -260,14 +260,14 @@ class DataLoader:
                 if not self.grayscale:
                     if array.shape[2] != 3:
                         log("Warning: File does not contain color images, "
-                            "loading as grayscale", color="green")
+                            "loading as grayscale", color="orange")
                     else:
                         array = array[np.newaxis, ...]
                         gray = False
             case 2:
                 if not self.grayscale:
                     log("Warning: Loading files as grayscale images",
-                        color="green")
+                        color="orange")
                 array = array[np.newaxis, ...]
             case _:
                 log(f"Error: Unsupported array shape {array.shape}",
