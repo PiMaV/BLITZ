@@ -61,6 +61,8 @@ class _WebSocket(QObject):
             else:
                 if message[0] == "send_file_message":
                     self.message_received.emit(message[1]["file_name"])
+                elif message[0] == "Connected successfully":
+                    log("[NET] Connected to server", color="green")
                 else:
                     log("[NET] Unknown message, aborting", color="red")
 
