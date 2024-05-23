@@ -59,11 +59,12 @@ class DataLoader:
         args = [
             ("8bit", str(self.convert_to_8_bit)),
             ("grayscale", str(data.meta[0].color_model == "grayscale")),
-            ("max. RAM", round(self.max_ram, 4)),
-            ("Size-ratio", round(self.size_ratio, 4)),
-            ("Subset-ratio", round(self.subset_ratio, 4)),
+            ("max. RAM", round(self.max_ram, 3)),
+            ("Size-ratio", round(self.size_ratio, 3)),
+            ("Subset-ratio", round(self.subset_ratio, 3)),
+            ("Size (MB)", "{:.5s}".format(f"{data.image.nbytes/2**20:.5f}")),
         ]
-        string = 20*"-" + "\n"
+        string = f"{'Dataset':-^20}" + "\n"
         for x, y in args:
             string += "  |{:<12} {:>5}|\n".format(x, y)
         string += "  " + 20*"-"
@@ -198,9 +199,10 @@ class DataLoader:
         )
 
         ratio = min(self.subset_ratio, adjusted_ratio)
-        if ratio == 1:
-            log("No adjustment to ratio required, loading the full dataset")
+        if ratio == self.subset_ratio:
+            log("No adjustment to ratio required")
         else:
+            self.subset_ratio = ratio
             log(f"Adjusted ratio for subset extraction: {ratio:.4f}",
                 color="orange")
 
@@ -257,17 +259,10 @@ class DataLoader:
                 else:
                     gray = False
             case 3:
-                if not self.grayscale:
-                    if array.shape[2] != 3:
-                        log("Warning: File does not contain color images, "
-                            "loading as grayscale", color="orange")
-                    else:
-                        array = array[np.newaxis, ...]
-                        gray = False
+                if not self.grayscale and array.shape[2] == 3:
+                    array = array[np.newaxis, ...]
+                    gray = False
             case 2:
-                if not self.grayscale:
-                    log("Warning: Loading files as grayscale images",
-                        color="orange")
                 array = array[np.newaxis, ...]
             case _:
                 log(f"Error: Unsupported array shape {array.shape}",

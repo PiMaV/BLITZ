@@ -189,6 +189,9 @@ class UI_MainWindow(QWidget):
         self.loading_label = QLabel("")
         self.loading_label.setFont(font_status)
         self.statusbar.addWidget(self.loading_label)
+        self.ram_label = QLabel("")
+        self.ram_label.setFont(font_status)
+        self.statusbar.addWidget(self.ram_label)
 
     def setup_lut_dock(self) -> None:
         self.image_viewer.ui.histogram.setParent(None)

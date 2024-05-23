@@ -225,15 +225,18 @@ class MainWindow(QMainWindow):
             if self.ui.checkbox_norm_range.isChecked():
                 left = self.ui.spinbox_norm_range_start.value()
                 right = self.ui.spinbox_norm_range_end.value()
-            self.ui.image_viewer.norm(
-                operation=name,
-                use=self.ui.combobox_norm.currentText(),
-                beta=self.ui.spinbox_norm_beta.value() / 100.0,
-                left=left,
-                right=right,
-                background=self.ui.checkbox_norm_bg.isChecked(),
-                force_calculation=True,
-            )
+            with LoadingManager(self, "Calculating ...") as lm:
+                self.ui.image_viewer.norm(
+                    operation=name,
+                    use=self.ui.combobox_norm.currentText(),
+                    beta=self.ui.spinbox_norm_beta.value() / 100.0,
+                    left=left,
+                    right=right,
+                    background=self.ui.checkbox_norm_bg.isChecked(),
+                    force_calculation=True,
+                )
+            log(f"Normalized in {lm.duration:.2f}s")
+            self.update_statusbar()
 
     def _normalization(self, name: str) -> None:
         if ((not self.ui.checkbox_norm_range.isChecked()
@@ -272,7 +275,8 @@ class MainWindow(QMainWindow):
                 background=self.ui.checkbox_norm_bg.isChecked(),
             )
         if normalized:
-            log(f"Reduction finished in {lm.duration:.2f}s")
+            log(f"Normalized in {lm.duration:.2f}s")
+        self.update_statusbar()
 
     def search_background_file(self) -> None:
         if self.ui.button_bg_input.text() == "[Select]":
@@ -303,6 +307,9 @@ class MainWindow(QMainWindow):
         frame, max_frame, name = self.ui.image_viewer.get_frame_info()
         self.ui.frame_label.setText(f"Frame: {frame} / {max_frame}")
         self.ui.file_label.setText(f"File: {name}")
+        self.ui.ram_label.setText(
+            f"Available RAM: {get_available_ram():.2f} GB"
+        )
         x, y, value = self.ui.image_viewer.get_position_info()
         self.ui.position_label.setText(f"X: {x} | Y: {y} | Value: {value}")
 
@@ -406,15 +413,12 @@ class MainWindow(QMainWindow):
                 grayscale=self.ui.checkbox_load_grayscale.isChecked(),
             )
         if file_path is not None:
-            data_size_MB = self.ui.image_viewer.data.image.nbytes / 2**20
-            log(f"Loaded {data_size_MB:.2f} MB")
-            log(f"Available RAM: {get_available_ram():.2f} GB")
-            log(f"Seconds needed: {lm.duration:.2f}")
+            log(f"Loaded in {lm.duration:.2f}s")
             self.update_statusbar()
             self.reset_options()
 
     def operation_changed(self) -> None:
-        log(f"Available RAM: {get_available_ram():.2f} GB")
+        self.update_statusbar()
         text = self.ui.combobox_reduce.currentText()
         if text != "-":
             self.ui.checkbox_norm_subtract.setEnabled(False)
@@ -425,11 +429,12 @@ class MainWindow(QMainWindow):
         if text == "-":
             with LoadingManager(self, f"Unpacking ..."):
                 self.ui.image_viewer.unravel()
+            self.update_statusbar()
         else:
             with LoadingManager(self, f"Loading {text}...") as lm:
                 self.ui.image_viewer.reduce(text)
-            log(f"Seconds needed: {lm.duration:.2f}")
-            log(f"Available RAM: {get_available_ram():.2f} GB")
+            self.update_statusbar()
+            log(f"{text} in {lm.duration:.2f}s")
 
     def update_roi_settings(self) -> None:
         self.ui.measure_roi.show_in_mm = self.ui.checkbox_mm.isChecked()
