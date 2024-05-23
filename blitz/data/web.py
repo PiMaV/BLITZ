@@ -102,7 +102,11 @@ class _WebDownloader(QObject):
         elif response is None:
             log("[NET] Cannot be reached, aborting", color="red")
         else:
-            log("[NET] No such file available, aborting", color="red")
+            log(
+                "[NET] No such file found at server: "
+                f"{self._target.split('filename=')[1]}",
+                color="red",
+            )
         self.download_finished.emit(None)
 
 
