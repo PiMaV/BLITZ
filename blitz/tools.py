@@ -1,22 +1,23 @@
-import textwrap
 from timeit import default_timer as clock
 from types import TracebackType
 from typing import Any, Optional, Self, Sequence
 
 import numpy as np
 import psutil
+from PyQt5.QtGui import QColor, QFont, QTextCharFormat
 from PyQt5.QtWidgets import (QApplication, QDialog, QLabel, QTextEdit,
                              QVBoxLayout)
 
+from . import settings
 
 LOGGER: Any = None
 
 
-def log(message: str) -> None:
+def log(message: str, color: str | tuple[int, int, int] = "white") -> None:
     if LOGGER is None:
         print(message)
     else:
-        LOGGER.log(message)
+        LOGGER.log(message, color=color)
 
 
 def setup_logger(logger: Any) -> None:
@@ -38,9 +39,21 @@ class LoadingDialog(QDialog):
 
 class LoggingTextEdit(QTextEdit):
 
-    def log(self, message: Any):
+    COLOR_WARNING = QColor(255, 0, 0)
+    COLOR_TEXT = QColor(255, 255, 255)
+
+    def log(
+        self,
+        message: Any,
+        color: str | tuple[int, int, int] = "white",
+    ) -> None:
         cursor = self.textCursor()
-        cursor.movePosition(cursor.End)
+        cursor.movePosition(cursor.MoveOperation.End)
+        format = QTextCharFormat()
+        format.setFont(QFont("Courier New"))
+        format.setForeground(QColor(color))
+        format.setFontPointSize(settings.get("viewer/font_size_log"))
+        cursor.mergeCharFormat(format)
         if message != "\n":
             cursor.insertText(f"> {message}\n")
         self.setTextCursor(cursor)
@@ -87,8 +100,10 @@ def get_available_ram() -> float:
     return available_ram
 
 
-def wrap_text(text: str, max_length: int) -> str:
-    return '\n'.join(textwrap.wrap(text, max_length))
+def fit_text(text: str, max_length: int) -> str:
+    if len(text) > max_length:
+        text = "[...]" + text[-max_length+5:]
+    return text
 
 
 def format_pixel_value(

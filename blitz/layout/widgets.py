@@ -1,6 +1,6 @@
 import numpy as np
 import pyqtgraph as pg
-from PyQt5.QtCore import QSize, Qt, QPointF
+from PyQt5.QtCore import QPointF, QSize, Qt
 from PyQt5.QtGui import QKeyEvent, QMouseEvent, QWheelEvent
 from PyQt5.QtWidgets import QSizePolicy, QWidget
 
@@ -306,7 +306,7 @@ class ExtractionPlot(pg.PlotWidget):
         self._extractionline.sigPositionChanged.connect(self.draw_line)
         self._viewer.timeLine.sigPositionChanged.connect(self.draw_line)
         self._viewer.image_changed.connect(self.draw_line)
-        self._viewer.image_changed.connect(self.center_line)
+        self._viewer.image_size_changed.connect(self.center_line)
         self.center_line()
 
     def center_line(self) -> None:

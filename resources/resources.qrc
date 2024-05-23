@@ -1,5 +1,6 @@
 <RCC>
   <qresource prefix="/">
     <file>icon/blitz.ico</file>
+    <file>docs/tooltips.json</file>
   </qresource>
 </RCC>

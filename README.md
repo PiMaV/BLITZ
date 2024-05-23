@@ -12,7 +12,10 @@ BLITZ offers:
 [Most recent
 release](https://github.com/CodeSchmiedeHGW/BLITZ/releases/latest)
 
-## GIF Animation showing the key features of BLITZ
+## Documentation and examples
+
+We provide a short [walkthrough](docs/walkthrough.md) through BLITZ explaining all core functionalities.
+
 (Click if animation is not playing)
 ![GIF_Animation](resources/public/BLITZ_Record.gif)
 
@@ -27,6 +30,13 @@ $ git clone https://github.com/CodeSchmiedeHGW/BLITZ.git
 $ cd BLITZ
 $ poetry install
 $ poetry run python -m blitz
+```
+
+You can create a binary executable from the python files using `pyinstaller` with the following
+options.
+
+```shell
+$ pyinstaller --onefile --noconsole --icon=./resources/icon/blitz.ico blitz_main.py
 ```
 
 ## Additional Resources
