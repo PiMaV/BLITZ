@@ -14,7 +14,6 @@ from pyqtgraph.dockarea import Dock, DockArea
 from .. import __version__, resources, settings
 from ..data.ops import ReduceOperation
 from ..tools import LoggingTextEdit, get_available_ram, setup_logger
-from .tof import TOFAdapter
 from .viewer import ImageViewer
 from .widgets import ExtractionPlot, MeasureROI, TimePlot
 
@@ -150,8 +149,6 @@ class UI_MainWindow(QWidget):
         timeline_decoy.hide()
         self.dock_t_line.addWidget(self.roi_plot)
         self.image_viewer.ui.menuBtn.setParent(None)
-
-        self.tof_adapter = TOFAdapter(self.roi_plot)
 
         self.v_plot.setYLink(self.image_viewer.getView())
         self.h_plot.setXLink(self.image_viewer.getView())
@@ -453,9 +450,27 @@ class UI_MainWindow(QWidget):
         self.spinbox_mm.setValue(1.0)
         converter_layout.addWidget(self.spinbox_mm)
         tools_layout.addLayout(converter_layout)
-
         tools_layout.addStretch()
         self.create_option_tab(tools_layout, "Tools")
+
+        # --- PCA ---
+        pca_layout = QVBoxLayout()
+        label_pca = QLabel("PCA")
+        label_pca.setStyleSheet(style_heading)
+        pca_layout.addWidget(label_pca)
+        self.spinbox_pcacomp = QSpinBox()
+        self.spinbox_pcacomp.setPrefix("Components: ")
+        self.spinbox_pcacomp.setMinimum(1)
+        self.spinbox_pcacomp.setMaximum(1)
+        pca_layout.addWidget(self.spinbox_pcacomp)
+        self.combobox_pca = QComboBox()
+        self.combobox_pca.addItem("Reconstruction")
+        self.combobox_pca.addItem("Components")
+        pca_layout.addWidget(self.combobox_pca)
+        self.button_pca = QPushButton("Show / Hide")
+        pca_layout.addWidget(self.button_pca)
+        pca_layout.addStretch()
+        self.create_option_tab(pca_layout, "PCA")
 
     def assign_tooltips(self) -> None:
         file = QFile(":/docs/tooltips.json")

@@ -10,6 +10,8 @@ from .. import __version__, settings
 from ..data.image import ImageData
 from ..data.web import WebDataLoader
 from ..tools import LoadingManager, get_available_ram, log
+from .pca import PCAAdapter
+from .tof import TOFAdapter
 from .ui import UI_MainWindow
 
 
@@ -28,6 +30,8 @@ class MainWindow(QMainWindow):
         self.last_file_dir = Path.cwd()
         self._lut_file: str = ""
 
+        self.tof_adapter = TOFAdapter(self.ui.roi_plot)
+        self.pca_adapter = PCAAdapter(self.ui.image_viewer)
         self.setup_connections()
         self.reset_options()
 
@@ -120,7 +124,7 @@ class MainWindow(QMainWindow):
             self.ui.image_viewer.roiClicked
         )
         self.ui.checkbox_tof.stateChanged.connect(
-            self.ui.tof_adapter.toggle_plot
+            self.tof_adapter.toggle_plot
         )
         self.ui.checkbox_roi_drop.stateChanged.connect(
             lambda: self.ui.image_viewer.toggle_roi_update_frequency(
@@ -158,6 +162,7 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_mm.stateChanged.connect(self.update_roi_settings)
         self.ui.spinbox_pixel.valueChanged.connect(self.update_roi_settings)
         self.ui.spinbox_mm.valueChanged.connect(self.update_roi_settings)
+        self.ui.button_pca.clicked.connect(self.toggle_pca)
 
     def reset_options(self) -> None:
         self.ui.button_apply_mask.setChecked(False)
@@ -199,6 +204,8 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_width_h.setRange(
             0, self.ui.image_viewer.data.shape[1] // 2
         )
+        self.ui.spinbox_pcacomp.setMaximum(self.ui.image_viewer.data.n_images)
+        self.ui.spinbox_pcacomp.setValue(self.ui.image_viewer.data.n_images)
 
     def update_norm_range_labels(self) -> None:
         norm_range_ = self.ui.norm_range.getRegion()
@@ -278,6 +285,25 @@ class MainWindow(QMainWindow):
             log(f"Normalized in {lm.duration:.2f}s")
         self.update_statusbar()
 
+    def toggle_pca(self) -> None:
+        show = (
+            (self.ui.combobox_pca.currentText() == "Components" and not
+                self.pca_adapter.components_active) or
+            (self.ui.combobox_pca.currentText() == "Reconstruction" and not
+                self.pca_adapter.reconstruction_active)
+        )
+
+        if show:
+            with LoadingManager(self, "Calculating PCA...") as lm:
+                self.pca_adapter.calculate(self.ui.spinbox_pcacomp.value())
+            log(f"PCA in {lm.duration:.2f}s")
+            if self.ui.combobox_pca.currentText() == "Components":
+                self.pca_adapter.show_components()
+            elif self.ui.combobox_pca.currentText() == "Reconstruction":
+                self.pca_adapter.show_reconstruction()
+        else:
+            self.pca_adapter.hide()
+
     def search_background_file(self) -> None:
         if self.ui.button_bg_input.text() == "[Select]":
             file, _ = QFileDialog.getOpenFileName(
@@ -318,7 +344,7 @@ class MainWindow(QMainWindow):
         if not path:
             return
         with LoadingManager(self, "Loading TOF data..."):
-            self.ui.tof_adapter.set_data(path, self.ui.image_viewer.data.meta)
+            self.tof_adapter.set_data(path, self.ui.image_viewer.data.meta)
         self.ui.checkbox_tof.setEnabled(True)
         self.ui.checkbox_tof.setChecked(True)
 
