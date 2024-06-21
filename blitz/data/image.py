@@ -37,6 +37,7 @@ class ImageData:
         self._meta = metadata
         self._reduced = ReduceDict()
         self._mask: tuple[slice, slice, slice] | None = None
+        self._cropped: tuple[int, int] | None = None
         self._transposed = False
         self._flipped_x = False
         self._flipped_y = False
@@ -46,6 +47,7 @@ class ImageData:
 
     def reset(self) -> None:
         self._reduced.clear()
+        self._cropped = None
         self._mask = None
         self._transposed = False
         self._flipped_x = False
@@ -56,11 +58,11 @@ class ImageData:
 
     @property
     def image(self) -> np.ndarray:
-        image: np.ndarray
+        image: np.ndarray = self._image
+        if self._cropped is not None:
+            image = image[self._cropped[0]:self._cropped[1]+1]
         if self._redop is not None:
-            image = self._reduced.reduce(self._image, self._redop)
-        else:
-            image = self._image
+            image = self._reduced.reduce(image, self._redop)
         if self._norm is not None:
             image = self._norm
         if self._mask is not None:
@@ -75,6 +77,8 @@ class ImageData:
 
     @property
     def n_images(self) -> int:
+        if self._cropped is not None:
+            return self._image[self._cropped[0]:self._cropped[1]+1].shape[0]
         return self._image.shape[0]
 
     @property
@@ -93,6 +97,19 @@ class ImageData:
 
     def reduce(self, operation: ReduceOperation | str) -> None:
         self._redop = operation
+
+    def crop(self, left: int, right: int, keep: bool = False) -> None:
+        if keep:
+            self._cropped = (left, right)
+        else:
+            self._cropped = None
+            self._image = self._image[left:right+1]
+
+    def undo_crop(self) -> bool:
+        if self._cropped is None:
+            return False
+        self._cropped = None
+        return True
 
     def normalize(
         self,

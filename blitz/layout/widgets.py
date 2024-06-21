@@ -13,7 +13,7 @@ class TimePlot(pg.PlotWidget):
         self,
         parent: QWidget,
         image_viewer: pg.ImageView,
-        norm_range: pg.LinearRegionItem,
+        # norm_range: pg.LinearRegionItem,
         **kargs,
     ) -> None:
         super().__init__(parent, **kargs)
@@ -35,9 +35,14 @@ class TimePlot(pg.PlotWidget):
         sizePolicy.setHeightForWidth(self.sizePolicy().hasHeightForWidth())
         self.setSizePolicy(sizePolicy)
         self.setMinimumSize(QSize(0, 40))
-        self.norm_range = norm_range
+        self.norm_range = pg.LinearRegionItem()
+        self.norm_range.setZValue(0)
         self.addItem(self.norm_range)
         self.norm_range.hide()
+        self.crop_range = pg.LinearRegionItem()
+        self.crop_range.setZValue(0)
+        self.addItem(self.crop_range)
+        self.crop_range.hide()
         self._accept_all_events = False
 
     def toggle_norm_range(self) -> None:
@@ -45,6 +50,12 @@ class TimePlot(pg.PlotWidget):
             self.norm_range.hide()
         else:
             self.norm_range.show()
+
+    def toggle_crop_range(self) -> None:
+        if self.crop_range.isVisible():
+            self.crop_range.hide()
+        else:
+            self.crop_range.show()
 
     def wheelEvent(self, event: QWheelEvent) -> None:
         if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
@@ -61,17 +72,24 @@ class TimePlot(pg.PlotWidget):
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if (event.modifiers() == Qt.KeyboardModifier.NoModifier
                 and event.button() == Qt.MouseButton.LeftButton
-                and not self.norm_range.isVisible()):
+                and not self.norm_range.isVisible()
+                and not self.crop_range.isVisible()):
             x = self.plotItem.vb.mapSceneToView(  # type: ignore
                 event.pos()
             ).x()
             self.image_viewer.setCurrentIndex(round(x))
             event.accept()
-        elif ((self.norm_range.isVisible()
+        elif (((self.norm_range.isVisible()
                     and (self.norm_range.mouseHovering
                         or self.norm_range.childItems()[0].mouseHovering
                         or self.norm_range.childItems()[1].mouseHovering))
-                or not self.norm_range.isVisible()):
+                or not self.norm_range.isVisible())
+                or
+              (((self.crop_range.isVisible()
+                    and (self.crop_range.mouseHovering
+                        or self.crop_range.childItems()[0].mouseHovering
+                        or self.crop_range.childItems()[1].mouseHovering))
+                or not self.crop_range.isVisible()))):
             super().mousePressEvent(event)
         else:
             event.ignore()

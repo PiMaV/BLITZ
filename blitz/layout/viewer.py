@@ -165,6 +165,24 @@ class ImageViewer(pg.ImageView):
         self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
         return normalized
 
+    def crop(self, left: int, right: int, keep: bool = False) -> None:
+        self.data.crop(left, right, keep=keep)
+        self.setImage(
+            self.data.image,
+            autoLevels=self._fit_levels,
+        )
+        self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
+
+    def undo_crop(self) -> None:
+        if not self.data.undo_crop():
+            log("Error: Uncropped images were not saved", color="red")
+        else:
+            self.setImage(
+                self.data.image,
+                autoLevels=self._fit_levels,
+            )
+            self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
+
     def unravel(self) -> None:
         self.data.unravel()
         self.setImage(

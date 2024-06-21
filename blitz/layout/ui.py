@@ -130,13 +130,9 @@ class UI_MainWindow(QWidget):
 
         self.measure_roi = MeasureROI(self.image_viewer)
 
-        # create a new timeline replacing roiPlot
-        self.norm_range = pg.LinearRegionItem()
-        self.norm_range.setZValue(0)
         self.roi_plot = TimePlot(
             self.dock_t_line,
             self.image_viewer,
-            self.norm_range,
         )
         self.roi_plot.showGrid(x=True, y=True, alpha=0.4)
         self.image_viewer.ui.roiPlot.setParent(None)
@@ -365,6 +361,32 @@ class UI_MainWindow(QWidget):
 
         # --- Timeline Operation ---
         timeop_layout = QVBoxLayout()
+        self.label_crop = QLabel("Crop")
+        self.label_crop.setStyleSheet(style_heading)
+        timeop_layout.addWidget(self.label_crop)
+        crop_range_label_to = QLabel("-")
+        self.spinbox_crop_range_start = QSpinBox()
+        self.spinbox_crop_range_start.setMinimum(0)
+        self.spinbox_crop_range_end = QSpinBox()
+        self.spinbox_crop_range_end.setMinimum(1)
+        self.checkbox_crop_show_range = QCheckBox("")
+        map_ = getattr(QStyle, "SP_DesktopIcon")
+        self.checkbox_crop_show_range.setIcon(
+            self.checkbox_crop_show_range.style().standardIcon(map_)
+        )
+        self.button_crop = QPushButton("Crop")
+        self.button_crop_undo = QPushButton("Undo")
+        self.checkbox_crop_keep = QCheckBox("Keep Original")
+        range_crop_layout = QGridLayout()
+        range_crop_layout.addWidget(self.spinbox_crop_range_start, 0, 0, 1, 1)
+        range_crop_layout.addWidget(crop_range_label_to, 0, 1, 1, 1)
+        range_crop_layout.addWidget(self.spinbox_crop_range_end, 0, 2, 1, 1)
+        range_crop_layout.addWidget(self.checkbox_crop_show_range, 0, 3, 1, 1)
+        range_crop_layout.addWidget(self.button_crop, 1, 0, 1, 1)
+        range_crop_layout.addWidget(self.button_crop_undo, 1, 1, 1, 1)
+        range_crop_layout.addWidget(self.checkbox_crop_keep, 1, 2, 1, 2)
+        timeop_layout.addLayout(range_crop_layout)
+
         self.label_reduce = QLabel("Reduction")
         self.label_reduce.setStyleSheet(style_heading)
         timeop_layout.addWidget(self.label_reduce)

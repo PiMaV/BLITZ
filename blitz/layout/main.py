@@ -67,8 +67,11 @@ class MainWindow(QMainWindow):
 
         # image_viewer connections
         self.ui.image_viewer.file_dropped.connect(self.load_images_adapter)
-        self.ui.norm_range.sigRegionChanged.connect(
+        self.ui.roi_plot.norm_range.sigRegionChanged.connect(
             self.update_norm_range_labels
+        )
+        self.ui.roi_plot.crop_range.sigRegionChanged.connect(
+            self.update_crop_range_labels
         )
         self.ui.image_viewer.scene.sigMouseMoved.connect(
             self.update_statusbar_position
@@ -131,6 +134,17 @@ class MainWindow(QMainWindow):
                 self.ui.checkbox_roi_drop.isChecked()
             )
         )
+        self.ui.checkbox_crop_show_range.stateChanged.connect(
+            self.ui.roi_plot.toggle_crop_range
+        )
+        self.ui.spinbox_crop_range_start.valueChanged.connect(
+            self.update_crop_range
+        )
+        self.ui.spinbox_crop_range_end.valueChanged.connect(
+            self.update_crop_range
+        )
+        self.ui.button_crop.clicked.connect(self.crop)
+        self.ui.button_crop_undo.clicked.connect(self.undo_crop)
         self.ui.combobox_reduce.currentIndexChanged.connect(
             self.operation_changed
         )
@@ -182,9 +196,19 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_norm_divide.setChecked(False)
         self.ui.spinbox_norm_beta.setValue(100)
         self.ui.button_bg_input.setText("[Select]")
-        self.ui.checkbox_norm_show_range.setChecked(False)
         self.ui.image_viewer._background_image = None
         self.ui.checkbox_measure_roi.setChecked(False)
+        self.ui.spinbox_crop_range_start.setValue(0)
+        self.ui.spinbox_crop_range_start.setMaximum(
+            self.ui.image_viewer.data.n_images-1
+        )
+        self.ui.spinbox_crop_range_end.setMaximum(
+            self.ui.image_viewer.data.n_images-1
+        )
+        self.ui.spinbox_crop_range_end.setValue(
+            self.ui.image_viewer.data.n_images-1
+        )
+        self.ui.checkbox_crop_show_range.setChecked(False)
         self.ui.spinbox_norm_range_start.setValue(0)
         self.ui.spinbox_norm_range_start.setMaximum(
             self.ui.image_viewer.data.n_images-1
@@ -195,6 +219,7 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_norm_range_end.setValue(
             self.ui.image_viewer.data.n_images-1
         )
+        self.ui.checkbox_norm_show_range.setChecked(False)
         self.ui.checkbox_roi_drop.setChecked(
             self.ui.image_viewer.is_roi_on_drop_update()
         )
@@ -208,18 +233,43 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_pcacomp.setValue(self.ui.image_viewer.data.n_images)
 
     def update_norm_range_labels(self) -> None:
-        norm_range_ = self.ui.norm_range.getRegion()
+        norm_range_ = self.ui.roi_plot.norm_range.getRegion()
         left, right = map(round, norm_range_)  # type: ignore
         self.ui.spinbox_norm_range_start.setValue(left)
         self.ui.spinbox_norm_range_end.setValue(right)
-        self.ui.norm_range.setRegion((left, right))
+        self.ui.roi_plot.norm_range.setRegion((left, right))
+
+    def update_crop_range_labels(self) -> None:
+        crop_range_ = self.ui.roi_plot.crop_range.getRegion()
+        left, right = map(round, crop_range_)  # type: ignore
+        self.ui.spinbox_crop_range_start.setValue(left)
+        self.ui.spinbox_crop_range_end.setValue(right)
+        self.ui.roi_plot.crop_range.setRegion((left, right))
 
     def update_norm_range(self) -> None:
-        self.ui.norm_range.setRegion(
+        self.ui.roi_plot.norm_range.setRegion(
             (self.ui.spinbox_norm_range_start.value(),
              self.ui.spinbox_norm_range_end.value())
         )
         self._normalization_update()
+
+    def update_crop_range(self) -> None:
+        self.ui.roi_plot.crop_range.setRegion(
+            (self.ui.spinbox_crop_range_start.value(),
+             self.ui.spinbox_crop_range_end.value())
+        )
+
+    def crop(self) -> None:
+        self.ui.image_viewer.crop(
+            left=self.ui.spinbox_crop_range_start.value(),
+            right=self.ui.spinbox_crop_range_end.value(),
+            keep=self.ui.checkbox_crop_keep.isChecked(),
+        )
+        self.reset_options()
+
+    def undo_crop(self) -> None:
+        self.ui.image_viewer.undo_crop()
+        self.reset_options()
 
     def _normalization_update(self) -> None:
         name = None
