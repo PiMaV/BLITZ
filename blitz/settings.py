@@ -16,6 +16,7 @@ _default_settings = {
     "viewer/font_size_status_bar": 10,
     "viewer/font_size_log": 9,
     "viewer/max_file_name_length": 40,
+    "viewer/intersection_point_size": 10,
 
     "data/multicore_size_threshold": 1.3 * (2**30),
     "data/multicore_files_threshold": 333,

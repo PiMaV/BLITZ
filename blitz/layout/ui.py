@@ -127,6 +127,8 @@ class UI_MainWindow(QWidget):
         self.dock_h_plot.addWidget(self.h_plot)
         self.v_plot = ExtractionPlot(self.image_viewer, vertical=True)
         self.dock_v_plot.addWidget(self.v_plot)
+        self.v_plot.couple(self.h_plot)
+        self.h_plot.couple(self.v_plot)
 
         self.measure_roi = MeasureROI(self.image_viewer)
 

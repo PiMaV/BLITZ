@@ -5,6 +5,7 @@ from PyQt5.QtGui import QKeyEvent, QMouseEvent, QWheelEvent
 from PyQt5.QtWidgets import QSizePolicy, QWidget
 
 from .viewer import ImageViewer
+from .. import settings
 
 
 class TimePlot(pg.PlotWidget):
@@ -243,9 +244,24 @@ class ExtractionLine(pg.InfiniteLine):
         )
         self._width: int = 0
         self.sigPositionChanged.connect(self._move_bounds)
+        self._coupled: None | ExtractionLine = None
+
+    def paint(self, p, *args):
+        if self._coupled is not None:
+            value = self._coupled.value()
+            value = (
+                value - self.viewRect().x()  # type: ignore
+            ) / self.viewRect().width()  # type: ignore
+            self.markers[0] = (
+                self.markers[0][0], value, self.markers[0][2],
+            )
+        super().paint(p, *args)
 
     def value(self) -> int:
         return super().value()  # type: ignore
+
+    def couple(self, line: "ExtractionLine") -> None:
+        self._coupled = line
 
     @property
     def width(self) -> int:
@@ -326,6 +342,13 @@ class ExtractionPlot(pg.PlotWidget):
         self._viewer.image_changed.connect(self.draw_line)
         self._viewer.image_size_changed.connect(self.center_line)
         self.center_line()
+
+    def couple(self, plot: "ExtractionPlot") -> None:
+        self._extractionline.addMarker(
+            'o',
+            size=settings.get("viewer/intersection_point_size"),
+        )
+        self._extractionline.couple(plot._extractionline)
 
     def center_line(self) -> None:
         self._extractionline.setPos(
