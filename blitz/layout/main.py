@@ -137,10 +137,10 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_crop_show_range.stateChanged.connect(
             self.ui.roi_plot.toggle_crop_range
         )
-        self.ui.spinbox_crop_range_start.valueChanged.connect(
+        self.ui.spinbox_crop_range_start.editingFinished.connect(
             self.update_crop_range
         )
-        self.ui.spinbox_crop_range_end.valueChanged.connect(
+        self.ui.spinbox_crop_range_end.editingFinished.connect(
             self.update_crop_range
         )
         self.ui.button_crop.clicked.connect(self.crop)
@@ -148,10 +148,10 @@ class MainWindow(QMainWindow):
         self.ui.combobox_reduce.currentIndexChanged.connect(
             self.operation_changed
         )
-        self.ui.spinbox_norm_range_start.valueChanged.connect(
+        self.ui.spinbox_norm_range_start.editingFinished.connect(
             self.update_norm_range
         )
-        self.ui.spinbox_norm_range_end.valueChanged.connect(
+        self.ui.spinbox_norm_range_end.editingFinished.connect(
             self.update_norm_range
         )
         self.ui.combobox_norm.currentIndexChanged.connect(
