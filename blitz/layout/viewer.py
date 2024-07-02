@@ -142,18 +142,18 @@ class ImageViewer(pg.ImageView):
         operation: str,
         use: ReduceOperation | str,
         beta: float = 1.0,
-        left: Optional[int] = None,
-        right: Optional[int] = None,
+        bounds: Optional[tuple[int, int]] = None,
         background: bool = False,
+        window_lag: Optional[tuple[int, int]] = None,
         force_calculation: bool = False,
     ) -> bool:
         normalized = self.data.normalize(
             operation=operation,  # type: ignore
             use=use,
             beta=beta,
-            left=left,
-            right=right,
+            bounds=bounds,
             reference=self._background_image if background else None,
+            window_lag=window_lag,
             force_calculation=force_calculation,
         )
         self.setImage(

@@ -5,7 +5,7 @@ import numpy as np
 import pyqtgraph as pg
 
 from ..tools import log
-from .ops import ReduceDict, ReduceOperation, get
+from . import ops #import ReduceDict, ReduceOperation, get
 
 
 @dataclass(kw_only=True)
@@ -35,13 +35,13 @@ class ImageData:
     ) -> None:
         self._image = image
         self._meta = metadata
-        self._reduced = ReduceDict()
+        self._reduced = ops.ReduceDict()
         self._mask: tuple[slice, slice, slice] | None = None
         self._cropped: tuple[int, int] | None = None
         self._transposed = False
         self._flipped_x = False
         self._flipped_y = False
-        self._redop: ReduceOperation | str | None = None
+        self._redop: ops.ReduceOperation | str | None = None
         self._norm: np.ndarray | None = None
         self._norm_operation: Literal["subtract", "divide"] | None = None
 
@@ -59,12 +59,12 @@ class ImageData:
     @property
     def image(self) -> np.ndarray:
         image: np.ndarray = self._image
-        if self._cropped is not None:
-            image = image[self._cropped[0]:self._cropped[1]+1]
-        if self._redop is not None:
-            image = self._reduced.reduce(image, self._redop)
         if self._norm is not None:
             image = self._norm
+        if self._redop is not None:
+            image = self._reduced.reduce(image, self._redop)
+        if self._cropped is not None:
+            image = image[self._cropped[0]:self._cropped[1]+1]
         if self._mask is not None:
             image = image[self._mask]
         if self._transposed:
@@ -95,7 +95,7 @@ class ImageData:
     def is_greyscale(self) -> bool:
         return self._image.ndim == 3
 
-    def reduce(self, operation: ReduceOperation | str) -> None:
+    def reduce(self, operation: ops.ReduceOperation | str) -> None:
         self._redop = operation
 
     def crop(self, left: int, right: int, keep: bool = False) -> None:
@@ -114,11 +114,11 @@ class ImageData:
     def normalize(
         self,
         operation: Literal["subtract", "divide"],
-        use: ReduceOperation | str,
+        use: ops.ReduceOperation | str,
         beta: float = 1.0,
-        left: Optional[int] = None,
-        right: Optional[int] = None,
+        bounds: Optional[tuple[int, int]] =None,
         reference: Optional["ImageData"] = None,
+        window_lag: Optional[tuple[int, int]] = None,
         force_calculation: bool = False,
     ) -> bool:
         if self._redop is not None:
@@ -131,27 +131,42 @@ class ImageData:
         if self._norm_operation is not None:
             self._norm = None
         image = self._image
-        range_img = reference_img = None
-        if left is not None and right is not None:
-            range_img = beta * get(use)(image[left:right+1]).astype(np.double)
+        range_img = reference_img = window_lag_img = None
+        if bounds is not None:
+            range_img = beta * ops.get(use)(
+                image[bounds[0]:bounds[1]+1]
+            ).astype(np.double)
         if reference is not None:
             if (not reference.is_single_image()
                     or reference._image.shape[1:] != image.shape[1:]):
                 log("Error: Background image has incompatible shape")
                 return False
-            reference_img = reference._image.astype(np.double)
-        if left is None and right is None and reference is None:
+            reference_img = beta * reference._image.astype(np.double)
+        if window_lag is not None:
+            window, lag = window_lag
+            window_lag_img = beta * np.apply_along_axis(lambda a: np.convolve(
+                a,
+                np.array([beta/window for _ in range(window)]+(lag+1)*[0]),
+                mode="valid",
+            ), axis=0, arr=image)
+        if bounds is None and reference is None and window_lag is None:
             return False
         if operation == "subtract":
             if range_img is not None:
-                self._norm = image - range_img
+                image = image - range_img
             if reference_img is not None:
-                self._norm = image - reference_img
+                image = image - reference_img
+            if window_lag_img is not None:
+                image = image[:window_lag_img.shape[0]] - window_lag_img
+            self._norm = image
         if operation == "divide":
             if range_img is not None:
-                self._norm = image / range_img
+                image = image / range_img
             if reference_img is not None:
-                self._norm = image / reference_img
+                image = image / reference_img
+            if window_lag_img is not None:
+                image = image[:window_lag_img.shape[0]] / window_lag_img
+            self._norm = image
         self._norm_operation = operation  # type: ignore
         return True
 

@@ -27,6 +27,11 @@
 
     "checkbox_roi_drop": "Whether to update the ROI plot (lower window) upon dragging the ROI or only on drop (releasing the mouse button).",
 
+    "button_crop": "Crop the image dataset to the above selected time interval.",
+    "button_crop_undo": "Reloads the last saved dataset. Only possible if uncropped data was saved.",
+    "checkbox_crop_keep": "If selected, keeps the original time series in memory. Can be retrieved by 'undo'.",
+    "checkbox_crop_show_range": "Show a blue box in the timeline to select a time interval.",
+
     "label_reduce": "Operations that reduce the dimensionality of the dataset (i.e. remove the time axis) by calculating some metric over all images.",
     "combobox_reduce": "Calculate a metric on the time axis, e.g. mean of all images loaded. This visualizes a single image.",
 
@@ -35,6 +40,11 @@
 
     "checkbox_norm_bg": "Select this to subtract or divide each image by a given background image.",
     "button_bg_input": "Select an image that is of same size as the currently loaded data.",
+
+    "checkbox_norm_lag": "Select this to subtract the mean of the next [lag] to [lag+window] images from the current time step. Might reduce the number of images shown.",
+    "spinbox_norm_window": "The number of images to calculate the mean over.",
+
+    "spinbox_norm_lag": "The number of images to skip before computing the sliding mean and subtracting this from the current time step.",
     "spinbox_norm_beta": "Percentage of the image that is subtracted or divided.",
     "checkbox_norm_subtract": "Subtract the selected image from all images.",
     "checkbox_norm_divide": "Divide all images by the selected image. Make sure that no division-by-zero occurs.",

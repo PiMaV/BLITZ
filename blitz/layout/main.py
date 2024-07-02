@@ -161,6 +161,12 @@ class MainWindow(QMainWindow):
             self.ui.roi_plot.toggle_norm_range
         )
         self.ui.button_bg_input.clicked.connect(self.search_background_file)
+        self.ui.spinbox_norm_window.editingFinished.connect(
+            self._normalization_update
+        )
+        self.ui.spinbox_norm_lag.editingFinished.connect(
+            self._normalization_update
+        )
         self.ui.spinbox_norm_beta.editingFinished.connect(
             self._normalization_update
         )
@@ -192,6 +198,7 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_norm_range.setEnabled(True)
         self.ui.checkbox_norm_bg.setEnabled(False)
         self.ui.checkbox_norm_bg.setChecked(False)
+        self.ui.checkbox_norm_lag.setChecked(False)
         self.ui.checkbox_norm_subtract.setChecked(False)
         self.ui.checkbox_norm_divide.setChecked(False)
         self.ui.spinbox_norm_beta.setValue(100)
@@ -199,6 +206,15 @@ class MainWindow(QMainWindow):
         self.ui.image_viewer._background_image = None
         self.ui.checkbox_measure_roi.setChecked(False)
         self.ui.spinbox_crop_range_start.setValue(0)
+        self.ui.spinbox_norm_window.setValue(1)
+        self.ui.spinbox_norm_lag.setValue(0)
+        self.ui.spinbox_norm_window.setMinimum(1)
+        self.ui.spinbox_norm_window.setMaximum(
+            self.ui.image_viewer.data.n_images-1
+        )
+        self.ui.spinbox_norm_lag.setMaximum(
+            self.ui.image_viewer.data.n_images-1
+        )
         self.ui.spinbox_crop_range_start.setMaximum(
             self.ui.image_viewer.data.n_images-1
         )
@@ -278,18 +294,26 @@ class MainWindow(QMainWindow):
         if self.ui.checkbox_norm_divide.isChecked():
             name = "divide"
         if name is not None:
-            left = right = None
+            bounds = None
             if self.ui.checkbox_norm_range.isChecked():
-                left = self.ui.spinbox_norm_range_start.value()
-                right = self.ui.spinbox_norm_range_end.value()
+                bounds = (
+                    self.ui.spinbox_norm_range_start.value(),
+                    self.ui.spinbox_norm_range_end.value(),
+                )
+            window_lag = None
+            if self.ui.checkbox_norm_lag.isChecked():
+                window_lag = (
+                    self.ui.spinbox_norm_window.value(),
+                    self.ui.spinbox_norm_lag.value(),
+                )
             with LoadingManager(self, "Calculating ...") as lm:
                 self.ui.image_viewer.norm(
                     operation=name,
                     use=self.ui.combobox_norm.currentText(),
                     beta=self.ui.spinbox_norm_beta.value() / 100.0,
-                    left=left,
-                    right=right,
+                    bounds=bounds,
                     background=self.ui.checkbox_norm_bg.isChecked(),
+                    window_lag=window_lag,
                     force_calculation=True,
                 )
             log(f"Normalized in {lm.duration:.2f}s")
@@ -297,7 +321,8 @@ class MainWindow(QMainWindow):
 
     def _normalization(self, name: str) -> None:
         if ((not self.ui.checkbox_norm_range.isChecked()
-                and not self.ui.checkbox_norm_bg.isChecked())
+                and not self.ui.checkbox_norm_bg.isChecked()
+                and not self.ui.checkbox_norm_lag.isChecked())
                 or self.ui.image_viewer.data.is_single_image()):
             self.ui.checkbox_norm_subtract.setChecked(False)
             self.ui.checkbox_norm_divide.setChecked(False)
@@ -318,18 +343,26 @@ class MainWindow(QMainWindow):
             self.ui.checkbox_norm_divide.setChecked(False)
         elif name == "divide" and self.ui.checkbox_norm_subtract.isChecked():
             self.ui.checkbox_norm_subtract.setChecked(False)
-        left = right = None
+        bounds = None
         if self.ui.checkbox_norm_range.isChecked():
-            left = self.ui.spinbox_norm_range_start.value()
-            right = self.ui.spinbox_norm_range_end.value()
+            bounds = (
+                self.ui.spinbox_norm_range_start.value(),
+                self.ui.spinbox_norm_range_end.value(),
+            )
+        window_lag = None
+        if self.ui.checkbox_norm_lag.isChecked():
+            window_lag = (
+                self.ui.spinbox_norm_window.value(),
+                self.ui.spinbox_norm_lag.value(),
+            )
         with LoadingManager(self, "Calculating ...") as lm:
             normalized = self.ui.image_viewer.norm(
                 operation=name,
                 use=self.ui.combobox_norm.currentText(),
                 beta=self.ui.spinbox_norm_beta.value() / 100.0,
-                left=left,
-                right=right,
+                bounds=bounds,
                 background=self.ui.checkbox_norm_bg.isChecked(),
+                window_lag=window_lag,
             )
         if normalized:
             log(f"Normalized in {lm.duration:.2f}s")
