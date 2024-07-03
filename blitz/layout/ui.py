@@ -1,14 +1,13 @@
 import json
 
 import pyqtgraph as pg
-from PyQt5.QtCore import Qt, QFile
+from PyQt5.QtCore import QFile, Qt
 from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
                              QDoubleSpinBox, QFrame, QGridLayout, QHBoxLayout,
                              QLabel, QLayout, QLineEdit, QMenu, QMenuBar,
                              QPushButton, QScrollArea, QSpinBox, QStatusBar,
-                             QStyle, QTabWidget, QToolTip, QVBoxLayout,
-                             QWidget)
+                             QStyle, QTabWidget, QVBoxLayout, QWidget, QSizePolicy)
 from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import __version__, resources, settings
@@ -168,6 +167,11 @@ class UI_MainWindow(QWidget):
         self.action_restart = file_menu.addAction("Restart")
         self.menubar.addMenu(file_menu)
 
+        about_menu = QMenu("About", self)
+        self.action_link_inp = about_menu.addAction("INP Greifswald")
+        self.action_link_github = about_menu.addAction("GitHub")
+        self.menubar.addMenu(about_menu)
+
         font_status = QFont()
         font_status.setPointSize(settings.get("viewer/font_size_status_bar"))
 
@@ -309,20 +313,30 @@ class UI_MainWindow(QWidget):
         mask_label = QLabel("Mask")
         mask_label.setStyleSheet(style_heading)
         view_layout.addWidget(mask_label)
-        mask_holay = QHBoxLayout()
         self.checkbox_mask = QCheckBox("Show")
-        mask_holay.addWidget(self.checkbox_mask)
         self.button_apply_mask = QPushButton("Apply")
-        mask_holay.addWidget(self.button_apply_mask)
         self.button_reset_mask = QPushButton("Reset")
-        mask_holay.addWidget(self.button_reset_mask)
+        self.button_reset_mask.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding,
+        )
+        self.button_image_mask = QPushButton("Load binary image")
+        mask_holay = QGridLayout()
+        mask_holay.addWidget(self.checkbox_mask, 0, 0, 1, 1)
+        mask_holay.addWidget(self.button_apply_mask, 0, 1, 1, 1)
+        mask_holay.addWidget(self.button_reset_mask, 0, 2, 2, 1)
+        mask_holay.addWidget(self.button_image_mask, 1, 0, 1, 2)
         view_layout.addLayout(mask_holay)
         crosshair_label = QLabel("Crosshair")
         crosshair_label.setStyleSheet(style_heading)
         view_layout.addWidget(crosshair_label)
         self.checkbox_crosshair = QCheckBox("Show")
         self.checkbox_crosshair.setChecked(True)
-        view_layout.addWidget(self.checkbox_crosshair)
+        self.checkbox_crosshair_marking = QCheckBox("Show Markings")
+        self.checkbox_crosshair_marking.setChecked(True)
+        crosshair_hlay = QHBoxLayout()
+        crosshair_hlay.addWidget(self.checkbox_crosshair)
+        crosshair_hlay.addWidget(self.checkbox_crosshair_marking)
+        view_layout.addLayout(crosshair_hlay)
         width_holay = QHBoxLayout()
         width_label = QLabel("Line width:")
         width_holay.addWidget(width_label)
@@ -344,26 +358,28 @@ class UI_MainWindow(QWidget):
         self.image_viewer.ui.roiBtn.setParent(None)
         self.image_viewer.ui.roiBtn = QCheckBox("ROI")
         self.checkbox_roi = self.image_viewer.ui.roiBtn
-        self.checkbox_roi.setChecked(True)
-        self.checkbox_tof = QCheckBox("TOF")
         # NOTE: the order of connection here matters
         # roiClicked shows the plot again
+        self.checkbox_roi.setChecked(True)
+        self.combobox_roi = QComboBox()
+        self.combobox_roi.addItem("Rectangular")
+        self.combobox_roi.addItem("Polygon")
+        self.combobox_roi.setCurrentIndex(0)
+        self.checkbox_tof = QCheckBox("TOF")
         self.checkbox_tof.setEnabled(False)
-        checkbox_layout = QHBoxLayout()
-        checkbox_layout.addStretch()
-        checkbox_layout.addWidget(self.checkbox_roi)
-        checkbox_layout.addStretch()
-        checkbox_layout.addWidget(self.checkbox_tof)
-        checkbox_layout.addStretch()
-        view_layout.addLayout(checkbox_layout)
         self.checkbox_roi_drop = QCheckBox("Update on drop")
-        view_layout.addWidget(self.checkbox_roi_drop)
+        roi_layout = QGridLayout()
+        roi_layout.addWidget(self.checkbox_roi, 0, 0, 1, 1)
+        roi_layout.addWidget(self.combobox_roi, 0, 1, 1, 2)
+        roi_layout.addWidget(self.checkbox_roi_drop, 2, 1, 1, 1)
+        roi_layout.addWidget(self.checkbox_tof, 3, 0, 1, 1)
+        view_layout.addLayout(roi_layout)
         view_layout.addStretch()
         self.create_option_tab(view_layout, "View")
 
         # --- Timeline Operation ---
         timeop_layout = QVBoxLayout()
-        self.label_crop = QLabel("Crop")
+        self.label_crop = QLabel("Timeline Cropping")
         self.label_crop.setStyleSheet(style_heading)
         timeop_layout.addWidget(self.label_crop)
         crop_range_label_to = QLabel("-")
@@ -378,7 +394,7 @@ class UI_MainWindow(QWidget):
         )
         self.button_crop = QPushButton("Crop")
         self.button_crop_undo = QPushButton("Undo")
-        self.checkbox_crop_keep = QCheckBox("Keep")
+        self.checkbox_crop_keep = QCheckBox("Keep in RAM")
         range_crop_layout = QGridLayout()
         range_crop_layout.addWidget(self.spinbox_crop_range_start, 0, 0, 1, 2)
         range_crop_layout.addWidget(crop_range_label_to, 0, 2, 1, 1)
@@ -389,7 +405,7 @@ class UI_MainWindow(QWidget):
         range_crop_layout.addWidget(self.checkbox_crop_keep, 1, 5, 1, 2)
         timeop_layout.addLayout(range_crop_layout)
 
-        self.label_reduce = QLabel("Reduction")
+        self.label_reduce = QLabel("Image Aggregation")
         self.label_reduce.setStyleSheet(style_heading)
         timeop_layout.addWidget(self.label_reduce)
         self.combobox_reduce = QComboBox()

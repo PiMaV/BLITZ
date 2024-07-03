@@ -341,6 +341,8 @@ class ExtractionPlot(pg.PlotWidget):
         self._viewer.timeLine.sigPositionChanged.connect(self.draw_line)
         self._viewer.image_changed.connect(self.draw_line)
         self._viewer.image_size_changed.connect(self.center_line)
+        self._coupled: ExtractionPlot | None = None
+        self._mark_coupled_position: bool = True
         self.center_line()
 
     def couple(self, plot: "ExtractionPlot") -> None:
@@ -349,11 +351,16 @@ class ExtractionPlot(pg.PlotWidget):
             size=settings.get("viewer/intersection_point_size"),
         )
         self._extractionline.couple(plot._extractionline)
+        plot._extractionline.sigPositionChanged.connect(self.draw_line)
+        self._coupled = plot
 
     def center_line(self) -> None:
         self._extractionline.setPos(
             self._viewer.image.shape[1 if self._vert else 2] / 2
         )
+
+    def toggle_mark_position(self) -> None:
+        self._mark_coupled_position = not self._mark_coupled_position
 
     def change_width(self, width: int) -> None:
         self._extractionline.change_width(width)
@@ -392,6 +399,21 @@ class ExtractionPlot(pg.PlotWidget):
                 self.plotItem.plot(image, x_values, pen='gray')
             else:
                 self.plotItem.plot(image, pen='gray')
+        if self._coupled is not None and self._mark_coupled_position:
+            if self._vert:
+                x_values = np.arange(*self.plotItem.viewRange()[0])
+                self.plotItem.plot(
+                    x_values,
+                    len(x_values)*[self._coupled._extractionline.value()],
+                    pen=pg.mkPen("r", style=Qt.PenStyle.DashLine),
+                )
+            else:
+                x_values = np.arange(*self.plotItem.viewRange()[1])
+                self.plotItem.plot(
+                    len(x_values)*[self._coupled._extractionline.value()],
+                    x_values,
+                    pen=pg.mkPen("r", style=Qt.PenStyle.DashLine),
+                )
 
     def toggle_line(self) -> None:
         self._extractionline.toggle()

@@ -33,10 +33,11 @@ class ImageData:
         image: np.ndarray,
         metadata: list[MetaData],
     ) -> None:
-        self._image = image
+        self._image = image.astype(np.float32)
         self._meta = metadata
         self._reduced = ops.ReduceDict()
         self._mask: tuple[slice, slice, slice] | None = None
+        self._image_mask: np.ndarray | None = None
         self._cropped: tuple[int, int] | None = None
         self._transposed = False
         self._flipped_x = False
@@ -45,26 +46,20 @@ class ImageData:
         self._norm: np.ndarray | None = None
         self._norm_operation: Literal["subtract", "divide"] | None = None
 
-    def reset(self) -> None:
-        self._reduced.clear()
-        self._cropped = None
-        self._mask = None
-        self._transposed = False
-        self._flipped_x = False
-        self._flipped_y = False
-        self._redop = None
-        self._norm = None
-        self._norm_operation = None
-
     @property
     def image(self) -> np.ndarray:
-        image: np.ndarray = self._image
+        if self._image_mask is not None:
+            image: np.ndarray = self._image.copy()
+        else:
+            image: np.ndarray = self._image
         if self._norm is not None:
             image = self._norm
         if self._redop is not None:
             image = self._reduced.reduce(image, self._redop)
         if self._cropped is not None:
             image = image[self._cropped[0]:self._cropped[1]+1]
+        if self._image_mask is not None:
+            image[:, ~self._image_mask] = np.nan
         if self._mask is not None:
             image = image[self._mask]
         if self._transposed:
@@ -189,12 +184,24 @@ class ImageData:
             x_stop += self._mask[1].start
             y_start += self._mask[2].start
             y_stop += self._mask[2].start
-        op = self._redop
-        self.reset()
-        self.reduce(op)  # type: ignore
+        self._transposed = False
+        self._flipped_x = False
+        self._flipped_y = False
         self._mask = (
             slice(None, None), slice(x_start, x_stop), slice(y_start, y_stop),
         )
+
+    def image_mask(self, mask: "ImageData") -> None:
+        if (not mask.is_single_image()
+                or not mask.is_greyscale()
+                or mask.shape != self.shape):
+            log("Error: Mask not applicable", color="red")
+        else:
+            self._image_mask = mask.image[0].astype(bool)
+
+    def reset_mask(self) -> None:
+        self._mask = None
+        self._image_mask = None
 
     def transpose(self) -> None:
         self._transposed = not self._transposed

@@ -22,17 +22,23 @@
     "button_connect": "Connect to the given server address. Keeps listening until manually disconnected.",
     "button_disconnect": "Disconnect from the server.",
 
+    "checkbox_mask": "Shows a rectangular selection area. Resize and apply for masking all images.",
+    "button_reset_mask": "Resets the mask and shows the original image.",
+    "button_image_mask": "Select a binary image of the same size as the current data to mask all pixels where that image has value 1.",
+
     "spinbox_width_h": "Changes the area of the horizontal line. The upper plot shows the mean over all vertical pixels at one position.",
     "spinbox_width_v": "Changes the area of the vertical line. The left plot shows the mean over all horizontal pixels at one position.",
 
+    "checkbox_roi": "Turn on the ROI that shows the mean of all pixels in its range over time.",
+    "combobox_roi": "Choose a format for the ROI.",
     "checkbox_roi_drop": "Whether to update the ROI plot (lower window) upon dragging the ROI or only on drop (releasing the mouse button).",
 
     "button_crop": "Crop the image dataset to the above selected time interval.",
-    "button_crop_undo": "Reloads the last saved dataset. Only possible if uncropped data was saved.",
-    "checkbox_crop_keep": "If selected, keeps the original time series in memory. Can be retrieved by 'undo'.",
+    "button_crop_undo": "Reloads the last saved dataset. If uncropped data was not saved in RAM, instead loads it from the last loaded path again.",
+    "checkbox_crop_keep": "If selected, keeps the full dataset in RAM. Can be retrieved by 'undo'.",
     "checkbox_crop_show_range": "Show a blue box in the timeline to select a time interval.",
 
-    "label_reduce": "Operations that reduce the dimensionality of the dataset (i.e. remove the time axis) by calculating some metric over all images.",
+    "label_reduce": "Temporal Dimensionality Reduction: Create summary images by aggregating pixel values (e.g. mean) across a time series of images.",
     "combobox_reduce": "Calculate a metric on the time axis, e.g. mean of all images loaded. This visualizes a single image.",
 
     "checkbox_norm_range": "Select this to perform a normalization over the given time interval / image indices. Subtracts or divides each image by the mean of all images in the interval.",

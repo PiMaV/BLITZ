@@ -2,8 +2,8 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from PyQt5.QtCore import QCoreApplication
-from PyQt5.QtGui import QKeySequence
+from PyQt5.QtCore import QCoreApplication, QUrl
+from PyQt5.QtGui import QDesktopServices, QKeySequence
 from PyQt5.QtWidgets import QApplication, QFileDialog, QMainWindow, QShortcut
 
 from .. import __version__, settings
@@ -13,6 +13,10 @@ from ..tools import LoadingManager, get_available_ram, log
 from .pca import PCAAdapter
 from .tof import TOFAdapter
 from .ui import UI_MainWindow
+
+
+URL_GITHUB = QUrl("https://github.com/CodeSchmiedeHGW/BLITZ")
+URL_INP = QUrl("https://www.inp-greifswald.de/")
 
 
 def restart(self) -> None:
@@ -28,6 +32,7 @@ class MainWindow(QMainWindow):
         self.ui.setup_UI(self)
 
         self.last_file_dir = Path.cwd()
+        self.last_file: str = ""
         self._lut_file: str = ""
 
         self.tof_adapter = TOFAdapter(self.ui.roi_plot)
@@ -56,14 +61,18 @@ class MainWindow(QMainWindow):
         self.ui.action_open_file.triggered.connect(self.browse_file)
         self.ui.action_open_folder.triggered.connect(self.browse_folder)
         self.ui.action_load_tof.triggered.connect(self.browse_tof)
-        self.ui.action_export.triggered.connect(
-            self.ui.image_viewer.exportClicked
-        )
+        self.ui.action_export.triggered.connect(self.export)
         self.ui.action_write_ini.triggered.connect(settings.export)
         self.ui.action_write_ini.triggered.connect(self.sync_settings)
         self.ui.action_select_ini.triggered.connect(settings.select)
         self.ui.action_select_ini.triggered.connect(restart)
         self.ui.action_restart.triggered.connect(restart)
+        self.ui.action_link_inp.triggered.connect(
+            lambda: QDesktopServices.openUrl(URL_INP)  # type: ignore
+        )
+        self.ui.action_link_github.triggered.connect(
+            lambda: QDesktopServices.openUrl(URL_GITHUB)  # type: ignore
+        )
 
         # image_viewer connections
         self.ui.image_viewer.file_dropped.connect(self.load_images_adapter)
@@ -104,18 +113,20 @@ class MainWindow(QMainWindow):
             lambda: self.ui.image_viewer.manipulate("transpose")
         )
         self.ui.checkbox_mask.clicked.connect(self.ui.image_viewer.toggle_mask)
-        self.ui.button_apply_mask.pressed.connect(
-            self.ui.image_viewer.apply_mask
-        )
+        self.ui.button_apply_mask.pressed.connect(self.apply_mask)
         self.ui.button_apply_mask.pressed.connect(
             lambda: self.ui.checkbox_mask.setChecked(False)
         )
-        self.ui.button_reset_mask.pressed.connect(self.ui.image_viewer.reset)
+        self.ui.button_reset_mask.pressed.connect(self.reset_mask)
+        self.ui.button_image_mask.pressed.connect(self.image_mask)
         self.ui.checkbox_crosshair.stateChanged.connect(
             self.ui.h_plot.toggle_line
         )
         self.ui.checkbox_crosshair.stateChanged.connect(
             self.ui.v_plot.toggle_line
+        )
+        self.ui.checkbox_crosshair_marking.stateChanged.connect(
+            self.toggle_hvplot_markings
         )
         self.ui.spinbox_width_h.valueChanged.connect(
             self.ui.h_plot.change_width
@@ -126,6 +137,7 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_roi.stateChanged.connect(
             self.ui.image_viewer.roiClicked
         )
+        self.ui.combobox_roi.currentIndexChanged.connect(self.change_roi)
         self.ui.checkbox_tof.stateChanged.connect(
             self.tof_adapter.toggle_plot
         )
@@ -269,6 +281,12 @@ class MainWindow(QMainWindow):
         )
         self._normalization_update()
 
+    def toggle_hvplot_markings(self) -> None:
+        self.ui.h_plot.toggle_mark_position()
+        self.ui.h_plot.draw_line()
+        self.ui.v_plot.toggle_mark_position()
+        self.ui.v_plot.draw_line()
+
     def update_crop_range(self) -> None:
         self.ui.roi_plot.crop_range.setRegion(
             (self.ui.spinbox_crop_range_start.value(),
@@ -276,16 +294,40 @@ class MainWindow(QMainWindow):
         )
 
     def crop(self) -> None:
-        self.ui.image_viewer.crop(
-            left=self.ui.spinbox_crop_range_start.value(),
-            right=self.ui.spinbox_crop_range_end.value(),
-            keep=self.ui.checkbox_crop_keep.isChecked(),
-        )
+        with LoadingManager(self, "Cropping..."):
+            self.ui.image_viewer.crop(
+                left=self.ui.spinbox_crop_range_start.value(),
+                right=self.ui.spinbox_crop_range_end.value(),
+                keep=self.ui.checkbox_crop_keep.isChecked(),
+            )
         self.reset_options()
 
     def undo_crop(self) -> None:
-        self.ui.image_viewer.undo_crop()
+        with LoadingManager(self, "Undo Cropping..."):
+            success = self.ui.image_viewer.undo_crop()
+            if not success:
+                self.load_images(self.last_file_dir / self.last_file)
         self.reset_options()
+
+    def apply_mask(self) -> None:
+        with LoadingManager(self, "Masking..."):
+            self.ui.image_viewer.apply_mask()
+
+    def reset_mask(self) -> None:
+        with LoadingManager(self, "Reset..."):
+            self.ui.image_viewer.reset_mask()
+
+    def change_roi(self) -> None:
+        with LoadingManager(self, "Change ROI..."):
+            self.ui.checkbox_roi_drop.setChecked(False)
+            self.ui.image_viewer.change_roi()
+
+    def image_mask(self) -> None:
+        file_path, _ = QFileDialog.getOpenFileName(
+            directory=str(self.last_file_dir),
+        )
+        with LoadingManager(self, "Masking..."):
+            self.ui.image_viewer.image_mask(Path(file_path))
 
     def _normalization_update(self) -> None:
         name = None
@@ -306,7 +348,7 @@ class MainWindow(QMainWindow):
                     self.ui.spinbox_norm_window.value(),
                     self.ui.spinbox_norm_lag.value(),
                 )
-            with LoadingManager(self, "Calculating ...") as lm:
+            with LoadingManager(self, "Calculating...") as lm:
                 self.ui.image_viewer.norm(
                     operation=name,
                     use=self.ui.combobox_norm.currentText(),
@@ -355,7 +397,7 @@ class MainWindow(QMainWindow):
                 self.ui.spinbox_norm_window.value(),
                 self.ui.spinbox_norm_lag.value(),
             )
-        with LoadingManager(self, "Calculating ...") as lm:
+        with LoadingManager(self, "Calculating...") as lm:
             normalized = self.ui.image_viewer.norm(
                 operation=name,
                 use=self.ui.combobox_norm.currentText(),
@@ -436,7 +478,6 @@ class MainWindow(QMainWindow):
             directory=str(self.last_file_dir),
         )
         if file_path:
-            self.last_file_dir = Path(file_path).parent
             self.load_images(Path(file_path))
 
     def browse_folder(self) -> None:
@@ -444,8 +485,11 @@ class MainWindow(QMainWindow):
             directory=str(self.last_file_dir),
         )
         if folder_path:
-            self.last_file_dir = Path(folder_path).parent
             self.load_images(Path(folder_path))
+
+    def export(self) -> None:
+        with LoadingManager(self, "Exporting..."):
+            self.ui.image_viewer.exportClicked()
 
     def browse_lut(self) -> None:
         file, _ = QFileDialog.getOpenFileName(
@@ -523,6 +567,8 @@ class MainWindow(QMainWindow):
             )
         if file_path is not None:
             log(f"Loaded in {lm.duration:.2f}s")
+            self.last_file_dir = Path(file_path).parent
+            self.last_file = Path(file_path).name
             self.update_statusbar()
             self.reset_options()
 
