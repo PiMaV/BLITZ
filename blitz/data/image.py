@@ -5,6 +5,7 @@ import numpy as np
 import pyqtgraph as pg
 
 from ..tools import log
+from .tools import sliding_mean_normalization, ensure_4d
 from . import ops #import ReduceDict, ReduceOperation, get
 
 
@@ -33,7 +34,7 @@ class ImageData:
         image: np.ndarray,
         metadata: list[MetaData],
     ) -> None:
-        self._image = image.astype(np.float32)
+        self._image = ensure_4d(image.astype(np.float32))
         self._meta = metadata
         self._reduced = ops.ReduceDict()
         self._mask: tuple[slice, slice, slice] | None = None
@@ -88,7 +89,7 @@ class ImageData:
         return self._image.shape[0] == 1
 
     def is_greyscale(self) -> bool:
-        return self._image.ndim == 3
+        return self._image.shape[3] == 1
 
     def reduce(self, operation: ops.ReduceOperation | str) -> None:
         self._redop = operation
@@ -139,11 +140,12 @@ class ImageData:
             reference_img = beta * reference._image.astype(np.double)
         if window_lag is not None:
             window, lag = window_lag
-            window_lag_img = beta * np.apply_along_axis(lambda a: np.convolve(
-                a,
-                np.array([beta/window for _ in range(window)]+(lag+1)*[0]),
-                mode="valid",
-            ), axis=0, arr=image)
+            window_lag_img = sliding_mean_normalization(image, window, lag)
+            # window_lag_img = beta * np.apply_along_axis(lambda a: np.convolve(
+            #     a,
+            #     np.array([beta/window for _ in range(window)]+(lag+1)*[0]),
+            #     mode="valid",
+            # ), axis=0, arr=image)
         if bounds is None and reference is None and window_lag is None:
             return False
         if operation == "subtract":

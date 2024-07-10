@@ -55,5 +55,5 @@
     "checkbox_norm_subtract": "Subtract the selected image from all images.",
     "checkbox_norm_divide": "Divide all images by the selected image. Make sure that no division-by-zero occurs.",
 
-    "checkbox_mm": "Convert all lengths in millimeters instead of pixels based on a known scale."
+    "checkbox_mm": "Convert all lengths into an arbitrary unit (au) instead of pixels based on a known scale."
 }

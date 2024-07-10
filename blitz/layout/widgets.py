@@ -2,7 +2,7 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt5.QtCore import QPointF, QSize, Qt
 from PyQt5.QtGui import QKeyEvent, QMouseEvent, QWheelEvent
-from PyQt5.QtWidgets import QSizePolicy, QWidget
+from PyQt5.QtWidgets import QSizePolicy, QWidget, QLineEdit
 
 from .viewer import ImageViewer
 from .. import settings
@@ -106,7 +106,7 @@ class TimePlot(pg.PlotWidget):
 
 class MeasureROI(pg.PolyLineROI):
 
-    def __init__(self, viewer: ImageViewer) -> None:
+    def __init__(self, viewer: ImageViewer, circ_box: QLineEdit, area_box: QLineEdit, bounding_rect_box: QLineEdit) -> None:
         self._viewer = viewer
         super().__init__([[0, 0], [0, 20], [10, 10]], closed=True)
         self.handleSize = 10
@@ -118,6 +118,16 @@ class MeasureROI(pg.PolyLineROI):
 
         self.line_labels = []
         self.angle_labels = []
+        self.circum_label = pg.TextItem("")
+        self._viewer.view.addItem(self.circum_label)
+        self.circum_label.setVisible(False)
+        self.area_label = pg.TextItem("")
+        self._viewer.view.addItem(self.area_label)
+        self.area_label.setVisible(False)
+        self.circ_box = circ_box
+        self.area_box = area_box
+        self.bounding_rect_box = bounding_rect_box
+        self.labels_visible = True
 
         self._viewer.view.addItem(self)
         self.setPen(color=(128, 128, 0, 100), width=3)
@@ -139,8 +149,16 @@ class MeasureROI(pg.PolyLineROI):
             label.setVisible(self._visible)
         for label in self.angle_labels:
             label.setVisible(self._visible)
+        self.circum_label.setVisible(self._visible and self.labels_visible)
+        self.area_label.setVisible(self._visible and self.labels_visible)
         if self._visible:
             self.update_labels()
+
+    def toggle_area_circ_labels(self) -> None:
+        self.labels_visible = not self.labels_visible
+        if self._visible:
+            self.circum_label.setVisible(self.labels_visible)
+            self.area_label.setVisible(self.labels_visible)
 
     def update_labels(self) -> None:
         self.update_angles()
@@ -176,6 +194,7 @@ class MeasureROI(pg.PolyLineROI):
             label = self.line_labels.pop()
             self._viewer.view.removeItem(label)
 
+        total_length = 0
         for i, (_, pos) in enumerate(positions):
             _, next_pos = positions[(i + 1) % len(positions)]
             pos = self._viewer.view.mapToView(pos)
@@ -184,15 +203,32 @@ class MeasureROI(pg.PolyLineROI):
             mid = (pos + next_pos) / 2
             if self.show_in_mm:
                 length = length * self.px_in_mm / self.n_px
+            total_length += length
             pos = self._viewer.view.mapToView(pos)
             if i < len(self.line_labels):
                 self.line_labels[i].setPos(mid.x(), mid.y())
                 self.line_labels[i].setText(f"{length:.2f}")
             else:
-                angle_label = pg.TextItem(f"{length:.2f}")
-                angle_label.setPos(mid.x(), mid.y())
-                self._viewer.view.addItem(angle_label)
-                self.line_labels.append(angle_label)
+                line_label = pg.TextItem(f"{length:.2f}")
+                line_label.setPos(mid.x(), mid.y())
+                self._viewer.view.addItem(line_label)
+                self.line_labels.append(line_label)
+
+        bounds = self.boundingRect().center() + self.pos()
+        points = [x for pol in self.shape().toFillPolygons() for x in pol]
+        area = 0
+        for i in range(len(points)-1):
+            area += points[i].x()*points[i+1].y()-points[i+1].x()*points[i].y()
+        self.circum_label.setText(f"Circ: {total_length:.2f}")
+        self.circ_box.setText(f"Circ: {total_length:.2f}")
+        self.circum_label.setPos(bounds.x(), bounds.y())
+        self.area_label.setText(f"Area: {-0.5 * area:.2f}")
+        self.area_box.setText(f"Area: {-0.5 * area:.2f}")
+        self.area_label.setPos(bounds.x(), bounds.y()+2)
+        rect = self.boundingRect()
+        self.bounding_rect_box.setText(
+            f"Bounding Rect: {rect.width():.2f} x {rect.height():.2f}"
+        )
 
 
 class ExtractionLine(pg.InfiniteLine):
@@ -383,7 +419,7 @@ class ExtractionPlot(pg.PlotWidget):
         self.plot(image)
 
     def plot(self, image: np.ndarray) -> None:
-        if image.ndim == 2:
+        if image.shape[1] == 3:
             if self._vert:
                 x_values = np.arange(image.shape[0])
                 self.plotItem.plot(image[:, 0], x_values, pen='r')
@@ -396,9 +432,9 @@ class ExtractionPlot(pg.PlotWidget):
         else:
             if self._vert:
                 x_values = np.arange(image.shape[0])
-                self.plotItem.plot(image, x_values, pen='gray')
+                self.plotItem.plot(image[:, 0], x_values, pen='gray')
             else:
-                self.plotItem.plot(image, pen='gray')
+                self.plotItem.plot(image[:, 0], pen='gray')
         if self._coupled is not None and self._mark_coupled_position:
             if self._vert:
                 x_values = np.arange(*self.plotItem.viewRange()[0])

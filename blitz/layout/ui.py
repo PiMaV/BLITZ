@@ -129,8 +129,6 @@ class UI_MainWindow(QWidget):
         self.v_plot.couple(self.h_plot)
         self.h_plot.couple(self.v_plot)
 
-        self.measure_roi = MeasureROI(self.image_viewer)
-
         self.roi_plot = TimePlot(
             self.dock_t_line,
             self.image_viewer,
@@ -487,23 +485,47 @@ class UI_MainWindow(QWidget):
         tools_layout.addWidget(roi_label)
         self.checkbox_measure_roi = QCheckBox("Show")
         tools_layout.addWidget(self.checkbox_measure_roi)
-        self.checkbox_mm = QCheckBox("Display in mm")
+        self.checkbox_mm = QCheckBox("Display in au")
         tools_layout.addWidget(self.checkbox_mm)
         self.spinbox_pixel = QSpinBox()
         self.spinbox_pixel.setPrefix("Pixels: ")
         self.spinbox_pixel.setMinimum(1)
-        self.spinbox_pixel.setMaximum(1000)
-        converter_layout = QHBoxLayout()
-        converter_layout.addWidget(self.spinbox_pixel)
+        self.spinbox_pixel.setMaximum(99_999)
         self.spinbox_mm = QDoubleSpinBox()
-        self.spinbox_mm.setPrefix("in mm: ")
-        self.spinbox_mm.setMinimum(1.0)
-        self.spinbox_mm.setMaximum(100_000.0)
+        self.spinbox_mm.setPrefix("in au: ")
+        self.spinbox_mm.setMinimum(0.000001)
+        self.spinbox_mm.setMaximum(999_999.0)
         self.spinbox_mm.setValue(1.0)
-        converter_layout.addWidget(self.spinbox_mm)
-        tools_layout.addLayout(converter_layout)
+        self.spinbox_mm.setSingleStep(0.01)
+        self.spinbox_mm.setDecimals(5)
+        self.textbox_area = QLineEdit("Area:")
+        self.textbox_area.setDisabled(True)
+        self.textbox_circ = QLineEdit("Circ:")
+        self.textbox_circ.setDisabled(True)
+        self.textbox_bounding_rect = QLineEdit("Bounding Rect:")
+        self.textbox_bounding_rect.setDisabled(True)
+        self.checkbox_show_circ_area_label = QCheckBox("Show Labels")
+        self.checkbox_show_circ_area_label.setChecked(True)
+        tools_layout.addWidget(self.spinbox_pixel)
+        tools_layout.addWidget(self.spinbox_mm)
+        hline = QFrame()
+        hline.setFrameShape(QFrame.Shape.HLine)
+        hline.setFrameShadow(QFrame.Shadow.Sunken)
+        tools_layout.addWidget(hline)
+        circ_area_lay = QHBoxLayout()
+        circ_area_lay.addWidget(self.textbox_circ)
+        circ_area_lay.addWidget(self.textbox_area)
+        tools_layout.addLayout(circ_area_lay)
+        tools_layout.addWidget(self.checkbox_show_circ_area_label)
+        tools_layout.addWidget(self.textbox_bounding_rect)
         tools_layout.addStretch()
         self.create_option_tab(tools_layout, "Tools")
+        self.measure_roi = MeasureROI(
+            self.image_viewer,
+            self.textbox_circ,
+            self.textbox_area,
+            self.textbox_bounding_rect,
+        )
 
         # --- PCA ---
         pca_layout = QVBoxLayout()

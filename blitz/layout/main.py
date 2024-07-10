@@ -191,6 +191,9 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_measure_roi.stateChanged.connect(
             self.ui.measure_roi.toggle
         )
+        self.ui.checkbox_show_circ_area_label.stateChanged.connect(
+            self.ui.measure_roi.toggle_area_circ_labels
+        )
         self.ui.checkbox_mm.stateChanged.connect(self.update_roi_settings)
         self.ui.spinbox_pixel.valueChanged.connect(self.update_roi_settings)
         self.ui.spinbox_mm.valueChanged.connect(self.update_roi_settings)
@@ -582,10 +585,12 @@ class MainWindow(QMainWindow):
             self.ui.checkbox_norm_subtract.setEnabled(True)
             self.ui.checkbox_norm_divide.setEnabled(True)
         if text == "-":
+            self.ui.checkbox_autofit.setChecked(True)
             with LoadingManager(self, f"Unpacking ..."):
                 self.ui.image_viewer.unravel()
             self.update_statusbar()
         else:
+            self.ui.checkbox_autofit.setChecked(False)
             with LoadingManager(self, f"Loading {text}...") as lm:
                 self.ui.image_viewer.reduce(text)
             self.update_statusbar()
