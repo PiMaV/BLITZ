@@ -106,7 +106,13 @@ class TimePlot(pg.PlotWidget):
 
 class MeasureROI(pg.PolyLineROI):
 
-    def __init__(self, viewer: ImageViewer, circ_box: QLineEdit, area_box: QLineEdit, bounding_rect_box: QLineEdit) -> None:
+    def __init__(
+        self,
+        viewer: ImageViewer,
+        circ_box: QLineEdit,
+        area_box: QLineEdit,
+        bounding_rect_box: QLineEdit,
+    ) -> None:
         self._viewer = viewer
         super().__init__([[0, 0], [0, 20], [10, 10]], closed=True)
         self.handleSize = 10
@@ -219,16 +225,19 @@ class MeasureROI(pg.PolyLineROI):
         area = 0
         for i in range(len(points)-1):
             area += points[i].x()*points[i+1].y()-points[i+1].x()*points[i].y()
+        if self.show_in_mm:
+            area = area * (self.px_in_mm / self.n_px)**2
         self.circum_label.setText(f"Circ: {total_length:.2f}")
         self.circ_box.setText(f"Circ: {total_length:.2f}")
         self.circum_label.setPos(bounds.x(), bounds.y())
-        self.area_label.setText(f"Area: {-0.5 * area:.2f}")
-        self.area_box.setText(f"Area: {-0.5 * area:.2f}")
+        self.area_label.setText(f"Area: {-0.5 * area:,.2f}")
+        self.area_box.setText(f"Area: {-0.5 * area:,.2f}")
         self.area_label.setPos(bounds.x(), bounds.y()+2)
         rect = self.boundingRect()
-        self.bounding_rect_box.setText(
-            f"Bounding Rect: {rect.width():.2f} x {rect.height():.2f}"
-        )
+        w, h = rect.width(), rect.height()
+        if self.show_in_mm:
+            w, h = w * self.px_in_mm / self.n_px, h * self.px_in_mm / self.n_px
+        self.bounding_rect_box.setText(f"Bounding Rect: {w:.2f} x {h:.2f}")
 
 
 class ExtractionLine(pg.InfiniteLine):

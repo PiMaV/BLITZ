@@ -1,12 +1,13 @@
 from dataclasses import dataclass
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 import numpy as np
 import pyqtgraph as pg
 
+from .. import settings
 from ..tools import log
-from .tools import sliding_mean_normalization, ensure_4d
-from . import ops #import ReduceDict, ReduceOperation, get
+from . import ops
+from .tools import ensure_4d, sliding_mean_normalization
 
 
 @dataclass(kw_only=True)
@@ -141,11 +142,6 @@ class ImageData:
         if window_lag is not None:
             window, lag = window_lag
             window_lag_img = sliding_mean_normalization(image, window, lag)
-            # window_lag_img = beta * np.apply_along_axis(lambda a: np.convolve(
-            #     a,
-            #     np.array([beta/window for _ in range(window)]+(lag+1)*[0]),
-            #     mode="valid",
-            # ), axis=0, arr=image)
         if bounds is None and reference is None and window_lag is None:
             return False
         if operation == "subtract":
@@ -193,6 +189,13 @@ class ImageData:
             slice(None, None), slice(x_start, x_stop), slice(y_start, y_stop),
         )
 
+    def mask_range(self, range_: tuple[int, int, int, int]) -> None:
+        self._mask = (
+            slice(None, None),
+            slice(range_[0], range_[1]),
+            slice(range_[2], range_[3]),
+        )
+
     def image_mask(self, mask: "ImageData") -> None:
         if (not mask.is_single_image()
                 or not mask.is_greyscale()
@@ -213,3 +216,24 @@ class ImageData:
 
     def flip_y(self) -> None:
         self._flipped_y = not self._flipped_y
+
+    def save_options(self) -> None:
+        settings.set("data/flipped_x", self._flipped_x)
+        settings.set("data/flipped_x", self._flipped_x)
+        settings.set("data/transposed", self._transposed)
+        if self._mask is not None:
+            settings.set("data/mask", self._mask)
+        if self._cropped is not None:
+            settings.set("data/cropped", self._cropped)
+
+    def load_options(self) -> None:
+        if settings.get("data/flipped_x"):
+            self.flip_x()
+        if settings.get("data/flipped_x"):
+            self.flip_y()
+        if settings.get("data/transposed"):
+            self.transpose()
+        if mask := settings.get("data/mask"):
+            self._mask = mask
+        if cropped := settings.get("data/cropped"):
+            self._cropped = cropped

@@ -3,8 +3,8 @@
     "action_open_folder": "Select a folder containing multiple (single-image) files.",
     "action_load_tof": "Load a tof .json file that is recorded additionally to the data.",
     "action_export": "Export the currently displayed images to the selected folder.",
-    "action_write_ini": "Writes an .ini file with all current configurations. Saving it to the same folder as the application will automatically load it at the next start.",
-    "action_select_ini": "Select an .ini file. Restart the application manually to apply all visual changes of the .ini file.",
+    "action_project_save": "Writes an .ini project file with all current configurations.",
+    "action_project_open": "Select an .ini project file.",
     "action_restart": "Manually restart the application.",
 
     "checkbox_autofit": "If checked, automatically adjusts the color lookup table to the displayed colors in the image. If negative values appear, this also switches to another gradient preset, which is useful for normalization.",

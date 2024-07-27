@@ -65,7 +65,12 @@ class ImageViewer(pg.ImageView):
         self.setAcceptDrops(True)
         self._fit_levels = True
         self._background_image: ImageData | None = None
-        self.load_data()
+        if (path := settings.get("data/path")) != "":
+            self.load_data(Path(path))
+            self.data.load_options()
+            self.update_image()
+        else:
+            self.load_data()
 
     @property
     def now(self) -> np.ndarray:
@@ -160,6 +165,9 @@ class ImageViewer(pg.ImageView):
 
     def set_image(self, img: ImageData) -> None:
         self.data = img
+        self.update_image()
+
+    def update_image(self) -> None:
         self.setImage(self.data.image)
         self.autoRange()
         self.image_size_changed.emit()

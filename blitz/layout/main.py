@@ -19,7 +19,7 @@ URL_GITHUB = QUrl("https://github.com/CodeSchmiedeHGW/BLITZ")
 URL_INP = QUrl("https://www.inp-greifswald.de/")
 
 
-def restart(self) -> None:
+def restart() -> None:
     QCoreApplication.exit(settings.get("app/restart_exit_code"))
 
 
@@ -33,23 +33,21 @@ class MainWindow(QMainWindow):
 
         self.last_file_dir = Path.cwd()
         self.last_file: str = ""
-        self._lut_file: str = ""
 
         self.tof_adapter = TOFAdapter(self.ui.roi_plot)
         self.pca_adapter = PCAAdapter(self.ui.image_viewer)
         self.setup_connections()
         self.reset_options()
 
-        if (file := settings.get("viewer/LUT_source")) != "":
+        if (lut := settings.get("viewer/LUT")):
             try:
-                with open(file, "r", encoding="utf-8") as f:
-                    lut_config = json.load(f)
-                self.ui.image_viewer.load_lut_config(lut_config)
-                self._lut_file = file
+                self.ui.image_viewer.load_lut_config(lut)
             except:
                 log("Failed to load LUT config given in the .ini file",
                     color="red")
 
+        self.ui.checkbox_roi.setChecked(False)
+        self.ui.checkbox_roi.setChecked(True)
         log("Welcome to BLITZ", color="pink")
 
     def setup_connections(self) -> None:
@@ -62,10 +60,8 @@ class MainWindow(QMainWindow):
         self.ui.action_open_folder.triggered.connect(self.browse_folder)
         self.ui.action_load_tof.triggered.connect(self.browse_tof)
         self.ui.action_export.triggered.connect(self.export)
-        self.ui.action_write_ini.triggered.connect(settings.export)
-        self.ui.action_write_ini.triggered.connect(self.sync_settings)
-        self.ui.action_select_ini.triggered.connect(settings.select)
-        self.ui.action_select_ini.triggered.connect(restart)
+        self.ui.action_project_save.triggered.connect(self.sync_settings)
+        self.ui.action_project_open.triggered.connect(self.load_settings)
         self.ui.action_restart.triggered.connect(restart)
         self.ui.action_link_inp.triggered.connect(
             lambda: QDesktopServices.openUrl(URL_INP)  # type: ignore
@@ -201,9 +197,9 @@ class MainWindow(QMainWindow):
 
     def reset_options(self) -> None:
         self.ui.button_apply_mask.setChecked(False)
-        self.ui.checkbox_flipx.setChecked(False)
-        self.ui.checkbox_flipy.setChecked(False)
-        self.ui.checkbox_transpose.setChecked(False)
+        self.ui.checkbox_flipx.setChecked(settings.get("data/flipped_x"))
+        self.ui.checkbox_flipy.setChecked(settings.get("data/flipped_y"))
+        self.ui.checkbox_transpose.setChecked(settings.get("data/transposed"))
         self.ui.combobox_reduce.setCurrentIndex(0)
         if self.ui.image_viewer.data.is_single_image():
             self.ui.combobox_reduce.setEnabled(False)
@@ -505,7 +501,6 @@ class MainWindow(QMainWindow):
                 with open(file, "r", encoding="utf-8") as f:
                     lut_config = json.load(f)
                 self.ui.image_viewer.load_lut_config(lut_config)
-                self._lut_file = file
             except:
                 log("LUT could not be loaded. Make sure it is an "
                     "appropriately structured '.json' file.", color="red")
@@ -525,7 +520,6 @@ class MainWindow(QMainWindow):
                     ensure_ascii=False,
                     indent=4,
                 )
-            self._lut_file = str(file)
 
     def start_web_connection(self) -> None:
         address = self.ui.address_edit.text()
@@ -554,8 +548,20 @@ class MainWindow(QMainWindow):
             self.ui.button_disconnect.setEnabled(False)
             self._web_connection.deleteLater()
 
-    def load_images_adapter(self, file_path: Optional[Path] = None) -> None:
-        self.load_images(Path(file_path) if file_path is not None else None)
+    def load_images_adapter(
+        self,
+        file_path: Optional[Path | str] = None,
+    ) -> None:
+        if isinstance(file_path, str):
+            file_path = Path(file_path)
+        if file_path is not None:
+            if file_path.suffix == ".ini":
+                settings.new_settings(file_path)
+                restart()
+            else:
+                self.load_images(file_path)
+        else:
+            self.load_images()
 
     def load_images(self, file_path: Optional[Path] = None) -> None:
         text = f"Loading {'...' if file_path is None else file_path}"
@@ -605,7 +611,15 @@ class MainWindow(QMainWindow):
         self.ui.measure_roi.update_labels()
 
     def sync_settings(self) -> None:
-        settings.set("viewer/LUT_source", self._lut_file)
+        if (path := settings.get("data/path")) != "":
+            path = Path(path)
+            self.last_file_dir = path.parent
+            self.last_file = path.name
+        settings.export()
+        settings.set("viewer/LUT", self.ui.image_viewer.get_lut_config())
+        self.ui.image_viewer.data.save_options()
+        if self.last_file != "":
+            settings.set("data/path", str(self.last_file_dir / self.last_file))
         screen_geometry = QApplication.primaryScreen().availableGeometry()
         settings.set(
             "window/relative_size",
@@ -616,3 +630,7 @@ class MainWindow(QMainWindow):
             self.ui.dock_area.saveState(),
         )
         settings.set("data/max_ram", self.ui.spinbox_max_ram.value())
+
+    def load_settings(self) -> None:
+        if settings.select():
+            restart()
