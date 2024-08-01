@@ -411,11 +411,10 @@ class ExtractionPlot(pg.PlotWidget):
         self._extractionline.change_width(width)
         self.draw_line()
 
-    def draw_line(self) -> None:
+    def extract_data(self) -> np.ndarray | None:
         p = int(self._extractionline.value())  # type: ignore
         if not (0 <= p < self._viewer.image.shape[1 if self._vert else 2]):
-            return
-        self.clear()
+            return None
         sp = slice(
             max(p - self._extractionline.width, 0),
             min(p + self._extractionline.width + 1,
@@ -425,12 +424,20 @@ class ExtractionPlot(pg.PlotWidget):
             image = self._viewer.now[sp, :].mean(axis=0)
         else:
             image = self._viewer.now[:, sp].mean(axis=1)
-        self.plot(image)
+        return image
 
-    def plot(self, image: np.ndarray) -> None:
+    def draw_line(self) -> None:
+        if (image := self.extract_data()) is not None:
+            self.clear()
+            self.plot(image)
+
+    def plot(self, image: np.ndarray, normed: bool = False, **kwargs) -> None:
         if image.shape[1] == 3:
             if self._vert:
-                x_values = np.arange(image.shape[0])
+                if normed:
+                    x_values = np.linspace(0, 1, image.shape[0])
+                else:
+                    x_values = np.arange(image.shape[0])
                 self.plotItem.plot(image[:, 0], x_values, pen='r')
                 self.plotItem.plot(image[:, 1], x_values, pen='g')
                 self.plotItem.plot(image[:, 2], x_values, pen='b')
@@ -440,7 +447,10 @@ class ExtractionPlot(pg.PlotWidget):
                 self.plotItem.plot(image[:, 2], pen='b')
         else:
             if self._vert:
-                x_values = np.arange(image.shape[0])
+                if normed:
+                    x_values = np.linspace(0, 1, image.shape[0])
+                else:
+                    x_values = np.arange(image.shape[0])
                 self.plotItem.plot(image[:, 0], x_values, pen='gray')
             else:
                 self.plotItem.plot(image[:, 0], pen='gray')

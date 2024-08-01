@@ -90,3 +90,8 @@ def sliding_mean_normalization(
             mean = mean + images[t+s+1]
         result[t] = mean / window
     return result
+
+
+def normalize(signal: np.ndarray, eps: float = 1e-10) -> np.ndarray:
+    min_ = np.min(signal)
+    return (signal - min_) / (np.max(signal) - min_ + eps)

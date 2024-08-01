@@ -11,9 +11,9 @@ from ..data.image import ImageData
 from ..data.web import WebDataLoader
 from ..tools import LoadingManager, get_available_ram, log
 from .pca import PCAAdapter
+from .rosee import ROSEEAdapter
 from .tof import TOFAdapter
 from .ui import UI_MainWindow
-
 
 URL_GITHUB = QUrl("https://github.com/CodeSchmiedeHGW/BLITZ")
 URL_INP = QUrl("https://www.inp-greifswald.de/")
@@ -36,6 +36,11 @@ class MainWindow(QMainWindow):
 
         self.tof_adapter = TOFAdapter(self.ui.roi_plot)
         self.pca_adapter = PCAAdapter(self.ui.image_viewer)
+        self.rosee_adapter = ROSEEAdapter(
+            self.ui.image_viewer,
+            self.ui.h_plot,
+            self.ui.v_plot,
+        )
         self.setup_connections()
         self.reset_options()
 
@@ -194,6 +199,7 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_pixel.valueChanged.connect(self.update_roi_settings)
         self.ui.spinbox_mm.valueChanged.connect(self.update_roi_settings)
         self.ui.button_pca.clicked.connect(self.toggle_pca)
+        self.ui.checkbox_rosee.stateChanged.connect(self.toggle_rosee)
 
     def reset_options(self) -> None:
         self.ui.button_apply_mask.setChecked(False)
@@ -427,6 +433,17 @@ class MainWindow(QMainWindow):
                 self.pca_adapter.show_reconstruction()
         else:
             self.pca_adapter.hide()
+
+    def toggle_rosee(self) -> None:
+        if not self.rosee_adapter.is_visible:
+            self.rosee_adapter.toggle(
+                self.ui.combobox_rosee.currentText()[0]  # type: ignore
+            )
+            self.rosee_adapter.update()
+        else:
+            self.rosee_adapter.toggle()
+            self.ui.h_plot.draw_line()
+            self.ui.v_plot.draw_line()
 
     def search_background_file(self) -> None:
         if self.ui.button_bg_input.text() == "[Select]":
