@@ -199,7 +199,8 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_pixel.valueChanged.connect(self.update_roi_settings)
         self.ui.spinbox_mm.valueChanged.connect(self.update_roi_settings)
         self.ui.button_pca.clicked.connect(self.toggle_pca)
-        self.ui.checkbox_rosee.stateChanged.connect(self.toggle_rosee)
+        self.ui.checkbox_rosee_h.stateChanged.connect(self.toggle_rosee)
+        self.ui.checkbox_rosee_v.stateChanged.connect(self.toggle_rosee)
 
     def reset_options(self) -> None:
         self.ui.button_apply_mask.setChecked(False)
@@ -435,15 +436,11 @@ class MainWindow(QMainWindow):
             self.pca_adapter.hide()
 
     def toggle_rosee(self) -> None:
-        if not self.rosee_adapter.is_visible:
-            self.rosee_adapter.toggle(
-                self.ui.combobox_rosee.currentText()[0]  # type: ignore
-            )
-            self.rosee_adapter.update()
-        else:
-            self.rosee_adapter.toggle()
-            self.ui.h_plot.draw_line()
-            self.ui.v_plot.draw_line()
+        self.rosee_adapter.toggle(
+            horizontal=self.ui.checkbox_rosee_h.isChecked(),
+            vertical=self.ui.checkbox_rosee_v.isChecked(),
+        )
+        self.rosee_adapter.update()
 
     def search_background_file(self) -> None:
         if self.ui.button_bg_input.text() == "[Select]":

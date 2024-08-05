@@ -20,13 +20,8 @@ class ROSEEAdapter:
         self.viewer = viewer
         self.h_plot = h_plot
         self.v_plot = v_plot
-        self.roi = pg.LineSegmentROI(
-            [[0, 0], [100, 100]],
-            pen=pg.mkPen('r', style=Qt.PenStyle.DotLine),
-        )
-        self.viewer.addItem(self.roi)
-        self.roi.hide()
-        self._show: Literal["h", "v"] | None = None
+        self._show_vertical: bool = False
+        self._show_horizontal: bool = False
         self.h_plot._extractionline.sigPositionChanged.connect(self.update)
         self.v_plot._extractionline.sigPositionChanged.connect(self.update)
         self.viewer.timeLine.sigPositionChanged.connect(self.update)
@@ -35,35 +30,49 @@ class ROSEEAdapter:
 
     @property
     def is_visible(self) -> bool:
-        return self._show is not None
+        return self._show_vertical or self._show_horizontal
 
-    def toggle(self, show: Optional[Literal["h", "v"]] = None) -> None:
-        self._show = show
+    def toggle(self, horizontal: bool = False, vertical: bool = False) -> None:
+        self._show_horizontal = horizontal
+        self._show_vertical = vertical
 
     def update(self) -> None:
-        if not self.is_visible:
-            return
-        if self._show == "h":
-            plot = self.h_plot
+        if self._show_horizontal:
+            self._update(self.h_plot)
         else:
-            plot = self.v_plot
+            self.h_plot.draw_line()
+        if self._show_vertical:
+            self._update(self.v_plot)
+        else:
+            self.v_plot.draw_line()
+
+    def _update(self, plot: ExtractionPlot) -> None:
         signal = plot.extract_data()
         if signal is None:
             return
         if signal.shape[1] > 1:
             weights = np.array([0.2989, 0.5870, 0.1140])
             signal = np.sum(signal * weights, axis=-1)
-            print(signal.shape)
+        else:
+            signal = signal.squeeze(1)
         signal, cumsum, fluctuation, indices = self.calculate(signal)
         plot.plotItem.clear()
         plot.plot(
-            signal[..., np.newaxis], normed=True, pen="w", name="norm. Signal"
+            signal[..., np.newaxis],
+            normed=True,
+            pen=pg.mkPen('w'),
+            name="norm. Signal",
         )
         plot.plot(
-            cumsum[..., np.newaxis], normed=True, pen="c", name="norm. Cumsum"
+            cumsum[..., np.newaxis],
+            normed=True,
+            pen=pg.mkPen('c', style=Qt.PenStyle.DashDotDotLine),
+            name="norm. Cumsum",
         )
         plot.plot(
-            fluctuation[..., np.newaxis], normed=True, pen="r",
+            fluctuation[..., np.newaxis],
+            normed=True,
+            pen=pg.mkPen('r', style=Qt.PenStyle.DashDotDotLine),
             name="Fluctuation Cumsum",
         )
 
@@ -97,7 +106,9 @@ class ROSEEAdapter:
             event_indices = (start_index, max_slope_index, end_index)
         else:
             min_index = np.argmin(fluctuation[:max_slope_index])
-            max_index = np.argmax(fluctuation[max_slope_index:]) + max_slope_index
+            max_index = (
+                np.argmax(fluctuation[max_slope_index:]) + max_slope_index
+            )
             if min_index >= max_slope_index or max_index <= max_slope_index:
                 event_indices = (0, 0, 0)
             else:
@@ -106,4 +117,3 @@ class ROSEEAdapter:
                 event_indices = (start_index, max_slope_index, end_index)
 
         return norm_signal, norm_cumsum, fluctuation, event_indices
-

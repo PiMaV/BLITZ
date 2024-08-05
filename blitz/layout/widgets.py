@@ -431,13 +431,10 @@ class ExtractionPlot(pg.PlotWidget):
             self.clear()
             self.plot(image)
 
-    def plot(self, image: np.ndarray, normed: bool = False, **kwargs) -> None:
+    def plot(self, image: np.ndarray, **kwargs) -> None:
         if image.shape[1] == 3:
             if self._vert:
-                if normed:
-                    x_values = np.linspace(0, 1, image.shape[0])
-                else:
-                    x_values = np.arange(image.shape[0])
+                x_values = np.arange(image.shape[0])
                 self.plotItem.plot(image[:, 0], x_values, pen='r')
                 self.plotItem.plot(image[:, 1], x_values, pen='g')
                 self.plotItem.plot(image[:, 2], x_values, pen='b')
@@ -447,13 +444,16 @@ class ExtractionPlot(pg.PlotWidget):
                 self.plotItem.plot(image[:, 2], pen='b')
         else:
             if self._vert:
-                if normed:
-                    x_values = np.linspace(0, 1, image.shape[0])
-                else:
-                    x_values = np.arange(image.shape[0])
-                self.plotItem.plot(image[:, 0], x_values, pen='gray')
+                x_values = np.arange(image.shape[0])
+                self.plotItem.plot(
+                    image[:, 0], x_values,
+                    pen=kwargs.get("pen", 'gray'),
+                )
             else:
-                self.plotItem.plot(image[:, 0], pen='gray')
+                self.plotItem.plot(
+                    image[:, 0],
+                    pen=kwargs.get("pen", 'gray'),
+                )
         if self._coupled is not None and self._mark_coupled_position:
             if self._vert:
                 x_values = np.arange(*self.plotItem.viewRange()[0])
