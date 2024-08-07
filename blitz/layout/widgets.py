@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 import pyqtgraph as pg
 from PyQt5.QtCore import QPointF, QSize, Qt
@@ -383,7 +385,9 @@ class ExtractionPlot(pg.PlotWidget):
 
         self._extractionline = ExtractionLine(viewer=viewer, vertical=vertical)
         self._extractionline.sigPositionChanged.connect(self.draw_line)
+        self._extractionline.sigPositionChanged.connect(self.draw_indicator)
         self._viewer.timeLine.sigPositionChanged.connect(self.draw_line)
+        self._viewer.timeLine.sigPositionChanged.connect(self.draw_indicator)
         self._viewer.image_changed.connect(self.draw_line)
         self._viewer.image_size_changed.connect(self.center_line)
         self._coupled: ExtractionPlot | None = None
@@ -431,29 +435,37 @@ class ExtractionPlot(pg.PlotWidget):
             self.clear()
             self.plot(image)
 
-    def plot(self, image: np.ndarray, **kwargs) -> None:
-        if image.shape[1] == 3:
+    def plot(
+        self,
+        image: np.ndarray,
+        x_values: Optional[np.ndarray] = None,
+        **kwargs,
+    ) -> None:
+        if x_values is None:
+            x_values = np.arange(image.shape[0])
+        image = image.squeeze()
+        x_values = x_values.squeeze()
+        self.plot_x_y(x_values, image, **kwargs)
+
+    def plot_x_y(self, x: np.ndarray, y: np.ndarray, **kwargs) -> None:
+        if y.ndim == 2:
+            kwargs.pop("pen", "")
             if self._vert:
-                x_values = np.arange(image.shape[0])
-                self.plotItem.plot(image[:, 0], x_values, pen='r')
-                self.plotItem.plot(image[:, 1], x_values, pen='g')
-                self.plotItem.plot(image[:, 2], x_values, pen='b')
+                self.plotItem.plot(y[:, 0], x, pen='r', **kwargs)
+                self.plotItem.plot(y[:, 1], x, pen='g', **kwargs)
+                self.plotItem.plot(y[:, 2], x, pen='b', **kwargs)
             else:
-                self.plotItem.plot(image[:, 0], pen='r')
-                self.plotItem.plot(image[:, 1], pen='g')
-                self.plotItem.plot(image[:, 2], pen='b')
+                self.plotItem.plot(x, y[:, 0], pen='r', **kwargs)
+                self.plotItem.plot(x, y[:, 1], pen='g', **kwargs)
+                self.plotItem.plot(x, y[:, 2], pen='b', **kwargs)
         else:
+            pen = kwargs.pop("pen", "gray")
             if self._vert:
-                x_values = np.arange(image.shape[0])
-                self.plotItem.plot(
-                    image[:, 0], x_values,
-                    pen=kwargs.get("pen", 'gray'),
-                )
+                self.plotItem.plot(y, x, pen=pen, **kwargs)
             else:
-                self.plotItem.plot(
-                    image[:, 0],
-                    pen=kwargs.get("pen", 'gray'),
-                )
+                self.plotItem.plot(x, y, pen=pen, **kwargs)
+
+    def draw_indicator(self) -> None:
         if self._coupled is not None and self._mark_coupled_position:
             if self._vert:
                 x_values = np.arange(*self.plotItem.viewRange()[0])
@@ -469,6 +481,9 @@ class ExtractionPlot(pg.PlotWidget):
                     x_values,
                     pen=pg.mkPen("r", style=Qt.PenStyle.DashLine),
                 )
+
+    def get_translated_pos(self, x: int, y: int) -> tuple[int, int]:
+        return (x, y) if not self._vert else (y, x)
 
     def toggle_line(self) -> None:
         self._extractionline.toggle()
