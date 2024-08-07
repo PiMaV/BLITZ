@@ -195,6 +195,9 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_show_circ_area_label.stateChanged.connect(
             self.ui.measure_roi.toggle_area_circ_labels
         )
+        self.ui.checkbox_show_bounding_rect.stateChanged.connect(
+            self.ui.measure_roi.toggle_bounding_rect
+        )
         self.ui.checkbox_mm.stateChanged.connect(self.update_roi_settings)
         self.ui.spinbox_pixel.valueChanged.connect(self.update_roi_settings)
         self.ui.spinbox_mm.valueChanged.connect(self.update_roi_settings)

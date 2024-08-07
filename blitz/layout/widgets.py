@@ -137,6 +137,13 @@ class MeasureROI(pg.PolyLineROI):
         self.bounding_rect_box = bounding_rect_box
         self.labels_visible = True
 
+        self.bounding_rect = pg.RectROI([0, 0], [10, 20], movable=False)
+        self._viewer.view.addItem(self.bounding_rect)
+        self.bounding_rect.setPen(color=(180, 180, 0, 80), width=2)
+        self.bounding_rect.removeHandle(0)
+        self._show_bounding_rect = False
+        self.sigRegionChanged.connect(self.update_bounding_rect)
+
         self._viewer.view.addItem(self)
         self.setPen(color=(128, 128, 0, 100), width=3)
         self._visible = True
@@ -148,11 +155,21 @@ class MeasureROI(pg.PolyLineROI):
         width = self._viewer.image.shape[1]
         self.toggle()
         self.setPoints([[0, 0], [0, 0.5*height], [0.5*width, 0.25*height]])
+        self.update_bounding_rect()
         self.toggle()
+
+    def toggle_bounding_rect(self) -> None:
+        self._show_bounding_rect = not self._show_bounding_rect
+        self.bounding_rect.setVisible(
+            self._visible and self._show_bounding_rect
+        )
 
     def toggle(self) -> None:
         self._visible = not self._visible
         self.setVisible(self._visible)
+        self.bounding_rect.setVisible(
+            self._visible and self._show_bounding_rect
+        )
         for label in self.line_labels:
             label.setVisible(self._visible)
         for label in self.angle_labels:
@@ -171,6 +188,14 @@ class MeasureROI(pg.PolyLineROI):
     def update_labels(self) -> None:
         self.update_angles()
         self.update_lines()
+
+    def update_bounding_rect(self) -> None:
+        bound = self.boundingRect()
+        pos = self.getLocalHandlePositions()
+        left = min([p[1].x() for p in pos])
+        top = min([p[1].y() for p in pos])
+        self.bounding_rect.setPos(self.mapToView(QPointF(left, top)))
+        self.bounding_rect.setSize(bound.size())
 
     def update_angles(self) -> None:
         positions = self.getSceneHandlePositions()

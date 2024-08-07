@@ -508,6 +508,8 @@ class UI_MainWindow(QWidget):
         self.textbox_circ.setDisabled(True)
         self.textbox_bounding_rect = QLineEdit("Bounding Rect:")
         self.textbox_bounding_rect.setDisabled(True)
+        self.checkbox_show_bounding_rect = QCheckBox("Show Bounding Rect")
+        self.checkbox_show_bounding_rect.setChecked(False)
         self.checkbox_show_circ_area_label = QCheckBox("Show Labels")
         self.checkbox_show_circ_area_label.setChecked(True)
         tools_layout.addWidget(self.spinbox_pixel)
@@ -520,6 +522,7 @@ class UI_MainWindow(QWidget):
         tools_layout.addWidget(self.textbox_area)
         tools_layout.addWidget(self.checkbox_show_circ_area_label)
         tools_layout.addWidget(self.textbox_bounding_rect)
+        tools_layout.addWidget(self.checkbox_show_bounding_rect)
         tools_layout.addStretch()
         self.create_option_tab(tools_layout, "Tools")
         self.measure_roi = MeasureROI(
