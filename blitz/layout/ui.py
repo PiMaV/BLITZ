@@ -532,25 +532,6 @@ class UI_MainWindow(QWidget):
             self.textbox_bounding_rect,
         )
 
-        # --- PCA ---
-        pca_layout = QVBoxLayout()
-        label_pca = QLabel("PCA")
-        label_pca.setStyleSheet(style_heading)
-        pca_layout.addWidget(label_pca)
-        self.spinbox_pcacomp = QSpinBox()
-        self.spinbox_pcacomp.setPrefix("Components: ")
-        self.spinbox_pcacomp.setMinimum(1)
-        self.spinbox_pcacomp.setMaximum(1)
-        pca_layout.addWidget(self.spinbox_pcacomp)
-        self.combobox_pca = QComboBox()
-        self.combobox_pca.addItem("Reconstruction")
-        self.combobox_pca.addItem("Components")
-        pca_layout.addWidget(self.combobox_pca)
-        self.button_pca = QPushButton("Show / Hide")
-        pca_layout.addWidget(self.button_pca)
-        pca_layout.addStretch()
-        self.create_option_tab(pca_layout, "PCA")
-
         # --- ROSEE ---
         rosee_layout = QVBoxLayout()
         label_rosee = QLabel("RoSEE")
