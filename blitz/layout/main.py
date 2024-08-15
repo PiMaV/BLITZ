@@ -204,6 +204,19 @@ class MainWindow(QMainWindow):
         self.ui.button_pca.clicked.connect(self.toggle_pca)
         self.ui.checkbox_rosee_h.stateChanged.connect(self.toggle_rosee)
         self.ui.checkbox_rosee_v.stateChanged.connect(self.toggle_rosee)
+        self.ui.checkbox_rosee_local_extrema.stateChanged.connect(
+            self.toggle_rosee
+        )
+        self.ui.spinbox_rosee_smoothing.valueChanged.connect(self.toggle_rosee)
+        self.ui.h_plot._extractionline.sigPositionChanged.connect(
+            self.toggle_rosee
+        )
+        self.ui.v_plot._extractionline.sigPositionChanged.connect(
+            self.toggle_rosee
+        )
+        self.ui.image_viewer.timeLine.sigPositionChanged.connect(
+            self.toggle_rosee
+        )
 
     def reset_options(self) -> None:
         self.ui.button_apply_mask.setChecked(False)
@@ -268,6 +281,10 @@ class MainWindow(QMainWindow):
         )
         self.ui.spinbox_pcacomp.setMaximum(self.ui.image_viewer.data.n_images)
         self.ui.spinbox_pcacomp.setValue(self.ui.image_viewer.data.n_images)
+        self.ui.spinbox_rosee_smoothing.setValue(0)
+        self.ui.spinbox_rosee_smoothing.setMaximum(
+            min(self.ui.image_viewer.data.shape)
+        )
 
     def update_norm_range_labels(self) -> None:
         norm_range_ = self.ui.roi_plot.norm_range.getRegion()
@@ -443,7 +460,10 @@ class MainWindow(QMainWindow):
             horizontal=self.ui.checkbox_rosee_h.isChecked(),
             vertical=self.ui.checkbox_rosee_v.isChecked(),
         )
-        self.rosee_adapter.update()
+        self.rosee_adapter.update(
+            use_local_extrema=self.ui.checkbox_rosee_local_extrema.isChecked(),
+            smoothing=self.ui.spinbox_rosee_smoothing.value(),
+        )
 
     def search_background_file(self) -> None:
         if self.ui.button_bg_input.text() == "[Select]":

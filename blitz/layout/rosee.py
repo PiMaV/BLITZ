@@ -1,12 +1,10 @@
-from typing import Literal, Optional
-
 from PyQt5.QtCore import Qt
 import numpy as np
 import pyqtgraph as pg
 
 from .viewer import ImageViewer
 from .widgets import ExtractionPlot
-from ..data.tools import normalize
+from ..data.tools import unify_range
 
 
 class ROSEEAdapter:
@@ -22,9 +20,6 @@ class ROSEEAdapter:
         self.v_plot = v_plot
         self._show_vertical: bool = False
         self._show_horizontal: bool = False
-        self.h_plot._extractionline.sigPositionChanged.connect(self.update)
-        self.v_plot._extractionline.sigPositionChanged.connect(self.update)
-        self.viewer.timeLine.sigPositionChanged.connect(self.update)
         self._components_shown = False
         self._reconstruction_shown = False
 
@@ -36,17 +31,22 @@ class ROSEEAdapter:
         self._show_horizontal = horizontal
         self._show_vertical = vertical
 
-    def update(self) -> None:
+    def update(self, use_local_extrema: bool, smoothing: int) -> None:
         if self._show_horizontal:
-            self._update(self.h_plot)
+            self._update(self.h_plot, use_local_extrema, smoothing)
         else:
             self.h_plot.draw_line()
         if self._show_vertical:
-            self._update(self.v_plot)
+            self._update(self.v_plot, use_local_extrema, smoothing)
         else:
             self.v_plot.draw_line()
 
-    def _update(self, plot: ExtractionPlot) -> None:
+    def _update(
+        self,
+        plot: ExtractionPlot,
+        use_local_extrema: bool,
+        smoothing: int,
+    ) -> None:
         signal = plot.extract_data()
         if signal is None:
             return
@@ -55,24 +55,27 @@ class ROSEEAdapter:
             signal = np.sum(signal * weights, axis=-1)
         else:
             signal = signal.squeeze(1)
-        signal, cumsum, fluctuation, indices = self.calculate(signal)
+        cumsum, fluctuation, indices = self.calculate(
+            signal,
+            use_local_extrema=use_local_extrema,
+            smoothing=smoothing,
+        )
         indices = indices.astype(int)
+
+        signal, cumsum, fluctuation = unify_range(signal, cumsum, fluctuation)
         plot.plotItem.clear()
         plot.plot(
             signal[..., np.newaxis],
-            normed=True,
             pen=pg.mkPen('w'),
             name="norm. Signal",
         )
         plot.plot(
             cumsum[..., np.newaxis],
-            normed=True,
             pen=pg.mkPen('c', style=Qt.PenStyle.DashDotDotLine),
             name="norm. Cumsum",
         )
         plot.plot(
             fluctuation[..., np.newaxis],
-            normed=True,
             pen=pg.mkPen('r', style=Qt.PenStyle.DashDotDotLine),
             name="Fluctuation Cumsum",
         )
@@ -128,11 +131,17 @@ class ROSEEAdapter:
     def calculate(
         self,
         signal: np.ndarray,
-        use_local_extrema: bool = False,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        norm_signal = normalize(signal)
-        norm_cumsum = normalize(np.cumsum(norm_signal))
-        fluctuation = normalize(np.cumsum(norm_signal - norm_signal.mean()))
+        use_local_extrema: bool = True,
+        smoothing: int = 0,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        cumsum = np.cumsum(signal)
+        fluctuation = np.cumsum(signal - signal.mean())
+        if smoothing > 1:
+            fluctuation = np.convolve(
+                np.pad(fluctuation, smoothing // 2, mode="reflect"),
+                np.ones(smoothing) / smoothing,
+                mode="same",
+            )[smoothing // 2: -(smoothing) // 2]
 
         diff_fluct = np.diff(fluctuation)
         max_slope_index = int(np.argmax(diff_fluct))
@@ -166,5 +175,4 @@ class ROSEEAdapter:
                 event_indices = np.array(
                     (start_index, max_slope_index, end_index)
                 )
-
-        return norm_signal, norm_cumsum, fluctuation, event_indices
+        return cumsum, fluctuation, event_indices
