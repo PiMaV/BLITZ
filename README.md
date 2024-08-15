@@ -9,8 +9,7 @@ BLITZ offers:
 - powerful matrix-based image processing capabilities, allowing for instant statistical calculations and image manipulations.
 
 ## Download the Latest Release for Windows
-[Most recent
-release](https://github.com/CodeSchmiedeHGW/BLITZ/releases/latest)
+[Most recent release](https://github.com/CodeSchmiedeHGW/BLITZ/releases/latest)
 
 ## Documentation and examples
 
