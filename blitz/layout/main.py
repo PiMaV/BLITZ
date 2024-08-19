@@ -38,6 +38,10 @@ class MainWindow(QMainWindow):
             self.ui.image_viewer,
             self.ui.h_plot,
             self.ui.v_plot,
+            (self.ui.textbox_rosee_interval_h,
+             self.ui.textbox_rosee_interval_v),
+            (self.ui.textbox_rosee_slope_h,
+             self.ui.textbox_rosee_slope_v),
         )
         self.setup_connections()
         self.reset_options()
@@ -205,6 +209,12 @@ class MainWindow(QMainWindow):
             self.toggle_rosee
         )
         self.ui.spinbox_rosee_smoothing.valueChanged.connect(self.toggle_rosee)
+        self.ui.checkbox_rosee_normalize.stateChanged.connect(
+            self.toggle_rosee
+        )
+        self.ui.checkbox_rosee_show_indices.stateChanged.connect(
+            self.toggle_rosee
+        )
         self.ui.h_plot._extractionline.sigPositionChanged.connect(
             self.toggle_rosee
         )
@@ -439,6 +449,8 @@ class MainWindow(QMainWindow):
         self.rosee_adapter.update(
             use_local_extrema=self.ui.checkbox_rosee_local_extrema.isChecked(),
             smoothing=self.ui.spinbox_rosee_smoothing.value(),
+            normalized=self.ui.checkbox_rosee_normalize.isChecked(),
+            show_indices=self.ui.checkbox_rosee_show_indices.isChecked(),
         )
 
     def search_background_file(self) -> None:

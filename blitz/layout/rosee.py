@@ -1,10 +1,11 @@
-from PyQt5.QtCore import Qt
 import numpy as np
 import pyqtgraph as pg
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QLineEdit
 
+from ..data.tools import normalize, unify_range
 from .viewer import ImageViewer
 from .widgets import ExtractionPlot
-from ..data.tools import unify_range
 
 
 class ROSEEAdapter:
@@ -14,10 +15,14 @@ class ROSEEAdapter:
         viewer: ImageViewer,
         h_plot: ExtractionPlot,
         v_plot: ExtractionPlot,
+        interval_edit: tuple[QLineEdit, QLineEdit],
+        slope_edit: tuple[QLineEdit, QLineEdit],
     ) -> None:
         self.viewer = viewer
         self.h_plot = h_plot
         self.v_plot = v_plot
+        self.interval_edit = interval_edit
+        self.slope_edit = slope_edit
         self._show_vertical: bool = False
         self._show_horizontal: bool = False
         self._components_shown = False
@@ -31,21 +36,47 @@ class ROSEEAdapter:
         self._show_horizontal = horizontal
         self._show_vertical = vertical
 
-    def update(self, use_local_extrema: bool, smoothing: int) -> None:
+    def update(
+        self,
+        use_local_extrema: bool,
+        smoothing: int,
+        normalized: bool,
+        show_indices: bool,
+    ) -> None:
         if self._show_horizontal:
-            self._update(self.h_plot, use_local_extrema, smoothing)
+            self._update(
+                self.h_plot,
+                self.interval_edit[0],
+                self.slope_edit[0],
+                use_local_extrema,
+                smoothing,
+                normalized,
+                show_indices,
+            )
         else:
             self.h_plot.draw_line()
         if self._show_vertical:
-            self._update(self.v_plot, use_local_extrema, smoothing)
+            self._update(
+                self.v_plot,
+                self.interval_edit[1],
+                self.slope_edit[1],
+                use_local_extrema,
+                smoothing,
+                normalized,
+                show_indices,
+            )
         else:
             self.v_plot.draw_line()
 
     def _update(
         self,
         plot: ExtractionPlot,
+        interval_edit: QLineEdit,
+        slope_edit: QLineEdit,
         use_local_extrema: bool,
         smoothing: int,
+        normalized: bool,
+        show_indices: bool,
     ) -> None:
         signal = plot.extract_data()
         if signal is None:
@@ -61,6 +92,10 @@ class ROSEEAdapter:
             smoothing=smoothing,
         )
         indices = indices.astype(int)
+        if normalized:
+            signal = normalize(signal)
+            cumsum = normalize(cumsum)
+            fluctuation = normalize(fluctuation)
 
         signal, cumsum, fluctuation = unify_range(signal, cumsum, fluctuation)
         plot.plotItem.clear()
@@ -80,53 +115,58 @@ class ROSEEAdapter:
             name="Fluctuation Cumsum",
         )
 
+        interval_edit.setText(f"[{indices[0], indices[2]}]")
+        slope_edit.setText(f"eye: {indices[1]}")
+
         plot.plot_x_y(
             indices[0:1],
             fluctuation[indices[0]:indices[0]+1],
             pen=None,
             symbol='o',
-            symbolBrush="m",
+            symbolBrush="g",
             name='Min Index',
         )
-        text_min = pg.TextItem(
-            text=str(indices[0]),
-            color='w',
-            anchor=(.5, 0),
-        )
-        text_min.setPos(*plot.get_translated_pos(indices[0], 0))
-        plot.addItem(text_min)
-
         plot.plot_x_y(
             indices[1:2],
             fluctuation[indices[1]:indices[1]+1],
             pen=None,
             symbol='t',
-            symbolBrush="b",
+            symbolBrush="orange",
             name='Max Slope Index',
         )
-        text_max_slope = pg.TextItem(
-            text=str(indices[1]),
-            color='w',
-            anchor=(.5, 0),
-        )
-        text_max_slope.setPos(*plot.get_translated_pos(indices[1], 0))
-        plot.addItem(text_max_slope)
-
         plot.plot_x_y(
-            indices[2:3],
-            fluctuation[indices[2]:indices[2]+1],
-            pen=None,
-            symbol='s',
-            symbolBrush="m",
-            name='Max Index',
+                indices[2:3],
+                fluctuation[indices[2]:indices[2]+1],
+                pen=None,
+                symbol='o',
+                symbolBrush="g",
+                name='Max Index',
         )
-        text_max = pg.TextItem(
-            text=str(indices[2]),
-            color='w',
-            anchor=(.5, 0),
-        )
-        text_max.setPos(*plot.get_translated_pos(indices[2], 0))
-        plot.addItem(text_max)
+
+        if show_indices:
+            text_min = pg.TextItem(
+                text=str(indices[0]),
+                color='g',
+                anchor=(.5, 0),
+            )
+            text_min.setPos(*plot.get_translated_pos(indices[0], 0))
+            plot.addItem(text_min)
+
+            text_max_slope = pg.TextItem(
+                text=str(indices[1]),
+                color='orange',
+                anchor=(.5, 0),
+            )
+            text_max_slope.setPos(*plot.get_translated_pos(indices[1], 0))
+            plot.addItem(text_max_slope)
+
+            text_max = pg.TextItem(
+                text=str(indices[2]),
+                color='g',
+                anchor=(.5, 0),
+            )
+            text_max.setPos(*plot.get_translated_pos(indices[2], 0))
+            plot.addItem(text_max)
 
     def calculate(
         self,
