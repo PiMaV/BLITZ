@@ -1,3 +1,5 @@
+from typing import Literal
+
 import numpy as np
 import pyqtgraph as pg
 from PyQt5.QtCore import Qt
@@ -45,9 +47,7 @@ class ROSEEAdapter:
     ) -> None:
         if self._show_horizontal:
             self._update(
-                self.h_plot,
-                self.interval_edit[0],
-                self.slope_edit[0],
+                "h",
                 use_local_extrema,
                 smoothing,
                 normalized,
@@ -55,11 +55,11 @@ class ROSEEAdapter:
             )
         else:
             self.h_plot.draw_line()
+            self.interval_edit[0].setText("")
+            self.slope_edit[0].setText("eye: ")
         if self._show_vertical:
             self._update(
-                self.v_plot,
-                self.interval_edit[1],
-                self.slope_edit[1],
+                "v",
                 use_local_extrema,
                 smoothing,
                 normalized,
@@ -67,17 +67,18 @@ class ROSEEAdapter:
             )
         else:
             self.v_plot.draw_line()
+            self.interval_edit[1].setText("")
+            self.slope_edit[1].setText("eye: ")
 
     def _update(
         self,
-        plot: ExtractionPlot,
-        interval_edit: QLineEdit,
-        slope_edit: QLineEdit,
+        orientation: Literal["h", "v"],
         use_local_extrema: bool,
         smoothing: int,
         normalized: bool,
         show_indices: bool,
     ) -> None:
+        plot = self.h_plot if orientation == "h" else self.v_plot
         signal = plot.extract_data()
         if signal is None:
             return
@@ -115,8 +116,12 @@ class ROSEEAdapter:
             name="Fluctuation Cumsum",
         )
 
-        interval_edit.setText(f"[{indices[0], indices[2]}]")
-        slope_edit.setText(f"eye: {indices[1]}")
+        self.interval_edit[0 if orientation == "h" else 1].setText(
+            f"[{indices[0], indices[2]}]"
+        )
+        self.slope_edit[0 if orientation == "h" else 1].setText(
+            f"eye: {indices[1]}"
+        )
 
         plot.plot_x_y(
             indices[0:1],
@@ -147,7 +152,7 @@ class ROSEEAdapter:
             text_min = pg.TextItem(
                 text=str(indices[0]),
                 color='g',
-                anchor=(.5, 0),
+                anchor=(.5, 1) if orientation == "h" else (1, .5),
             )
             text_min.setPos(*plot.get_translated_pos(indices[0], 0))
             plot.addItem(text_min)
@@ -155,7 +160,7 @@ class ROSEEAdapter:
             text_max_slope = pg.TextItem(
                 text=str(indices[1]),
                 color='orange',
-                anchor=(.5, 0),
+                anchor=(.5, 1) if orientation == "h" else (1, .5),
             )
             text_max_slope.setPos(*plot.get_translated_pos(indices[1], 0))
             plot.addItem(text_max_slope)
@@ -163,7 +168,7 @@ class ROSEEAdapter:
             text_max = pg.TextItem(
                 text=str(indices[2]),
                 color='g',
-                anchor=(.5, 0),
+                anchor=(.5, 1) if orientation == "h" else (1, .5),
             )
             text_max.setPos(*plot.get_translated_pos(indices[2], 0))
             plot.addItem(text_max)
