@@ -10,7 +10,6 @@ from .. import __version__, settings
 from ..data.image import ImageData
 from ..data.web import WebDataLoader
 from ..tools import LoadingManager, get_available_ram, log
-from .pca import PCAAdapter
 from .rosee import ROSEEAdapter
 from .tof import TOFAdapter
 from .ui import UI_MainWindow
@@ -35,11 +34,14 @@ class MainWindow(QMainWindow):
         self.last_file: str = ""
 
         self.tof_adapter = TOFAdapter(self.ui.roi_plot)
-        self.pca_adapter = PCAAdapter(self.ui.image_viewer)
         self.rosee_adapter = ROSEEAdapter(
             self.ui.image_viewer,
             self.ui.h_plot,
             self.ui.v_plot,
+            (self.ui.textbox_rosee_interval_h,
+             self.ui.textbox_rosee_interval_v),
+            (self.ui.textbox_rosee_slope_h,
+             self.ui.textbox_rosee_slope_v),
         )
         self.setup_connections()
         self.reset_options()
@@ -201,9 +203,27 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_mm.stateChanged.connect(self.update_roi_settings)
         self.ui.spinbox_pixel.valueChanged.connect(self.update_roi_settings)
         self.ui.spinbox_mm.valueChanged.connect(self.update_roi_settings)
-        self.ui.button_pca.clicked.connect(self.toggle_pca)
         self.ui.checkbox_rosee_h.stateChanged.connect(self.toggle_rosee)
         self.ui.checkbox_rosee_v.stateChanged.connect(self.toggle_rosee)
+        self.ui.checkbox_rosee_local_extrema.stateChanged.connect(
+            self.toggle_rosee
+        )
+        self.ui.spinbox_rosee_smoothing.valueChanged.connect(self.toggle_rosee)
+        self.ui.checkbox_rosee_normalize.stateChanged.connect(
+            self.toggle_rosee
+        )
+        self.ui.checkbox_rosee_show_indices.stateChanged.connect(
+            self.toggle_rosee
+        )
+        self.ui.h_plot._extractionline.sigPositionChanged.connect(
+            self.toggle_rosee
+        )
+        self.ui.v_plot._extractionline.sigPositionChanged.connect(
+            self.toggle_rosee
+        )
+        self.ui.image_viewer.timeLine.sigPositionChanged.connect(
+            self.toggle_rosee
+        )
 
     def reset_options(self) -> None:
         self.ui.button_apply_mask.setChecked(False)
@@ -266,8 +286,10 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_width_h.setRange(
             0, self.ui.image_viewer.data.shape[1] // 2
         )
-        self.ui.spinbox_pcacomp.setMaximum(self.ui.image_viewer.data.n_images)
-        self.ui.spinbox_pcacomp.setValue(self.ui.image_viewer.data.n_images)
+        self.ui.spinbox_rosee_smoothing.setValue(0)
+        self.ui.spinbox_rosee_smoothing.setMaximum(
+            min(self.ui.image_viewer.data.shape)
+        )
 
     def update_norm_range_labels(self) -> None:
         norm_range_ = self.ui.roi_plot.norm_range.getRegion()
@@ -419,31 +441,17 @@ class MainWindow(QMainWindow):
             log(f"Normalized in {lm.duration:.2f}s")
         self.update_statusbar()
 
-    def toggle_pca(self) -> None:
-        show = (
-            (self.ui.combobox_pca.currentText() == "Components" and not
-                self.pca_adapter.components_active) or
-            (self.ui.combobox_pca.currentText() == "Reconstruction" and not
-                self.pca_adapter.reconstruction_active)
-        )
-
-        if show:
-            with LoadingManager(self, "Calculating PCA...") as lm:
-                self.pca_adapter.calculate(self.ui.spinbox_pcacomp.value())
-            log(f"PCA in {lm.duration:.2f}s")
-            if self.ui.combobox_pca.currentText() == "Components":
-                self.pca_adapter.show_components()
-            elif self.ui.combobox_pca.currentText() == "Reconstruction":
-                self.pca_adapter.show_reconstruction()
-        else:
-            self.pca_adapter.hide()
-
     def toggle_rosee(self) -> None:
         self.rosee_adapter.toggle(
             horizontal=self.ui.checkbox_rosee_h.isChecked(),
             vertical=self.ui.checkbox_rosee_v.isChecked(),
         )
-        self.rosee_adapter.update()
+        self.rosee_adapter.update(
+            use_local_extrema=self.ui.checkbox_rosee_local_extrema.isChecked(),
+            smoothing=self.ui.spinbox_rosee_smoothing.value(),
+            normalized=self.ui.checkbox_rosee_normalize.isChecked(),
+            show_indices=self.ui.checkbox_rosee_show_indices.isChecked(),
+        )
 
     def search_background_file(self) -> None:
         if self.ui.button_bg_input.text() == "[Select]":

@@ -16,7 +16,6 @@ class TimePlot(pg.PlotWidget):
         self,
         parent: QWidget,
         image_viewer: pg.ImageView,
-        # norm_range: pg.LinearRegionItem,
         **kargs,
     ) -> None:
         super().__init__(parent, **kargs)
@@ -192,10 +191,11 @@ class MeasureROI(pg.PolyLineROI):
     def update_bounding_rect(self) -> None:
         bound = self.boundingRect()
         pos = self.getLocalHandlePositions()
-        left = min([p[1].x() for p in pos])
-        top = min([p[1].y() for p in pos])
-        self.bounding_rect.setPos(self.mapToView(QPointF(left, top)))
-        self.bounding_rect.setSize(bound.size())
+        if len(pos) > 1:
+            left = min([p[1].x() for p in pos])
+            top = min([p[1].y() for p in pos])
+            self.bounding_rect.setPos(self.mapToView(QPointF(left, top)))
+            self.bounding_rect.setSize(bound.size())
 
     def update_angles(self) -> None:
         positions = self.getSceneHandlePositions()

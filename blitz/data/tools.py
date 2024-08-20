@@ -93,5 +93,19 @@ def sliding_mean_normalization(
 
 
 def normalize(signal: np.ndarray, eps: float = 1e-10) -> np.ndarray:
-    min_ = np.min(signal)
-    return (signal - min_) / (np.max(signal) - min_ + eps)
+    min_ = signal.min()
+    return (signal - min_) / (signal.max() - min_ + eps)
+
+
+def unify_range(*signal: np.ndarray, eps: float = 1e-10) -> list[np.ndarray]:
+    target_min = signal[0].min()
+    target_max = signal[0].max()
+    output = [signal[0]]
+    for i in range(1, len(signal)):
+        min_ = signal[i].min()
+        output.append(
+            target_min
+            + (signal[i] - min_) / (signal[i].max() - min_ + eps)
+            * (target_max - target_min)
+        )
+    return output
