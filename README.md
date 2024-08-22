@@ -1,50 +1,63 @@
 # BLITZ
-BLITZ is an open-source image viewer specifically designed for "**B**ulk **L**oading and **I**nteractive **T**ime series **Z**onal analysis," developed at the [INP Greifswald](https://www.inp-greifswald.de). It is optimized for handling extensive image series, a common challenge in diagnostic imaging and process control. Programmed primarily in Python and utilizing QT and PyQTGraph.
-BLITZ offers:
-- rapid loading of large image series
-- efficient performance scaling
-- versatile data handling options
-- user-friendly GUI
-- stable lookup tables for visual consistency
-- powerful matrix-based image processing capabilities, allowing for instant statistical calculations and image manipulations.
 
-## Download the Latest Release for Windows
-[Most recent
-release](https://github.com/CodeSchmiedeHGW/BLITZ/releases/latest)
+## TL;DR
+**BLITZ** is a matrix-based image viewer designed for handling massive datasets (25+ GB) quickly and efficiently, but also works well for single images. (i.e. it can load 21,000 images (~25GB) in 35 seconds on a gaming laptop).
 
-## Documentation and examples
+## Download
+[Download the latest release for Windows](https://github.com/CodeSchmiedeHGW/BLITZ/releases/latest)
 
-We provide a short [walkthrough](docs/walkthrough.md) through BLITZ explaining all core functionalities.
+## Overview
+**BLITZ** (Bulk Loading and Interactive Time series Zonal analysis) is an open-source image viewer developed at [INP Greifswald](https://www.inp-greifswald.de). It is designed for rapid loading and processing of large image datasets, but is equally effective for single-image analysis.
 
+**Key Features:**
+- **Fast Data Handling:** Handles very large datasets efficiently (i.e. 21,000 images (~25GB) in just 35 seconds on a standard gaming laptop).
+- **Easy Data Handling:** Drag-and-drop functionality for various image and video formats, including NUMPY matrices (*.npy).
+- **Easy-to-use:** Automatic resource management for large and small datasets.
+- **User-Friendly Interface:** Intuitive GUI with mouse-based navigation and shortcut capabilities.
+- **Advanced Image Processing:** Matrix-based processing, with fast statistical calculations (i.e. Mean image of the 21k dataset: 1.7 seconds).
+- **Built on Python**, with Qt and PyQtGraph for high performance and flexibility
+
+
+![BLITZ Interface](docs/images/overview.png)
+
+---
 (Click if animation is not playing)
-![GIF_Animation](resources/public/BLITZ_Record.gif)
+![Quick Feature Overview](resources/public/BLITZ_Record.gif)
 
-## Compiling and Developing
-- Clone this repository
-- Create and activate virtual environment
-- `pip install poetry` (It is recommended to use [poetry](https://python-poetry.org/) for local development.)
-- install all dependencies (`poetry install` ) and run the application.
+---
 
-```shell
-$ git clone https://github.com/CodeSchmiedeHGW/BLITZ.git
-$ cd BLITZ
-$ poetry install
-$ poetry run python -m blitz
-```
+## Documentation
 
-You can create a binary executable from the python files using `pyinstaller` with the following
-options.
+- [Quick Start Guide](docs/walkthrough.md)
+- [Core Functionalities](docs/Tabs_explained.md)
 
-```shell
-$ pyinstaller --onefile --noconsole --icon=./resources/icon/blitz.ico blitz_main.py
-```
+
+
+## Development
+
+To compile and develop locally:
+
+1. Clone the repository:
+    ```bash
+    git clone https://github.com/CodeSchmiedeHGW/BLITZ.git
+    cd BLITZ
+    ```
+2. Set up a virtual environment and install dependencies:
+    ```bash
+    pip install poetry
+    poetry install
+    poetry run python -m blitz
+    ```
+3. To create a binary executable:
+    ```bash
+    pyinstaller --onefile --noconsole --icon=./resources/icon/blitz.ico blitz_main.py
+    ```
 
 ## Additional Resources
 
-- Visit [INPTDAT](https://www.inptdat.de) for additional images or publishing your own.
-- You can find the original [Example Dataset](https://www.inptdat.de/dataset/fast-framing-images-kinpen-science-example-set-images-testing-blitz-image-viewer) at INPTDAT as well.
+- Example Dataset: [KinPen Science Example Set](https://www.inptdat.de/dataset/fast-framing-images-kinpen-science-example-set-images-testing-blitz-image-viewer)
+- Explore more datasets or contribute your own on [INPTDAT](https://www.inptdat.de).
 
 ## License
 
-BLITZ is licensed under the terms of the GNU General Public License version 3 (GPL-3.0). Details
-can be found in the [LICENSE](LICENSE) file.
+BLITZ is licensed under the [GNU General Public License v3.0](LICENSE).
