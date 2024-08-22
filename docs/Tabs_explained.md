@@ -12,7 +12,8 @@ Detailed explanation of all TAB options.
 
 
 ## File
-<img src="images/tabs/file.png" alt="Loading Data" width="250" style="float: right; margin-left: 10px; border: 1px solid #ddd; padding: 3px;"/>
+
+<img src="images/tabs/file.png" alt="Loading Data" width="250" align="right" style="margin-left: 10px; border: 1px solid #ddd; padding: 3px;"/>
 
 
 You can load data by pressing the `Open File` or `Open Folder` button or by dragging and dropping a file or folder into the center part of the application.
@@ -40,7 +41,8 @@ BLITZ can be integrated with **WOLKE**, a browser-based datacrawler for images. 
 Each option allows for flexible and efficient management of large datasets, ensuring that your hardware resources are optimized for performance and responsiveness.
 
 ## View
-<img src="images/tabs/view.png" alt="Viewing Options" width="250" style="float: right; margin-left: 10px; border: 1px solid #ddd; padding: 3px;"/>
+
+<img src="images/tabs/view.png" alt="Viewing Options" width="250" align="right" style="margin-left: 10px; border: 1px solid #ddd; padding: 3px;"/>
 
 #### Image Manipulation
 
@@ -94,7 +96,7 @@ Options for the timeline plot visualization.
 
 
 ## Time
-<img src="images/tabs/time.png" alt="Temporal Options" width="250" style="float: right; margin-left: 10px; border: 1px solid #ddd; padding: 3px;"/>
+<img src="images/tabs/time.png" alt="Temporal Options" width="250" align="right" style="margin-left: 10px; border: 1px solid #ddd; padding: 3px;"/>
 
 The **Time Tab** allows for temporal cropping, image aggregation, and normalization of your dataset.
 
