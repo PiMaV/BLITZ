@@ -221,6 +221,18 @@ class MainWindow(QMainWindow):
         self.ui.image_viewer.timeLine.sigPositionChanged.connect(
             self.toggle_rosee
         )
+        self.ui.checkbox_rosee_show_lines.stateChanged.connect(
+            self.toggle_rosee
+        )
+        self.ui.checkbox_show_isocurve.stateChanged.connect(
+            self.update_isocurves
+        )
+        self.ui.spinbox_isocurves.editingFinished.connect(
+            self.update_isocurves
+        )
+        self.ui.spinbox_iso_smoothing.editingFinished.connect(
+            self.update_isocurves
+        )
 
     def reset_options(self) -> None:
         self.ui.button_apply_mask.setChecked(False)
@@ -287,6 +299,7 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_rosee_smoothing.setMaximum(
             min(self.ui.image_viewer.data.shape)
         )
+        self.ui.spinbox_isocurves.setValue(1)
 
     def update_norm_range_labels(self) -> None:
         norm_range_ = self.ui.roi_plot.norm_range.getRegion()
@@ -464,6 +477,15 @@ class MainWindow(QMainWindow):
             smoothing=self.ui.spinbox_rosee_smoothing.value(),
             normalized=self.ui.checkbox_rosee_normalize.isChecked(),
             show_indices=self.ui.checkbox_rosee_show_indices.isChecked(),
+            iso_smoothing=self.ui.spinbox_iso_smoothing.value(),
+            show_index_lines=self.ui.checkbox_rosee_show_lines.isChecked(),
+        )
+
+    def update_isocurves(self) -> None:
+        self.rosee_adapter.update_iso(
+            on=self.ui.checkbox_show_isocurve.isChecked(),
+            n=self.ui.spinbox_isocurves.value(),
+            smoothing=self.ui.spinbox_iso_smoothing.value(),
         )
 
     def search_background_file(self) -> None:

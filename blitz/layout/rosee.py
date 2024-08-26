@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Optional
 
 import numpy as np
 import pyqtgraph as pg
@@ -29,6 +29,45 @@ class ROSEEAdapter:
         self._show_horizontal: bool = False
         self._components_shown = False
         self._reconstruction_shown = False
+        self._index_lines_h: list[pg.InfiniteLine] = []
+        self._index_lines_v: list[pg.InfiniteLine] = []
+
+        self._show_iso: bool = False
+        self._n_iso = 1
+        self._isocurves: list[pg.IsocurveItem] = []
+        self._isolines: list[pg.InfiniteLine] = []
+        self.reset_iso()
+
+    def reset_iso(self):
+        while len(self._isocurves) > 0:
+            curve = self._isocurves.pop()
+            self.viewer.view.removeItem(curve)
+            line = self._isolines.pop()
+            self.viewer.getHistogramWidget().vb.removeItem(line)
+
+        cmap: pg.ColorMap = pg.colormap.get("CET-C6")  # type: ignore
+        for i in range(self._n_iso):
+            curve = pg.IsocurveItem(
+                level=0,
+                pen=pg.mkPen(cmap[(i+1) / self._n_iso]),
+            )
+            line = pg.InfiniteLine(
+                angle=0,
+                movable=True,
+                pen=pg.mkPen(
+                    cmap[(i+1) / self._n_iso],
+                    width=3,
+                ),
+            )
+            line.setZValue(1000)
+            line.sigPositionChanged.connect(self._update_iso_level)
+            self._isocurves.append(curve)
+            self._isolines.append(line)
+            self.viewer.view.addItem(curve)
+            self.viewer.getHistogramWidget().vb.addItem(line)
+            if not self._show_iso:
+                curve.hide()
+                line.hide()
 
     @property
     def is_visible(self) -> bool:
@@ -38,12 +77,35 @@ class ROSEEAdapter:
         self._show_horizontal = horizontal
         self._show_vertical = vertical
 
+    def update_iso(
+        self,
+        on: bool,
+        n: int = 1,
+        smoothing: int = 0,
+    ) -> None:
+        if on != self._show_iso:
+            if self._show_iso:
+                for curve, line in zip(self._isocurves, self._isolines):
+                    curve.hide()
+                    line.hide()
+            else:
+                for curve, line in zip(self._isocurves, self._isolines):
+                    curve.show()
+                    line.show()
+            self._show_iso = not self._show_iso
+        if n != self._n_iso:
+            self._n_iso = n
+            self.reset_iso()
+        self._update_iso(smoothing=smoothing)
+
     def update(
         self,
         use_local_extrema: bool,
         smoothing: int,
         normalized: bool,
         show_indices: bool,
+        show_index_lines: bool,
+        iso_smoothing: int,
     ) -> None:
         if self._show_horizontal:
             self._update(
@@ -51,9 +113,12 @@ class ROSEEAdapter:
                 use_local_extrema,
                 smoothing,
                 normalized,
+                show_index_lines,
                 show_indices,
             )
         else:
+            while len(self._index_lines_h) > 0:
+                self.viewer.view.removeItem(self._index_lines_h.pop())
             self.h_plot.draw_line()
             self.interval_edit[0].setText("")
             self.slope_edit[0].setText("eye: ")
@@ -63,12 +128,17 @@ class ROSEEAdapter:
                 use_local_extrema,
                 smoothing,
                 normalized,
+                show_index_lines,
                 show_indices,
             )
         else:
+            while len(self._index_lines_v) > 0:
+                self.viewer.view.removeItem(self._index_lines_v.pop())
             self.v_plot.draw_line()
             self.interval_edit[1].setText("")
             self.slope_edit[1].setText("eye: ")
+        if self._show_iso:
+            self._update_iso(iso_smoothing)
 
     def _update(
         self,
@@ -76,6 +146,7 @@ class ROSEEAdapter:
         use_local_extrema: bool,
         smoothing: int,
         normalized: bool,
+        show_index_lines: bool,
         show_indices: bool,
     ) -> None:
         plot = self.h_plot if orientation == "h" else self.v_plot
@@ -173,6 +244,30 @@ class ROSEEAdapter:
             text_max.setPos(*plot.get_translated_pos(indices[2], 0))
             plot.addItem(text_max)
 
+        index_lines = (
+            self._index_lines_v if orientation == "v" else self._index_lines_h
+        )
+        if show_index_lines:
+            while len(index_lines) > 0:
+                self.viewer.view.removeItem(index_lines.pop())
+            min_line = pg.InfiniteLine(
+                angle=90 if orientation == "h" else 0,
+                pen="g",
+            )
+            max_line = pg.InfiniteLine(
+                angle=90 if orientation == "h" else 0,
+                pen="g",
+            )
+            min_line.setValue(indices[0])
+            max_line.setValue(indices[2])
+            self.viewer.view.addItem(min_line)
+            self.viewer.view.addItem(max_line)
+            index_lines.append(min_line)
+            index_lines.append(max_line)
+        else:
+            while len(index_lines) > 0:
+                self.viewer.view.removeItem(index_lines.pop())
+
     def calculate(
         self,
         signal: np.ndarray,
@@ -221,3 +316,32 @@ class ROSEEAdapter:
                     (start_index, max_slope_index, end_index)
                 )
         return cumsum, fluctuation, event_indices
+
+    def _update_iso(self, smoothing: int = 0) -> None:
+        mean_val = np.mean(self.viewer.now)
+        if self._n_iso > 1:
+            std_val = np.std(self.viewer.now)
+            levels = np.linspace(
+                mean_val-std_val,
+                mean_val+std_val,
+                self._n_iso,
+            )
+            levels = np.clip(levels, 0, np.max(self.viewer.now))
+        else:
+            levels = [mean_val]
+
+        filtered_data = pg.gaussianFilter(
+            self.viewer.now[..., 0],
+            (smoothing, smoothing),
+        )
+
+        for iso, level in zip(self._isocurves, levels):
+            iso.setLevel(level)
+            iso.setData(filtered_data)
+
+        for isoLine, level in zip(self._isolines, levels):
+            isoLine.setValue(level)
+
+    def _update_iso_level(self) -> None:
+        for curve, line in zip(self._isocurves, self._isolines):
+            curve.setLevel(line.value())

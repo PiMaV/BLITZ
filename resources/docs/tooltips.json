@@ -72,5 +72,9 @@
     "textbox_rosee_interval_v": "Event interval of the vertical line. Start and end are marked by green circles.",
     "textbox_rosee_slope_h": "Index of maximal signal value of the horizontal line. This is marked by an orange rectangle.",
     "textbox_rosee_slope_v": "Index of maximal signal value of the vertical line. This is marked by an orange rectangle.",
-    "checkbox_rosee_show_indices": "Show event indices and point of largest value of the signal in the plot."
+    "checkbox_rosee_show_indices": "Show event indices and point of largest value of the signal in the plot.",
+
+    "checkbox_show_isocurve": "Show isocurves in the image and corresponding draggable levels in the color table.",
+    "spinbox_isocurves": "Change the number of displayed isocurves. Their level will be equally distributed in [mean-std, mean+std].",
+    "spinbox_iso_smoothing": "Smoothen the isocurves by applying an Gaussian filter with given width to the current image."
 }
