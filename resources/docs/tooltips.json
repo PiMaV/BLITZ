@@ -37,6 +37,8 @@
     "button_crop_undo": "Reloads the last saved dataset. If uncropped data was not saved in RAM, instead loads it from the last loaded path again.",
     "checkbox_crop_keep": "If selected, keeps the full dataset in RAM. Can be retrieved by 'undo'.",
     "checkbox_crop_show_range": "Show a blue box in the timeline to select a time interval.",
+    "spinbox_crop_range_start": "Index of the first image in the cropped dataset.",
+    "spinbox_crop_range_end": "Index of the last image in the cropped dataset.",
 
     "label_reduce": "Temporal Dimensionality Reduction: Create summary images by aggregating pixel values (e.g. mean) across a time series of images.",
     "combobox_reduce": "Calculate a metric on the time axis, e.g. mean of all images loaded. This visualizes a single image.",
@@ -49,22 +51,26 @@
 
     "checkbox_norm_lag": "Select this to subtract the mean of the next [lag] to [lag+window] images from the current time step. Might reduce the number of images shown.",
     "spinbox_norm_window": "The number of images to calculate the mean over.",
-
     "spinbox_norm_lag": "The number of images to skip before computing the sliding mean and subtracting this from the current time step.",
     "spinbox_norm_beta": "Percentage of the image that is subtracted or divided.",
     "checkbox_norm_subtract": "Subtract the selected image from all images.",
     "checkbox_norm_divide": "Divide all images by the selected image. Make sure that no division-by-zero occurs.",
+    "combobox_norm": "What metric to calculate on the above selected image range before subtracting it from each image.",
 
     "checkbox_mm": "Convert all lengths into an arbitrary unit (au) instead of pixels based on a known scale.",
+    "textbox_area": "Shows the area in the polygon.",
+    "textbox_circ": "Shows the circumference of the polygon.",
+    "textbox_bounding_rect": "Shows width and height of the bounding rectangle enclosing the measure tool.",
+    "checkbox_show_bounding_rect": "Shows the bounding rectangle of the measure tool inside the plot.",
 
     "checkbox_rosee_local_extrema": "Use local instead of global extrema to calculate event interval.",
     "spinbox_rosee_smoothing": "Smoothen the fluctuation curve (red) before calculating indices",
     "checkbox_rosee_normalize": "Normalize values of all curves to the interval [0, 1].",
-    "checkbox_rosee_h": "Calculate and show RoSEE's cumulative sum, fluctuation curve and event indices of the horizontal isocurve.",
-    "checkbox_rosee_v": "Calculate and show RoSEE's cumulative sum, fluctuation curve and event indices of the vertical isocurve.",
-    "textbox_rosee_interval_h": "Event interval of the horizontal isocurve. Start and end are marked by green circles.",
-    "textbox_rosee_interval_v": "Event interval of the vertical isocurve. Start and end are marked by green circles.",
-    "textbox_rosee_slope_h": "Index of maximal signal value in the horizontal isocurve. This is marked by an orange rectangle.",
-    "textbox_rosee_slope_v": "Index of maximal signal value in the vertical isocurve. This is marked by an orange rectangle.",
+    "checkbox_rosee_h": "Calculate and show RoSEE's cumulative sum, fluctuation curve and event indices of the horizontal line.",
+    "checkbox_rosee_v": "Calculate and show RoSEE's cumulative sum, fluctuation curve and event indices of the vertical line.",
+    "textbox_rosee_interval_h": "Event interval of the horizontal line. Start and end are marked by green circles.",
+    "textbox_rosee_interval_v": "Event interval of the vertical line. Start and end are marked by green circles.",
+    "textbox_rosee_slope_h": "Index of maximal signal value of the horizontal line. This is marked by an orange rectangle.",
+    "textbox_rosee_slope_v": "Index of maximal signal value of the vertical line. This is marked by an orange rectangle.",
     "checkbox_rosee_show_indices": "Show event indices and point of largest value of the signal in the plot."
 }
