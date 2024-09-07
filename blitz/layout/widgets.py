@@ -391,9 +391,7 @@ class ExtractionPlot(pg.PlotWidget):
 
         self._extractionline = ExtractionLine(viewer=viewer, vertical=vertical)
         self._extractionline.sigPositionChanged.connect(self.draw_line)
-        self._extractionline.sigPositionChanged.connect(self.draw_indicator)
         self._viewer.timeLine.sigPositionChanged.connect(self.draw_line)
-        self._viewer.timeLine.sigPositionChanged.connect(self.draw_indicator)
         self._viewer.image_changed.connect(self.draw_line)
         self._viewer.image_size_changed.connect(self.center_line)
         self._coupled: ExtractionPlot | None = None
@@ -437,9 +435,10 @@ class ExtractionPlot(pg.PlotWidget):
         return image
 
     def draw_line(self) -> None:
+        self.clear()
         if (image := self.extract_data()) is not None:
-            self.clear()
             self.plot(image)
+            self.draw_indicator()
 
     def plot(
         self,

@@ -113,6 +113,7 @@ class ImageData:
         operation: Literal["subtract", "divide"],
         use: ops.ReduceOperation | str,
         beta: float = 1.0,
+        gaussian_blur: int = 0,
         bounds: Optional[tuple[int, int]] =None,
         reference: Optional["ImageData"] = None,
         window_lag: Optional[tuple[int, int]] = None,
@@ -133,15 +134,35 @@ class ImageData:
             range_img = beta * ops.get(use)(
                 image[bounds[0]:bounds[1]+1]
             ).astype(np.double)
+            if gaussian_blur > 0:
+                range_img = pg.gaussianFilter(
+                    range_img[0, ..., 0],
+                    (gaussian_blur, gaussian_blur),
+                )[np.newaxis, ..., np.newaxis]
         if reference is not None:
             if (not reference.is_single_image()
                     or reference._image.shape[1:] != image.shape[1:]):
                 log("Error: Background image has incompatible shape")
                 return False
             reference_img = beta * reference._image.astype(np.double)
+            if gaussian_blur > 0:
+                reference_img = pg.gaussianFilter(
+                    reference_img[0, ..., 0],
+                    (gaussian_blur, gaussian_blur),
+                )[np.newaxis, ..., np.newaxis]
         if window_lag is not None:
             window, lag = window_lag
-            window_lag_img = sliding_mean_normalization(image, window, lag)
+            window_lag_img = beta * (
+                sliding_mean_normalization(image, window, lag)
+            )
+            if gaussian_blur > 0:
+                window_lag_img = np.array([
+                    pg.gaussianFilter(
+                        window_lag_img[i, ..., 0],
+                        (gaussian_blur, gaussian_blur),
+                    )[..., np.newaxis]
+                    for i in range(window_lag_img.shape[0])
+                ])
         if bounds is None and reference is None and window_lag is None:
             return False
         if operation == "subtract":

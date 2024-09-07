@@ -7,7 +7,8 @@
     "action_project_open": "Select an .ini project file.",
     "action_restart": "Manually restart the application.",
 
-    "checkbox_autofit": "If checked, automatically adjusts the color lookup table to the displayed colors in the image. If negative values appear, this also switches to another gradient preset, which is useful for normalization.",
+    "button_autofit": "Automatically fits the range of the colormap to the colors in the image.",
+    "checkbox_auto_colormap": "If set, switches to a centered diverging colormap if negative values in the image appear (e.g. through normalization).",
     "button_load_lut": "Loads a LUT from a .json file.",
     "button_export_lut": "Saves the current LUT to a .json file. If an .ini file is selected, this LUT gets loaded automatically the next time the application is opened.",
 
@@ -53,6 +54,7 @@
     "spinbox_norm_window": "The number of images to calculate the mean over.",
     "spinbox_norm_lag": "The number of images to skip before computing the sliding mean and subtracting this from the current time step.",
     "spinbox_norm_beta": "Percentage of the image that is subtracted or divided.",
+    "spinbox_norm_blur": "Blurs the image that is subtracted or divided using a Gaussian kernel of the given size.",
     "checkbox_norm_subtract": "Subtract the selected image from all images.",
     "checkbox_norm_divide": "Divide all images by the selected image. Make sure that no division-by-zero occurs.",
     "combobox_norm": "What metric to calculate on the above selected image range before subtracting it from each image.",
@@ -73,6 +75,7 @@
     "textbox_rosee_slope_h": "Index of maximal signal value of the horizontal line. This is marked by an orange rectangle.",
     "textbox_rosee_slope_v": "Index of maximal signal value of the vertical line. This is marked by an orange rectangle.",
     "checkbox_rosee_show_indices": "Show event indices and point of largest value of the signal in the plot.",
+    "checkbox_rosee_show_lines": "Extend the event indices as lines in the image.",
 
     "checkbox_show_isocurve": "Show isocurves in the image and corresponding draggable levels in the color table.",
     "spinbox_isocurves": "Change the number of displayed isocurves. Their level will be equally distributed in [mean-std, mean+std].",

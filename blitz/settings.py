@@ -18,9 +18,11 @@ _default_settings = {
     "viewer/max_file_name_length": 40,
     "viewer/intersection_point_size": 10,
 
-    "data/multicore_size_threshold": 1.3 * (2**30),
-    "data/multicore_files_threshold": 333,
-    "data/max_ram": 1.0,
+    "default/multicore_size_threshold": 1.3 * (2**30),
+    "default/multicore_files_threshold": 333,
+    "default/max_ram": 1.0,
+    "default/isocurve_smoothing": 3,
+
     "data/path": "",
     "data/mask": (),
     "data/cropped": (),
