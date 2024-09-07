@@ -48,7 +48,7 @@ class DataLoader:
 
     def load(self, path: Optional[Path] = None) -> ImageData:
         if path is None:
-            return DataLoader.from_text("No data")
+            return DataLoader.from_text("  Load data", 50, 100)
 
         if path.is_dir():
             return self._load_folder(path)
@@ -122,9 +122,9 @@ class DataLoader:
         content = content[::int(np.ceil(1 / ratio))]
         log(f"Loading {len(content)}/{full_dataset_size} files", color="green")
 
-        if (len(content) > settings.get("data/multicore_files_threshold")
+        if (len(content) > settings.get("default/multicore_files_threshold")
                 or total_size_estimate >
-                    settings.get("data/multicore_size_threshold")):
+                    settings.get("default/multicore_size_threshold")):
             with Pool(cpu_count()) as pool:
                 results = pool.starmap(
                     load_function,
@@ -277,9 +277,9 @@ class DataLoader:
             self.convert_to_8_bit,
         )
         total_size_estimate = array[0].nbytes * array.shape[0]
-        if (array.shape[0] > settings.get("data/multicore_files_threshold")
+        if (array.shape[0] > settings.get("default/multicore_files_threshold")
                 or total_size_estimate >
-                    settings.get("data/multicore_size_threshold")):
+                    settings.get("default/multicore_size_threshold")):
             with Pool(cpu_count()) as pool:
                 matrices = pool.starmap(
                     function_,

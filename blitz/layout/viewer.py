@@ -24,11 +24,18 @@ class ImageViewer(pg.ImageView):
     def __init__(self) -> None:
         view = pg.PlotItem()
         view.showGrid(x=True, y=True, alpha=0.4)
-        roi = pg.ROI(pos=(0, 0), size=10)  # type: ignore
-        roi.handleSize = 9
-        roi.addScaleHandle([1, 1], [0, 0])
-        roi.addRotateHandle([0, 0], [0.5, 0.5])
-        super().__init__(view=view, roi=roi)
+        self.poly_roi = pg.PolyLineROI(
+            ((0, 0), (1, 0), (1, 1), (0, 1)),
+            closed=True,
+        )
+        self.poly_roi.handleSize = 9
+        self.square_roi = pg.ROI(pos=(0, 0), size=10)  # type: ignore
+        self.square_roi.handleSize = 9
+        self.square_roi.addScaleHandle([1, 1], [0, 0])
+        self.square_roi.addRotateHandle([0, 0], [0.5, 0.5])
+        super().__init__(view=view, roi=self.square_roi)
+        self.poly_roi_state = self.poly_roi.getState()
+        self.square_roi_state = self.square_roi.getState()
         self.ui.graphicsView.setBackground(pg.mkBrush(20, 20, 20))
 
         self.ui.roiBtn.setChecked(True)
@@ -37,26 +44,72 @@ class ImageViewer(pg.ImageView):
         self.ui.roiPlot.plotItem.showGrid(  # type: ignore
             x=True, y=True, alpha=0.6,
         )
-        self._auto_changed_gradient = False
         self.ui.histogram.gradient.loadPreset('greyclip')
 
         self.mask: None | RectROI = None
         self.pixel_value: Optional[np.ndarray] = None
 
-        self.roi.sigRegionChanged.connect(
+        self.square_roi.sigRegionChanged.connect(
             lambda: self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
         )
-        self.roi.sigRegionChangeFinished.connect(
+        self.square_roi.sigRegionChangeFinished.connect(
+            lambda: self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
+        )
+        self.poly_roi.sigRegionChanged.connect(
+            lambda: self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
+        )
+        self.poly_roi.sigRegionChangeFinished.connect(
             lambda: self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
         )
         self.setAcceptDrops(True)
-        self._fit_levels = True
+        self._auto_colormap = True
         self._background_image: ImageData | None = None
-        self.load_data()
+        if (path := settings.get("data/path")) != "":
+            self.load_data(Path(path))
+            self.data.load_options()
+            self.update_image()
+        else:
+            self.load_data()
 
     @property
     def now(self) -> np.ndarray:
         return self.image[self.currentIndex, ...]
+
+    def set_roi(self, roi: pg.ROI) -> None:
+        if self.roi is roi:
+            return
+        try:
+            self.view.removeItem(self.roi)
+            roi.sigRegionChanged.disconnect(self.roiChanged)
+        except TypeError:
+            pass
+        self.view.addItem(roi)
+        roi.sigRegionChanged.connect(self.roiChanged)
+        self.roi = roi
+
+    def change_roi(self) -> None:
+        if self.roi is self.square_roi:
+            self.square_roi_state = self.square_roi.state
+            self.set_roi(self.poly_roi)
+            self.roi.sigRegionChanged.disconnect(self.roiChanged)
+            self.poly_roi.setState(self.poly_roi_state)
+            self.roi.sigRegionChanged.connect(self.roiChanged)
+        else:
+            self.poly_roi_state = self.poly_roi.getState()
+            self.square_roi.setState(self.square_roi_state)
+            self.set_roi(self.square_roi)
+        self.roiChanged()
+        self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
+
+    def image_mask(self, file_path: Optional[Path] = None, **kwargs) -> None:
+        mask = DataLoader(**kwargs).load(file_path)
+        self.data.image_mask(mask)
+        self.setImage(
+            self.data.image,
+            keep_timestep=True,
+            autoRange=False,
+            autoLevels=False,
+        )
 
     def dragEnterEvent(self, e: QDropEvent):
         if e.mimeData().hasUrls():
@@ -73,44 +126,44 @@ class ImageViewer(pg.ImageView):
             pos = self.timeLine.pos()
         super().setImage(*args, **kwargs)
         if keep_timestep:
-            self.timeLine.setPos(pos)
+            self.timeLine.setPos(pos)  # type: ignore
         self.init_roi()
         self.image_changed.emit()
 
     def updateImage(self, autoHistogramRange: bool = False) -> None:
         super().updateImage(autoHistogramRange)
 
+    def toggle_auto_colormap(self) -> None:
+        self._auto_colormap = not self._auto_colormap
+
     def autoLevels(self) -> None:
-        if not self.data.is_greyscale():
-            if self._auto_changed_gradient:
-                self._auto_changed_gradient = False
-            return super().autoLevels()
+        if self.data.is_greyscale() and self._auto_colormap:
+            self.auto_colormap()
+        else:
+            super().autoLevels()
+
+    def auto_colormap(self) -> None:
         if (min_ := self.image.min()) < 0 < (max_ := self.image.max()):
             max_ = max(abs(min_), max_)
             min_ = - max_
             self.ui.histogram.gradient.loadPreset('bipolar')
             self.setLevels(min=min_, max=max_)
             self.ui.histogram.setHistogramRange(min_, max_)
-            self._auto_changed_gradient = True
         else:
-            if self._auto_changed_gradient:
-                self.ui.histogram.gradient.loadPreset('greyclip')
-                self._auto_changed_gradient = False
+            self.ui.histogram.gradient.loadPreset('greyclip')
             super().autoLevels()
-
-    def toggle_fit_levels(self) -> None:
-        self._fit_levels = not self._fit_levels
-        if self._fit_levels:
-            self.autoLevels()
 
     def load_data(self, path: Optional[Path] = None, **kwargs) -> None:
         self.data = DataLoader(**kwargs).load(path)
-        self.setImage(self.data.image)
+        self.setImage(self.data.image, autoLevels=True)
         self.autoRange()
         self.image_size_changed.emit()
 
     def set_image(self, img: ImageData) -> None:
         self.data = img
+        self.update_image()
+
+    def update_image(self) -> None:
         self.setImage(self.data.image)
         self.autoRange()
         self.image_size_changed.emit()
@@ -129,8 +182,32 @@ class ImageViewer(pg.ImageView):
     def init_roi(self) -> None:
         height = self.image.shape[2]
         width = self.image.shape[1]
-        self.roi.setSize((.1*width, .1*height))
-        self.roi.setPos((width*9/20, height*9/20))
+        if self.roi is self.square_roi:
+            self.square_roi.setAngle(0)
+            self.square_roi.setSize((.1*width, .1*height))
+            self.square_roi.setPos((width*9/20, height*9/20))
+            self.poly_roi_state["pos"] = pg.Point(0, 0)
+            self.poly_roi_state["size"] = pg.Point(1, 1)
+            self.poly_roi_state["points"] = (
+                pg.Point(width*9/20, height*9/20),
+                pg.Point(width*9/20+.1*width, height*9/20),
+                pg.Point(width*9/20+.1*width, height*9/20+.1*height),
+                pg.Point(width*9/20, height*9/20+.1*height),
+            )
+        else:
+            self.roi.sigRegionChanged.disconnect(self.roiChanged)
+            self.poly_roi.setSize((1, 1))
+            self.poly_roi.setPos((0, 0))
+            self.poly_roi.setPoints((
+                (width*9/20, height*9/20),
+                (width*9/20+.1*width, height*9/20),
+                (width*9/20+.1*width, height*9/20+.1*height),
+                (width*9/20, height*9/20+.1*height),
+            ))
+            self.roi.sigRegionChanged.connect(self.roiChanged)
+            self.square_roi_state["angle"] = 0.0
+            self.square_roi_state["pos"] = pg.Point(width*9/20, height*9/20)
+            self.square_roi_state["size"] = pg.Point(.1*width, .1*height)
         on_drop_roi_update = (
             self.data.n_images * np.prod(self.roi.size())
             > settings.get("viewer/ROI_on_drop_threshold")
@@ -142,35 +219,56 @@ class ImageViewer(pg.ImageView):
         operation: str,
         use: ReduceOperation | str,
         beta: float = 1.0,
-        left: Optional[int] = None,
-        right: Optional[int] = None,
+        gaussian_blur: int = 0,
+        bounds: Optional[tuple[int, int]] = None,
         background: bool = False,
+        window_lag: Optional[tuple[int, int]] = None,
         force_calculation: bool = False,
     ) -> bool:
         normalized = self.data.normalize(
             operation=operation,  # type: ignore
             use=use,
             beta=beta,
-            left=left,
-            right=right,
+            gaussian_blur=gaussian_blur,
+            bounds=bounds,
             reference=self._background_image if background else None,
+            window_lag=window_lag,
             force_calculation=force_calculation,
         )
         self.setImage(
             self.data.image,
             keep_timestep=True,
             autoRange=False,
-            autoLevels=self._fit_levels,
+            autoLevels=True,
         )
         self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
         return normalized
+
+    def crop(self, left: int, right: int, keep: bool = False) -> None:
+        self.data.crop(left, right, keep=keep)
+        self.setImage(
+            self.data.image,
+            keep_timestep=(left < self.currentIndex < right),
+            autoLevels=False,
+        )
+        self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
+
+    def undo_crop(self) -> bool:
+        success = self.data.undo_crop()
+        if success:
+            self.setImage(
+                self.data.image,
+                autoLevels=False,
+            )
+            self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
+        return success
 
     def unravel(self) -> None:
         self.data.unravel()
         self.setImage(
             self.data.image,
             autoRange=False,
-            autoLevels=self._fit_levels,
+            autoLevels=False,
         )
 
     def reduce(self, operation: ReduceOperation | str) -> None:
@@ -178,7 +276,7 @@ class ImageViewer(pg.ImageView):
         self.setImage(
             self.data.image,
             autoRange=False,
-            autoLevels=self._fit_levels,
+            autoLevels=False,
         )
 
     def manipulate(self, operation: str) -> None:
@@ -186,23 +284,14 @@ class ImageViewer(pg.ImageView):
             getattr(self.data, operation)()
         else:
             raise RuntimeError(f"Operation {operation!r} not implemented")
-            return
         self.setImage(
             self.data.image,
             keep_timestep=True,
             autoRange=False,
-            autoLevels=self._fit_levels,
+            autoLevels=False,
         )
         if operation == 'transpose':
             self.image_size_changed.emit()
-
-    def reset(self) -> None:
-        self.data.reset()
-        self.setImage(
-            self.data.image,
-            autoLevels=self._fit_levels,
-        )
-        self.image_size_changed.emit()
 
     def apply_mask(self) -> None:
         if self.mask is None:
@@ -212,7 +301,15 @@ class ImageViewer(pg.ImageView):
         self.setImage(
             self.data.image,
             keep_timestep=True,
-            autoLevels=self._fit_levels,
+            autoLevels=False,
+        )
+        self.image_size_changed.emit()
+
+    def reset_mask(self) -> None:
+        self.data.reset_mask()
+        self.setImage(
+            self.data.image,
+            autoLevels=False,
         )
         self.image_size_changed.emit()
 

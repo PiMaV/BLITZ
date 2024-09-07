@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from PyQt5.QtCore import QSettings
 from PyQt5.QtWidgets import QFileDialog
@@ -12,14 +12,23 @@ _default_settings = {
     "window/docks": {},
 
     "viewer/ROI_on_drop_threshold": 500_000,
-    "viewer/LUT_source": "",
+    "viewer/LUT": {},
     "viewer/font_size_status_bar": 10,
     "viewer/font_size_log": 9,
     "viewer/max_file_name_length": 40,
+    "viewer/intersection_point_size": 10,
 
-    "data/multicore_size_threshold": 1.3 * (2**30),
-    "data/multicore_files_threshold": 333,
-    "data/max_ram": 1.0,
+    "default/multicore_size_threshold": 1.3 * (2**30),
+    "default/multicore_files_threshold": 333,
+    "default/max_ram": 1.0,
+    "default/isocurve_smoothing": 3,
+
+    "data/path": "",
+    "data/mask": (),
+    "data/cropped": (),
+    "data/flipped_x": False,
+    "data/flipped_y": False,
+    "data/transposed": False,
 
     "web/connect_attempts": 3,
     "web/connect_timeout": 1,
@@ -53,6 +62,7 @@ class _Settings:
     def file(self, file: Path) -> None:
         self._file = file.name
         self.path = file.parent
+        self.select_ini()
 
     def select_ini(self) -> None:
         self.settings = QSettings(
@@ -114,25 +124,31 @@ def export() -> None:
     if SETTINGS is None:
         SETTINGS = _Settings()
 
-    path = QFileDialog.getExistingDirectory(
-        caption="Select Directory",
+    path = QFileDialog.getSaveFileName(
+        caption="Save project file",
         directory=str(SETTINGS.path),
+        filter="BLITZ project file (*.ini)",
     )
-    if path is not None:
-        SETTINGS.path = Path(path)
-        SETTINGS.write_all()
+    SETTINGS.file = Path(path[0]+".ini")
+    SETTINGS.write_all()
 
 
-def select() -> None:
+def select() -> bool:
     global SETTINGS
+    file, _ = QFileDialog.getOpenFileName(
+        caption="Select project file",
+        directory=str(SETTINGS.path),
+        filter="BLITZ project file (*.ini)",
+    )
+    if file:
+        new_settings(Path(file))
+        return True
+    return False
 
+
+def new_settings(file: Optional[Path] = None) -> None:
+    global SETTINGS
     if SETTINGS is None:
         SETTINGS = _Settings()
-
-    file, _ = QFileDialog.getOpenFileName(
-        caption="Select Directory",
-        directory=str(SETTINGS.path),
-    )
     if file is not None:
-        file = Path(file)
         SETTINGS.file = file

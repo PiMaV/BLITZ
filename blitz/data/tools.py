@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import numba
 
 
 def resize_and_convert(
@@ -61,3 +62,50 @@ def smoothen(
     trimmed_x = x[trim_start: trim_end]
 
     return trimmed_x, smoothed_y
+
+
+def ensure_4d(images: np.ndarray) -> np.ndarray:
+    if images.ndim == 4:
+        return images
+    return images[..., np.newaxis]
+
+
+@numba.njit(
+    "f4[:,:,:,:](f4[:,:,:,:], i8, i8)",
+    fastmath=True,
+    parallel=True,
+    cache=True,
+)
+def sliding_mean_normalization(
+    images: np.ndarray,
+    window: int,
+    lag: int,
+) -> np.ndarray:
+    n = images.shape[0]-(lag+window)
+    q, p, c = images.shape[1:]
+    result = np.zeros((n, q, p, c), dtype=np.float32)
+    for t in numba.prange(n):
+        mean = np.zeros(images.shape[1:])
+        for s in range(lag, lag+window):
+            mean = mean + images[t+s+1]
+        result[t] = mean / window
+    return result
+
+
+def normalize(signal: np.ndarray, eps: float = 1e-10) -> np.ndarray:
+    min_ = signal.min()
+    return (signal - min_) / (signal.max() - min_ + eps)
+
+
+def unify_range(*signal: np.ndarray, eps: float = 1e-10) -> list[np.ndarray]:
+    target_min = signal[0].min()
+    target_max = signal[0].max()
+    output = [signal[0]]
+    for i in range(1, len(signal)):
+        min_ = signal[i].min()
+        output.append(
+            target_min
+            + (signal[i] - min_) / (signal[i].max() - min_ + eps)
+            * (target_max - target_min)
+        )
+    return output

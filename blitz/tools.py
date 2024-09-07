@@ -112,12 +112,8 @@ def format_pixel_value(
     if isinstance(value, str) or value is None:
         return f"{value}"
     elif isinstance(value, (list, tuple, np.ndarray)) and len(value) == 3:
-        try:
-            return f"({value[0]:3d}, {value[1]:3d}, {value[2]:3d})"
-        except (ValueError, TypeError):
-            return f"({value[0]:.3f}, {value[1]:.3f}, {value[2]:.3f})"
+        return f"({value[0]:.3f}, {value[1]:.3f}, {value[2]:.3f})"
     else:
-        try:
-            return f"{value:4d}"
-        except (ValueError, TypeError):
-            return f"{value:.4f}"
+        if int(value[0]) == value[0]:
+            return f"{int(value[0]):4d}"
+        return f"{value[0]:4f}"

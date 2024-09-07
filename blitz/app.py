@@ -12,7 +12,7 @@ from .layout.main import MainWindow
 
 def run() -> int:
     multiprocessing.freeze_support()
-    pg.setConfigOptions(useNumba=True)
+    pg.setConfigOptions(useNumba=False)
     exit_code = 0
     restart_exit_code = settings.get("app/restart_exit_code")
     app = QApplication(sys.argv)

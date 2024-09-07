@@ -3,11 +3,12 @@
     "action_open_folder": "Select a folder containing multiple (single-image) files.",
     "action_load_tof": "Load a tof .json file that is recorded additionally to the data.",
     "action_export": "Export the currently displayed images to the selected folder.",
-    "action_write_ini": "Writes an .ini file with all current configurations. Saving it to the same folder as the application will automatically load it at the next start.",
-    "action_select_ini": "Select an .ini file. Restart the application manually to apply all visual changes of the .ini file.",
+    "action_project_save": "Writes an .ini project file with all current configurations.",
+    "action_project_open": "Select an .ini project file.",
     "action_restart": "Manually restart the application.",
 
-    "checkbox_autofit": "If checked, automatically adjusts the color lookup table to the displayed colors in the image. If negative values appear, this also switches to another gradient preset, which is useful for normalization.",
+    "button_autofit": "Automatically fits the range of the colormap to the colors in the image.",
+    "checkbox_auto_colormap": "If set, switches to a centered diverging colormap if negative values in the image appear (e.g. through normalization).",
     "button_load_lut": "Loads a LUT from a .json file.",
     "button_export_lut": "Saves the current LUT to a .json file. If an .ini file is selected, this LUT gets loaded automatically the next time the application is opened.",
 
@@ -22,12 +23,25 @@
     "button_connect": "Connect to the given server address. Keeps listening until manually disconnected.",
     "button_disconnect": "Disconnect from the server.",
 
+    "checkbox_mask": "Shows a rectangular selection area. Resize and apply for masking all images.",
+    "button_reset_mask": "Resets the mask and shows the original image.",
+    "button_image_mask": "Select a binary image of the same size as the current data to mask all pixels where that image has value 1.",
+
     "spinbox_width_h": "Changes the area of the horizontal line. The upper plot shows the mean over all vertical pixels at one position.",
     "spinbox_width_v": "Changes the area of the vertical line. The left plot shows the mean over all horizontal pixels at one position.",
 
+    "checkbox_roi": "Turn on the ROI that shows the mean of all pixels in its range over time.",
+    "combobox_roi": "Choose a format for the ROI.",
     "checkbox_roi_drop": "Whether to update the ROI plot (lower window) upon dragging the ROI or only on drop (releasing the mouse button).",
 
-    "label_reduce": "Operations that reduce the dimensionality of the dataset (i.e. remove the time axis) by calculating some metric over all images.",
+    "button_crop": "Crop the image dataset to the above selected time interval.",
+    "button_crop_undo": "Reloads the last saved dataset. If uncropped data was not saved in RAM, instead loads it from the last loaded path again.",
+    "checkbox_crop_keep": "If selected, keeps the full dataset in RAM. Can be retrieved by 'undo'.",
+    "checkbox_crop_show_range": "Show a blue box in the timeline to select a time interval.",
+    "spinbox_crop_range_start": "Index of the first image in the cropped dataset.",
+    "spinbox_crop_range_end": "Index of the last image in the cropped dataset.",
+
+    "label_reduce": "Temporal Dimensionality Reduction: Create summary images by aggregating pixel values (e.g. mean) across a time series of images.",
     "combobox_reduce": "Calculate a metric on the time axis, e.g. mean of all images loaded. This visualizes a single image.",
 
     "checkbox_norm_range": "Select this to perform a normalization over the given time interval / image indices. Subtracts or divides each image by the mean of all images in the interval.",
@@ -35,9 +49,35 @@
 
     "checkbox_norm_bg": "Select this to subtract or divide each image by a given background image.",
     "button_bg_input": "Select an image that is of same size as the currently loaded data.",
+
+    "checkbox_norm_lag": "Select this to subtract the mean of the next [lag] to [lag+window] images from the current time step. Might reduce the number of images shown.",
+    "spinbox_norm_window": "The number of images to calculate the mean over.",
+    "spinbox_norm_lag": "The number of images to skip before computing the sliding mean and subtracting this from the current time step.",
     "spinbox_norm_beta": "Percentage of the image that is subtracted or divided.",
+    "spinbox_norm_blur": "Blurs the image that is subtracted or divided using a Gaussian kernel of the given size.",
     "checkbox_norm_subtract": "Subtract the selected image from all images.",
     "checkbox_norm_divide": "Divide all images by the selected image. Make sure that no division-by-zero occurs.",
+    "combobox_norm": "What metric to calculate on the above selected image range before subtracting it from each image.",
 
-    "checkbox_mm": "Convert all lengths in millimeters instead of pixels based on a known scale."
+    "checkbox_mm": "Convert all lengths into an arbitrary unit (au) instead of pixels based on a known scale.",
+    "textbox_area": "Shows the area in the polygon.",
+    "textbox_circ": "Shows the circumference of the polygon.",
+    "textbox_bounding_rect": "Shows width and height of the bounding rectangle enclosing the measure tool.",
+    "checkbox_show_bounding_rect": "Shows the bounding rectangle of the measure tool inside the plot.",
+
+    "checkbox_rosee_local_extrema": "Use local instead of global extrema to calculate event interval.",
+    "spinbox_rosee_smoothing": "Smoothen the fluctuation curve (red) before calculating indices",
+    "checkbox_rosee_normalize": "Normalize values of all curves to the interval [0, 1].",
+    "checkbox_rosee_h": "Calculate and show RoSEE's cumulative sum, fluctuation curve and event indices of the horizontal line.",
+    "checkbox_rosee_v": "Calculate and show RoSEE's cumulative sum, fluctuation curve and event indices of the vertical line.",
+    "textbox_rosee_interval_h": "Event interval of the horizontal line. Start and end are marked by green circles.",
+    "textbox_rosee_interval_v": "Event interval of the vertical line. Start and end are marked by green circles.",
+    "textbox_rosee_slope_h": "Index of maximal signal value of the horizontal line. This is marked by an orange rectangle.",
+    "textbox_rosee_slope_v": "Index of maximal signal value of the vertical line. This is marked by an orange rectangle.",
+    "checkbox_rosee_show_indices": "Show event indices and point of largest value of the signal in the plot.",
+    "checkbox_rosee_show_lines": "Extend the event indices as lines in the image.",
+
+    "checkbox_show_isocurve": "Show isocurves in the image and corresponding draggable levels in the color table.",
+    "spinbox_isocurves": "Change the number of displayed isocurves. Their level will be equally distributed in [mean-std, mean+std].",
+    "spinbox_iso_smoothing": "Smoothen the isocurves by applying an Gaussian filter with given width to the current image."
 }
