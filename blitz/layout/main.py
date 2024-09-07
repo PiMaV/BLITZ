@@ -38,6 +38,10 @@ class MainWindow(QMainWindow):
             self.ui.image_viewer,
             self.ui.h_plot,
             self.ui.v_plot,
+            (self.ui.textbox_rosee_interval_h,
+             self.ui.textbox_rosee_interval_v),
+            (self.ui.textbox_rosee_slope_h,
+             self.ui.textbox_rosee_slope_v),
         )
         self.setup_connections()
         self.reset_options()
@@ -89,8 +93,9 @@ class MainWindow(QMainWindow):
         )
 
         # lut connections
-        self.ui.checkbox_autofit.stateChanged.connect(
-            self.ui.image_viewer.toggle_fit_levels
+        self.ui.button_autofit.clicked.connect(self.ui.image_viewer.autoLevels)
+        self.ui.checkbox_auto_colormap.stateChanged.connect(
+            self.ui.image_viewer.toggle_auto_colormap
         )
         self.ui.button_load_lut.pressed.connect(self.browse_lut)
         self.ui.button_export_lut.pressed.connect(self.save_lut)
@@ -165,22 +170,10 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_norm_range_end.editingFinished.connect(
             self.update_norm_range
         )
-        self.ui.combobox_norm.currentIndexChanged.connect(
-            self._normalization_update
-        )
         self.ui.checkbox_norm_show_range.stateChanged.connect(
             self.ui.roi_plot.toggle_norm_range
         )
         self.ui.button_bg_input.clicked.connect(self.search_background_file)
-        self.ui.spinbox_norm_window.editingFinished.connect(
-            self._normalization_update
-        )
-        self.ui.spinbox_norm_lag.editingFinished.connect(
-            self._normalization_update
-        )
-        self.ui.spinbox_norm_beta.editingFinished.connect(
-            self._normalization_update
-        )
         self.ui.checkbox_norm_subtract.clicked.connect(
             lambda: self._normalization("subtract")
         )
@@ -189,9 +182,6 @@ class MainWindow(QMainWindow):
         )
         self.ui.checkbox_measure_roi.stateChanged.connect(
             self.ui.measure_roi.toggle
-        )
-        self.ui.checkbox_show_circ_area_label.stateChanged.connect(
-            self.ui.measure_roi.toggle_area_circ_labels
         )
         self.ui.checkbox_show_bounding_rect.stateChanged.connect(
             self.ui.measure_roi.toggle_bounding_rect
@@ -205,6 +195,12 @@ class MainWindow(QMainWindow):
             self.toggle_rosee
         )
         self.ui.spinbox_rosee_smoothing.valueChanged.connect(self.toggle_rosee)
+        self.ui.checkbox_rosee_normalize.stateChanged.connect(
+            self.toggle_rosee
+        )
+        self.ui.checkbox_rosee_show_indices.stateChanged.connect(
+            self.toggle_rosee
+        )
         self.ui.h_plot._extractionline.sigPositionChanged.connect(
             self.toggle_rosee
         )
@@ -214,8 +210,22 @@ class MainWindow(QMainWindow):
         self.ui.image_viewer.timeLine.sigPositionChanged.connect(
             self.toggle_rosee
         )
+        self.ui.checkbox_rosee_show_lines.stateChanged.connect(
+            self.toggle_rosee
+        )
+        self.ui.checkbox_show_isocurve.stateChanged.connect(
+            self.update_isocurves
+        )
+        self.ui.spinbox_isocurves.editingFinished.connect(
+            self.update_isocurves
+        )
+        self.ui.spinbox_iso_smoothing.editingFinished.connect(
+            self.update_isocurves
+        )
 
     def reset_options(self) -> None:
+        self.ui.spinbox_max_ram.setRange(.1, .8 * get_available_ram())
+        self.ui.spinbox_max_ram.setValue(settings.get("default/max_ram"))
         self.ui.button_apply_mask.setChecked(False)
         self.ui.checkbox_flipx.setChecked(settings.get("data/flipped_x"))
         self.ui.checkbox_flipy.setChecked(settings.get("data/flipped_y"))
@@ -267,6 +277,7 @@ class MainWindow(QMainWindow):
             self.ui.image_viewer.data.n_images-1
         )
         self.ui.checkbox_norm_show_range.setChecked(False)
+        self.ui.spinbox_norm_blur.setValue(0)
         self.ui.checkbox_roi_drop.setChecked(
             self.ui.image_viewer.is_roi_on_drop_update()
         )
@@ -280,6 +291,10 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_rosee_smoothing.setMaximum(
             min(self.ui.image_viewer.data.shape)
         )
+        self.ui.spinbox_iso_smoothing.setValue(
+            settings.get("default/isocurve_smoothing")
+        )
+        self.ui.spinbox_isocurves.setValue(1)
 
     def update_norm_range_labels(self) -> None:
         norm_range_ = self.ui.roi_plot.norm_range.getRegion()
@@ -300,7 +315,6 @@ class MainWindow(QMainWindow):
             (self.ui.spinbox_norm_range_start.value(),
              self.ui.spinbox_norm_range_end.value())
         )
-        self._normalization_update()
 
     def toggle_hvplot_markings(self) -> None:
         self.ui.h_plot.toggle_mark_position()
@@ -350,37 +364,38 @@ class MainWindow(QMainWindow):
         with LoadingManager(self, "Masking..."):
             self.ui.image_viewer.image_mask(Path(file_path))
 
-    def _normalization_update(self) -> None:
-        name = None
-        if self.ui.checkbox_norm_subtract.isChecked():
-            name = "subtract"
-        if self.ui.checkbox_norm_divide.isChecked():
-            name = "divide"
-        if name is not None:
-            bounds = None
-            if self.ui.checkbox_norm_range.isChecked():
-                bounds = (
-                    self.ui.spinbox_norm_range_start.value(),
-                    self.ui.spinbox_norm_range_end.value(),
-                )
-            window_lag = None
-            if self.ui.checkbox_norm_lag.isChecked():
-                window_lag = (
-                    self.ui.spinbox_norm_window.value(),
-                    self.ui.spinbox_norm_lag.value(),
-                )
-            with LoadingManager(self, "Calculating...") as lm:
-                self.ui.image_viewer.norm(
-                    operation=name,
-                    use=self.ui.combobox_norm.currentText(),
-                    beta=self.ui.spinbox_norm_beta.value() / 100.0,
-                    bounds=bounds,
-                    background=self.ui.checkbox_norm_bg.isChecked(),
-                    window_lag=window_lag,
-                    force_calculation=True,
-                )
-            log(f"Normalized in {lm.duration:.2f}s")
-            self.update_statusbar()
+    # def _normalization_update(self) -> None:
+    #     name = None
+    #     if self.ui.checkbox_norm_subtract.isChecked():
+    #         name = "subtract"
+    #     if self.ui.checkbox_norm_divide.isChecked():
+    #         name = "divide"
+    #     if name is not None:
+    #         bounds = None
+    #         if self.ui.checkbox_norm_range.isChecked():
+    #             bounds = (
+    #                 self.ui.spinbox_norm_range_start.value(),
+    #                 self.ui.spinbox_norm_range_end.value(),
+    #             )
+    #         window_lag = None
+    #         if self.ui.checkbox_norm_lag.isChecked():
+    #             window_lag = (
+    #                 self.ui.spinbox_norm_window.value(),
+    #                 self.ui.spinbox_norm_lag.value(),
+    #             )
+    #         with LoadingManager(self, "Calculating...") as lm:
+    #             self.ui.image_viewer.norm(
+    #                 operation=name,
+    #                 use=self.ui.combobox_norm.currentText(),
+    #                 beta=self.ui.spinbox_norm_beta.value() / 100.0,
+    #                 gaussian_blur=self.ui.spinbox_norm_blur.value(),
+    #                 bounds=bounds,
+    #                 background=self.ui.checkbox_norm_bg.isChecked(),
+    #                 window_lag=window_lag,
+    #                 force_calculation=True,
+    #             )
+    #         log(f"Normalized in {lm.duration:.2f}s")
+    #         self.update_statusbar()
 
     def _normalization(self, name: str) -> None:
         if ((not self.ui.checkbox_norm_range.isChecked()
@@ -393,15 +408,33 @@ class MainWindow(QMainWindow):
         if (self.ui.checkbox_norm_divide.isChecked()
                 or self.ui.checkbox_norm_subtract.isChecked()):
             self.ui.checkbox_norm_range.setEnabled(False)
+            self.ui.spinbox_norm_range_start.setEnabled(False)
+            self.ui.spinbox_norm_range_end.setEnabled(False)
+            self.ui.checkbox_norm_show_range.setEnabled(False)
+            self.ui.combobox_norm.setEnabled(False)
             self.ui.checkbox_norm_bg.setEnabled(False)
+            self.ui.checkbox_norm_lag.setEnabled(False)
+            self.ui.spinbox_norm_lag.setEnabled(False)
+            self.ui.spinbox_norm_window.setEnabled(False)
             self.ui.button_bg_input.setEnabled(False)
             self.ui.combobox_reduce.setEnabled(False)
+            self.ui.spinbox_norm_beta.setEnabled(False)
+            self.ui.spinbox_norm_blur.setEnabled(False)
         else:
             self.ui.checkbox_norm_range.setEnabled(True)
+            self.ui.spinbox_norm_range_start.setEnabled(True)
+            self.ui.spinbox_norm_range_end.setEnabled(True)
+            self.ui.checkbox_norm_show_range.setEnabled(True)
+            self.ui.combobox_norm.setEnabled(True)
             if self.ui.button_bg_input.text() == "[Remove]":
                 self.ui.checkbox_norm_bg.setEnabled(True)
+            self.ui.checkbox_norm_lag.setEnabled(True)
+            self.ui.spinbox_norm_lag.setEnabled(True)
+            self.ui.spinbox_norm_window.setEnabled(True)
             self.ui.button_bg_input.setEnabled(True)
             self.ui.combobox_reduce.setEnabled(True)
+            self.ui.spinbox_norm_beta.setEnabled(True)
+            self.ui.spinbox_norm_blur.setEnabled(True)
         if name == "subtract" and self.ui.checkbox_norm_divide.isChecked():
             self.ui.checkbox_norm_divide.setChecked(False)
         elif name == "divide" and self.ui.checkbox_norm_subtract.isChecked():
@@ -418,11 +451,13 @@ class MainWindow(QMainWindow):
                 self.ui.spinbox_norm_window.value(),
                 self.ui.spinbox_norm_lag.value(),
             )
+        normalized = False
         with LoadingManager(self, "Calculating...") as lm:
             normalized = self.ui.image_viewer.norm(
                 operation=name,
                 use=self.ui.combobox_norm.currentText(),
                 beta=self.ui.spinbox_norm_beta.value() / 100.0,
+                gaussian_blur=self.ui.spinbox_norm_blur.value(),
                 bounds=bounds,
                 background=self.ui.checkbox_norm_bg.isChecked(),
                 window_lag=window_lag,
@@ -439,6 +474,17 @@ class MainWindow(QMainWindow):
         self.rosee_adapter.update(
             use_local_extrema=self.ui.checkbox_rosee_local_extrema.isChecked(),
             smoothing=self.ui.spinbox_rosee_smoothing.value(),
+            normalized=self.ui.checkbox_rosee_normalize.isChecked(),
+            show_indices=self.ui.checkbox_rosee_show_indices.isChecked(),
+            iso_smoothing=self.ui.spinbox_iso_smoothing.value(),
+            show_index_lines=self.ui.checkbox_rosee_show_lines.isChecked(),
+        )
+
+    def update_isocurves(self) -> None:
+        self.rosee_adapter.update_iso(
+            on=self.ui.checkbox_show_isocurve.isChecked(),
+            n=self.ui.spinbox_isocurves.value(),
+            smoothing=self.ui.spinbox_iso_smoothing.value(),
         )
 
     def search_background_file(self) -> None:
@@ -604,12 +650,12 @@ class MainWindow(QMainWindow):
             self.ui.checkbox_norm_subtract.setEnabled(True)
             self.ui.checkbox_norm_divide.setEnabled(True)
         if text == "-":
-            self.ui.checkbox_autofit.setChecked(True)
+            self.ui.button_autofit.setChecked(True)
             with LoadingManager(self, f"Unpacking ..."):
                 self.ui.image_viewer.unravel()
             self.update_statusbar()
         else:
-            self.ui.checkbox_autofit.setChecked(False)
+            self.ui.button_autofit.setChecked(False)
             with LoadingManager(self, f"Loading {text}...") as lm:
                 self.ui.image_viewer.reduce(text)
             self.update_statusbar()

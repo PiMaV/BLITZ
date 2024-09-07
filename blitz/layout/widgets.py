@@ -125,16 +125,9 @@ class MeasureROI(pg.PolyLineROI):
 
         self.line_labels = []
         self.angle_labels = []
-        self.circum_label = pg.TextItem("")
-        self._viewer.view.addItem(self.circum_label)
-        self.circum_label.setVisible(False)
-        self.area_label = pg.TextItem("")
-        self._viewer.view.addItem(self.area_label)
-        self.area_label.setVisible(False)
         self.circ_box = circ_box
         self.area_box = area_box
         self.bounding_rect_box = bounding_rect_box
-        self.labels_visible = True
 
         self.bounding_rect = pg.RectROI([0, 0], [10, 20], movable=False)
         self._viewer.view.addItem(self.bounding_rect)
@@ -148,6 +141,7 @@ class MeasureROI(pg.PolyLineROI):
         self._visible = True
         self.toggle()
         self._viewer.image_changed.connect(self.reshape)
+        self.reshape()
 
     def reshape(self) -> None:
         height = self._viewer.image.shape[2]
@@ -173,16 +167,8 @@ class MeasureROI(pg.PolyLineROI):
             label.setVisible(self._visible)
         for label in self.angle_labels:
             label.setVisible(self._visible)
-        self.circum_label.setVisible(self._visible and self.labels_visible)
-        self.area_label.setVisible(self._visible and self.labels_visible)
         if self._visible:
             self.update_labels()
-
-    def toggle_area_circ_labels(self) -> None:
-        self.labels_visible = not self.labels_visible
-        if self._visible:
-            self.circum_label.setVisible(self.labels_visible)
-            self.area_label.setVisible(self.labels_visible)
 
     def update_labels(self) -> None:
         self.update_angles()
@@ -247,24 +233,19 @@ class MeasureROI(pg.PolyLineROI):
                 self._viewer.view.addItem(line_label)
                 self.line_labels.append(line_label)
 
-        bounds = self.boundingRect().center() + self.pos()
         points = [x for pol in self.shape().toFillPolygons() for x in pol]
         area = 0
         for i in range(len(points)-1):
             area += points[i].x()*points[i+1].y()-points[i+1].x()*points[i].y()
         if self.show_in_mm:
             area = area * (self.px_in_mm / self.n_px)**2
-        self.circum_label.setText(f"Circ: {total_length:.2f}")
         self.circ_box.setText(f"Circ: {total_length:.2f}")
-        self.circum_label.setPos(bounds.x(), bounds.y())
-        self.area_label.setText(f"Area: {-0.5 * area:,.2f}")
         self.area_box.setText(f"Area: {-0.5 * area:,.2f}")
-        self.area_label.setPos(bounds.x(), bounds.y()+2)
         rect = self.boundingRect()
         w, h = rect.width(), rect.height()
         if self.show_in_mm:
             w, h = w * self.px_in_mm / self.n_px, h * self.px_in_mm / self.n_px
-        self.bounding_rect_box.setText(f"Bounding Rect: {w:.2f} x {h:.2f}")
+        self.bounding_rect_box.setText(f"HxW: {w:.2f} x {h:.2f}")
 
 
 class ExtractionLine(pg.InfiniteLine):
@@ -410,9 +391,7 @@ class ExtractionPlot(pg.PlotWidget):
 
         self._extractionline = ExtractionLine(viewer=viewer, vertical=vertical)
         self._extractionline.sigPositionChanged.connect(self.draw_line)
-        self._extractionline.sigPositionChanged.connect(self.draw_indicator)
         self._viewer.timeLine.sigPositionChanged.connect(self.draw_line)
-        self._viewer.timeLine.sigPositionChanged.connect(self.draw_indicator)
         self._viewer.image_changed.connect(self.draw_line)
         self._viewer.image_size_changed.connect(self.center_line)
         self._coupled: ExtractionPlot | None = None
@@ -456,9 +435,10 @@ class ExtractionPlot(pg.PlotWidget):
         return image
 
     def draw_line(self) -> None:
+        self.clear()
         if (image := self.extract_data()) is not None:
-            self.clear()
             self.plot(image)
+            self.draw_indicator()
 
     def plot(
         self,

@@ -44,7 +44,6 @@ class ImageViewer(pg.ImageView):
         self.ui.roiPlot.plotItem.showGrid(  # type: ignore
             x=True, y=True, alpha=0.6,
         )
-        self._auto_changed_gradient = False
         self.ui.histogram.gradient.loadPreset('greyclip')
 
         self.mask: None | RectROI = None
@@ -63,7 +62,7 @@ class ImageViewer(pg.ImageView):
             lambda: self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
         )
         self.setAcceptDrops(True)
-        self._fit_levels = True
+        self._auto_colormap = True
         self._background_image: ImageData | None = None
         if (path := settings.get("data/path")) != "":
             self.load_data(Path(path))
@@ -109,7 +108,7 @@ class ImageViewer(pg.ImageView):
             self.data.image,
             keep_timestep=True,
             autoRange=False,
-            autoLevels=self._fit_levels,
+            autoLevels=False,
         )
 
     def dragEnterEvent(self, e: QDropEvent):
@@ -127,39 +126,36 @@ class ImageViewer(pg.ImageView):
             pos = self.timeLine.pos()
         super().setImage(*args, **kwargs)
         if keep_timestep:
-            self.timeLine.setPos(pos)
+            self.timeLine.setPos(pos)  # type: ignore
         self.init_roi()
         self.image_changed.emit()
 
     def updateImage(self, autoHistogramRange: bool = False) -> None:
         super().updateImage(autoHistogramRange)
 
+    def toggle_auto_colormap(self) -> None:
+        self._auto_colormap = not self._auto_colormap
+
     def autoLevels(self) -> None:
-        if not self.data.is_greyscale():
-            if self._auto_changed_gradient:
-                self._auto_changed_gradient = False
-            return super().autoLevels()
+        if self.data.is_greyscale() and self._auto_colormap:
+            self.auto_colormap()
+        else:
+            super().autoLevels()
+
+    def auto_colormap(self) -> None:
         if (min_ := self.image.min()) < 0 < (max_ := self.image.max()):
             max_ = max(abs(min_), max_)
             min_ = - max_
             self.ui.histogram.gradient.loadPreset('bipolar')
             self.setLevels(min=min_, max=max_)
             self.ui.histogram.setHistogramRange(min_, max_)
-            self._auto_changed_gradient = True
         else:
-            if self._auto_changed_gradient:
-                self.ui.histogram.gradient.loadPreset('greyclip')
-                self._auto_changed_gradient = False
+            self.ui.histogram.gradient.loadPreset('greyclip')
             super().autoLevels()
-
-    def toggle_fit_levels(self) -> None:
-        self._fit_levels = not self._fit_levels
-        if self._fit_levels:
-            self.autoLevels()
 
     def load_data(self, path: Optional[Path] = None, **kwargs) -> None:
         self.data = DataLoader(**kwargs).load(path)
-        self.setImage(self.data.image)
+        self.setImage(self.data.image, autoLevels=True)
         self.autoRange()
         self.image_size_changed.emit()
 
@@ -223,6 +219,7 @@ class ImageViewer(pg.ImageView):
         operation: str,
         use: ReduceOperation | str,
         beta: float = 1.0,
+        gaussian_blur: int = 0,
         bounds: Optional[tuple[int, int]] = None,
         background: bool = False,
         window_lag: Optional[tuple[int, int]] = None,
@@ -232,6 +229,7 @@ class ImageViewer(pg.ImageView):
             operation=operation,  # type: ignore
             use=use,
             beta=beta,
+            gaussian_blur=gaussian_blur,
             bounds=bounds,
             reference=self._background_image if background else None,
             window_lag=window_lag,
@@ -241,7 +239,7 @@ class ImageViewer(pg.ImageView):
             self.data.image,
             keep_timestep=True,
             autoRange=False,
-            autoLevels=self._fit_levels,
+            autoLevels=True,
         )
         self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
         return normalized
@@ -251,7 +249,7 @@ class ImageViewer(pg.ImageView):
         self.setImage(
             self.data.image,
             keep_timestep=(left < self.currentIndex < right),
-            autoLevels=self._fit_levels,
+            autoLevels=False,
         )
         self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
 
@@ -260,7 +258,7 @@ class ImageViewer(pg.ImageView):
         if success:
             self.setImage(
                 self.data.image,
-                autoLevels=self._fit_levels,
+                autoLevels=False,
             )
             self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
         return success
@@ -270,7 +268,7 @@ class ImageViewer(pg.ImageView):
         self.setImage(
             self.data.image,
             autoRange=False,
-            autoLevels=self._fit_levels,
+            autoLevels=False,
         )
 
     def reduce(self, operation: ReduceOperation | str) -> None:
@@ -278,7 +276,7 @@ class ImageViewer(pg.ImageView):
         self.setImage(
             self.data.image,
             autoRange=False,
-            autoLevels=self._fit_levels,
+            autoLevels=False,
         )
 
     def manipulate(self, operation: str) -> None:
@@ -290,7 +288,7 @@ class ImageViewer(pg.ImageView):
             self.data.image,
             keep_timestep=True,
             autoRange=False,
-            autoLevels=self._fit_levels,
+            autoLevels=False,
         )
         if operation == 'transpose':
             self.image_size_changed.emit()
@@ -303,7 +301,7 @@ class ImageViewer(pg.ImageView):
         self.setImage(
             self.data.image,
             keep_timestep=True,
-            autoLevels=self._fit_levels,
+            autoLevels=False,
         )
         self.image_size_changed.emit()
 
@@ -311,7 +309,7 @@ class ImageViewer(pg.ImageView):
         self.data.reset_mask()
         self.setImage(
             self.data.image,
-            autoLevels=self._fit_levels,
+            autoLevels=False,
         )
         self.image_size_changed.emit()
 
