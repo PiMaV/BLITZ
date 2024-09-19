@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Literal
 
 import numpy as np
 import pyqtgraph as pg
@@ -31,6 +31,8 @@ class ROSEEAdapter:
         self._reconstruction_shown = False
         self._index_lines_h: list[pg.InfiniteLine] = []
         self._index_lines_v: list[pg.InfiniteLine] = []
+        self._all_lines_h: list[pg.PlotDataItem] = []
+        self._all_lines_v: list[pg.PlotDataItem] = []
 
         self._show_iso: bool = False
         self._n_iso = 1
@@ -106,6 +108,7 @@ class ROSEEAdapter:
         show_indices: bool,
         show_index_lines: bool,
         iso_smoothing: int,
+        show_all_bounds: bool,
     ) -> None:
         if self._show_horizontal:
             self._update(
@@ -115,10 +118,13 @@ class ROSEEAdapter:
                 normalized,
                 show_index_lines,
                 show_indices,
+                show_all_bounds,
             )
         else:
             while len(self._index_lines_h) > 0:
                 self.viewer.view.removeItem(self._index_lines_h.pop())
+            while len(self._all_lines_h) > 0:
+                self.viewer.view.removeItem(self._all_lines_h.pop())
             self.h_plot.draw_line()
             self.interval_edit[0].setText("")
             self.slope_edit[0].setText("eye: ")
@@ -130,10 +136,13 @@ class ROSEEAdapter:
                 normalized,
                 show_index_lines,
                 show_indices,
+                show_all_bounds,
             )
         else:
             while len(self._index_lines_v) > 0:
                 self.viewer.view.removeItem(self._index_lines_v.pop())
+            while len(self._all_lines_v) > 0:
+                self.viewer.view.removeItem(self._all_lines_v.pop())
             self.v_plot.draw_line()
             self.interval_edit[1].setText("")
             self.slope_edit[1].setText("eye: ")
@@ -148,6 +157,7 @@ class ROSEEAdapter:
         normalized: bool,
         show_index_lines: bool,
         show_indices: bool,
+        show_all_bounds: bool,
     ) -> None:
         plot = self.h_plot if orientation == "h" else self.v_plot
         signal = plot.extract_data()
@@ -267,6 +277,79 @@ class ROSEEAdapter:
         else:
             while len(index_lines) > 0:
                 self.viewer.view.removeItem(index_lines.pop())
+
+        if show_all_bounds:
+            bounds_left, bounds_right = self.calculate_all(
+                orientation,
+                use_local_extrema=use_local_extrema,
+                smoothing=smoothing,
+            )
+            if orientation == "h":
+                while len(self._all_lines_h) > 0:
+                    self.viewer.view.removeItem(self._all_lines_h.pop())
+                self._all_lines_h.append(self.viewer.view.plot(
+                    bounds_left,
+                    np.arange(len(bounds_left)),
+                    pen=None,
+                    symbol='o',
+                    symbolBrush=pg.mkColor(0, 200, 0, 150),
+                 ))
+                self._all_lines_h.append(self.viewer.view.plot(
+                    bounds_right,
+                    np.arange(len(bounds_right)),
+                    pen=None,
+                    symbol='o',
+                    symbolBrush=pg.mkColor(0, 200, 0, 150),
+                ))
+            else:
+                while len(self._all_lines_v) > 0:
+                    self.viewer.view.removeItem(self._all_lines_v.pop())
+                self._all_lines_v.append(self.viewer.view.plot(
+                    np.arange(len(bounds_left)),
+                    bounds_left,
+                    pen=None,
+                    symbol='o',
+                    symbolBrush=pg.mkColor(0, 200, 0, 150),
+                ))
+                self._all_lines_v.append(self.viewer.view.plot(
+                    np.arange(len(bounds_right)),
+                    bounds_right,
+                    pen=None,
+                    symbol='o',
+                    symbolBrush=pg.mkColor(0, 200, 0, 150),
+                ))
+        else:
+            if orientation == "h":
+                while len(self._all_lines_h) > 0:
+                    self.viewer.view.removeItem(self._all_lines_h.pop())
+            else:
+                while len(self._all_lines_v) > 0:
+                    self.viewer.view.removeItem(self._all_lines_v.pop())
+
+    def calculate_all(
+        self,
+        orientation: Literal["h", "v"],
+        use_local_extrema: bool = True,
+        smoothing: int = 0,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        left = np.zeros(self.viewer.data.shape[1 if orientation == "h" else 0])
+        right = left.copy()
+        for i in range(self.viewer.data.shape[1 if orientation == "h" else 0]):
+            if orientation == "h":
+                _, _, indices = self.calculate(
+                    self.viewer.now[:, i, 0],
+                    use_local_extrema=use_local_extrema,
+                    smoothing=smoothing,
+                )
+            else:
+                _, _, indices = self.calculate(
+                    self.viewer.now[i, :, 0],
+                    use_local_extrema=use_local_extrema,
+                    smoothing=smoothing,
+                )
+            left[i] = indices[0]
+            right[i] = indices[2]
+        return left, right
 
     def calculate(
         self,

@@ -556,6 +556,8 @@ class UI_MainWindow(QWidget):
         rosee_lines_hlay.addWidget(self.checkbox_rosee_show_indices)
         rosee_lines_hlay.addWidget(self.checkbox_rosee_show_lines)
         rosee_layout.addLayout(rosee_lines_hlay)
+        self.checkbox_rosee_all = QCheckBox("show bounds in image")
+        rosee_layout.addWidget(self.checkbox_rosee_all)
         hline = QFrame()
         hline.setFrameShape(QFrame.Shape.HLine)
         hline.setFrameShadow(QFrame.Shadow.Sunken)

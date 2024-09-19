@@ -201,6 +201,7 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_rosee_show_indices.stateChanged.connect(
             self.toggle_rosee
         )
+        self.ui.checkbox_rosee_all.stateChanged.connect(self.toggle_rosee)
         self.ui.h_plot._extractionline.sigPositionChanged.connect(
             self.toggle_rosee
         )
@@ -364,39 +365,6 @@ class MainWindow(QMainWindow):
         with LoadingManager(self, "Masking..."):
             self.ui.image_viewer.image_mask(Path(file_path))
 
-    # def _normalization_update(self) -> None:
-    #     name = None
-    #     if self.ui.checkbox_norm_subtract.isChecked():
-    #         name = "subtract"
-    #     if self.ui.checkbox_norm_divide.isChecked():
-    #         name = "divide"
-    #     if name is not None:
-    #         bounds = None
-    #         if self.ui.checkbox_norm_range.isChecked():
-    #             bounds = (
-    #                 self.ui.spinbox_norm_range_start.value(),
-    #                 self.ui.spinbox_norm_range_end.value(),
-    #             )
-    #         window_lag = None
-    #         if self.ui.checkbox_norm_lag.isChecked():
-    #             window_lag = (
-    #                 self.ui.spinbox_norm_window.value(),
-    #                 self.ui.spinbox_norm_lag.value(),
-    #             )
-    #         with LoadingManager(self, "Calculating...") as lm:
-    #             self.ui.image_viewer.norm(
-    #                 operation=name,
-    #                 use=self.ui.combobox_norm.currentText(),
-    #                 beta=self.ui.spinbox_norm_beta.value() / 100.0,
-    #                 gaussian_blur=self.ui.spinbox_norm_blur.value(),
-    #                 bounds=bounds,
-    #                 background=self.ui.checkbox_norm_bg.isChecked(),
-    #                 window_lag=window_lag,
-    #                 force_calculation=True,
-    #             )
-    #         log(f"Normalized in {lm.duration:.2f}s")
-    #         self.update_statusbar()
-
     def _normalization(self, name: str) -> None:
         if ((not self.ui.checkbox_norm_range.isChecked()
                 and not self.ui.checkbox_norm_bg.isChecked()
@@ -478,6 +446,7 @@ class MainWindow(QMainWindow):
             show_indices=self.ui.checkbox_rosee_show_indices.isChecked(),
             iso_smoothing=self.ui.spinbox_iso_smoothing.value(),
             show_index_lines=self.ui.checkbox_rosee_show_lines.isChecked(),
+            show_all_bounds=self.ui.checkbox_rosee_all.isChecked(),
         )
 
     def update_isocurves(self) -> None:
