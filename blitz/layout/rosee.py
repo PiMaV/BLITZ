@@ -25,8 +25,10 @@ class ROSEEAdapter:
         self.v_plot = v_plot
         self.interval_edit = interval_edit
         self.slope_edit = slope_edit
-        self._show_vertical: bool = False
-        self._show_horizontal: bool = False
+        self._show_v_plot: bool = False
+        self._show_h_plot: bool = False
+        self._show_v_image: bool = False
+        self._show_h_image: bool = False
         self._components_shown = False
         self._reconstruction_shown = False
         self._index_lines_h: list[pg.InfiniteLine] = []
@@ -71,13 +73,17 @@ class ROSEEAdapter:
                 curve.hide()
                 line.hide()
 
-    @property
-    def is_visible(self) -> bool:
-        return self._show_vertical or self._show_horizontal
-
-    def toggle(self, horizontal: bool = False, vertical: bool = False) -> None:
-        self._show_horizontal = horizontal
-        self._show_vertical = vertical
+    def toggle(
+        self,
+        h_plot: bool = False,
+        v_plot: bool = False,
+        h_image: bool = False,
+        v_image: bool = False,
+    ) -> None:
+        self._show_h_plot = h_plot
+        self._show_v_plot = v_plot
+        self._show_h_image = h_image
+        self._show_v_image = v_image
 
     def update_iso(
         self,
@@ -108,17 +114,17 @@ class ROSEEAdapter:
         show_indices: bool,
         show_index_lines: bool,
         iso_smoothing: int,
-        show_all_bounds: bool,
     ) -> None:
-        if self._show_horizontal:
+        if self._show_h_plot or self._show_h_image:
             self._update(
                 "h",
+                self._show_h_plot,
+                self._show_h_image,
                 use_local_extrema,
                 smoothing,
                 normalized,
                 show_index_lines,
                 show_indices,
-                show_all_bounds,
             )
         else:
             while len(self._index_lines_h) > 0:
@@ -128,15 +134,16 @@ class ROSEEAdapter:
             self.h_plot.draw_line()
             self.interval_edit[0].setText("")
             self.slope_edit[0].setText("eye: ")
-        if self._show_vertical:
+        if self._show_v_plot or self._show_v_image:
             self._update(
                 "v",
+                self._show_v_plot,
+                self._show_v_image,
                 use_local_extrema,
                 smoothing,
                 normalized,
                 show_index_lines,
                 show_indices,
-                show_all_bounds,
             )
         else:
             while len(self._index_lines_v) > 0:
@@ -152,133 +159,152 @@ class ROSEEAdapter:
     def _update(
         self,
         orientation: Literal["h", "v"],
+        in_plot: bool,
+        in_image: bool,
         use_local_extrema: bool,
         smoothing: int,
         normalized: bool,
         show_index_lines: bool,
         show_indices: bool,
-        show_all_bounds: bool,
     ) -> None:
         plot = self.h_plot if orientation == "h" else self.v_plot
-        signal = plot.extract_data()
-        if signal is None:
-            return
-        if signal.shape[1] > 1:
-            weights = np.array([0.2989, 0.5870, 0.1140])
-            signal = np.sum(signal * weights, axis=-1)
-        else:
-            signal = signal.squeeze(1)
-        cumsum, fluctuation, indices = self.calculate(
-            signal,
-            use_local_extrema=use_local_extrema,
-            smoothing=smoothing,
+        sbrush = pg.mkColor(30, 255, 0) if orientation == "h" else (
+            pg.mkColor(255, 0, 255)
         )
-        indices = indices.astype(int)
-        if normalized:
-            signal = normalize(signal)
-            cumsum = normalize(cumsum)
-            fluctuation = normalize(fluctuation)
-
-        signal, cumsum, fluctuation = unify_range(signal, cumsum, fluctuation)
-        plot.plotItem.clear()
-        plot.plot(
-            signal[..., np.newaxis],
-            pen=pg.mkPen('w'),
-            name="norm. Signal",
-        )
-        plot.plot(
-            cumsum[..., np.newaxis],
-            pen=pg.mkPen('c', style=Qt.PenStyle.DashDotDotLine),
-            name="norm. Cumsum",
-        )
-        plot.plot(
-            fluctuation[..., np.newaxis],
-            pen=pg.mkPen('r', style=Qt.PenStyle.DashDotDotLine),
-            name="Fluctuation Cumsum",
+        sbrush2 = pg.mkColor(10, 150, 0) if orientation == "h" else (
+            pg.mkColor(150, 0, 150)
         )
 
-        self.interval_edit[0 if orientation == "h" else 1].setText(
-            f"[{indices[0], indices[2]}]"
-        )
-        self.slope_edit[0 if orientation == "h" else 1].setText(
-            f"eye: {indices[1]}"
-        )
+        if in_plot:
+            signal = plot.extract_data()
+            if signal is None:
+                return
+            if signal.shape[1] > 1:
+                weights = np.array([0.2989, 0.5870, 0.1140])
+                signal = np.sum(signal * weights, axis=-1)
+            else:
+                signal = signal.squeeze(1)
+            cumsum, fluctuation, indices = self.calculate(
+                signal,
+                use_local_extrema=use_local_extrema,
+                smoothing=smoothing,
+            )
+            indices = indices.astype(int)
+            if normalized:
+                signal = normalize(signal)
+                cumsum = normalize(cumsum)
+                fluctuation = normalize(fluctuation)
 
-        plot.plot_x_y(
-            indices[0:1],
-            fluctuation[indices[0]:indices[0]+1],
-            pen=None,
-            symbol='o',
-            symbolBrush="g",
-            name='Min Index',
-        )
-        plot.plot_x_y(
-            indices[1:2],
-            fluctuation[indices[1]:indices[1]+1],
-            pen=None,
-            symbol='t',
-            symbolBrush="orange",
-            name='Max Slope Index',
-        )
-        plot.plot_x_y(
+            signal, cumsum, fluctuation = unify_range(
+                signal, cumsum, fluctuation,
+            )
+            plot.plotItem.clear()
+            plot.plot(
+                signal[..., np.newaxis],
+                pen=pg.mkPen('w'),
+                name="norm. Signal",
+            )
+            plot.plot(
+                cumsum[..., np.newaxis],
+                pen=pg.mkPen('c', style=Qt.PenStyle.DashDotDotLine),
+                name="norm. Cumsum",
+            )
+            plot.plot(
+                fluctuation[..., np.newaxis],
+                pen=pg.mkPen('r', style=Qt.PenStyle.DashDotDotLine),
+                name="Fluctuation Cumsum",
+            )
+
+            self.interval_edit[0 if orientation == "h" else 1].setText(
+                f"[{indices[0], indices[2]}]"
+            )
+            self.slope_edit[0 if orientation == "h" else 1].setText(
+                f"eye: {indices[1]}"
+            )
+
+            plot.plot_x_y(
+                indices[0:1],
+                fluctuation[indices[0]:indices[0]+1],
+                pen=None,
+                symbol='o',
+                symbolBrush=sbrush,
+                name='Min Index',
+            )
+            plot.plot_x_y(
+                indices[1:2],
+                fluctuation[indices[1]:indices[1]+1],
+                pen=None,
+                symbol='t',
+                symbolBrush=sbrush2,
+                name='Max Slope Index',
+            )
+            plot.plot_x_y(
                 indices[2:3],
                 fluctuation[indices[2]:indices[2]+1],
                 pen=None,
                 symbol='o',
-                symbolBrush="g",
+                symbolBrush=sbrush,
                 name='Max Index',
-        )
-
-        if show_indices:
-            text_min = pg.TextItem(
-                text=str(indices[0]),
-                color='g',
-                anchor=(.5, 1) if orientation == "h" else (1, .5),
             )
-            text_min.setPos(*plot.get_translated_pos(indices[0], 0))
-            plot.addItem(text_min)
 
-            text_max_slope = pg.TextItem(
-                text=str(indices[1]),
-                color='orange',
-                anchor=(.5, 1) if orientation == "h" else (1, .5),
-            )
-            text_max_slope.setPos(*plot.get_translated_pos(indices[1], 0))
-            plot.addItem(text_max_slope)
+            if show_indices:
+                text_min = pg.TextItem(
+                    text=str(indices[0]),
+                    color=sbrush,
+                    anchor=(.5, 1) if orientation == "h" else (1, .5),
+                )
+                text_min.setPos(*plot.get_translated_pos(indices[0], 0))
+                plot.addItem(text_min)
 
-            text_max = pg.TextItem(
-                text=str(indices[2]),
-                color='g',
-                anchor=(.5, 1) if orientation == "h" else (1, .5),
-            )
-            text_max.setPos(*plot.get_translated_pos(indices[2], 0))
-            plot.addItem(text_max)
+                text_max_slope = pg.TextItem(
+                    text=str(indices[1]),
+                    color=sbrush2,
+                    anchor=(.5, 1) if orientation == "h" else (1, .5),
+                )
+                text_max_slope.setPos(*plot.get_translated_pos(indices[1], 0))
+                plot.addItem(text_max_slope)
 
-        index_lines = (
-            self._index_lines_v if orientation == "v" else self._index_lines_h
-        )
-        if show_index_lines:
-            while len(index_lines) > 0:
-                self.viewer.view.removeItem(index_lines.pop())
-            min_line = pg.InfiniteLine(
-                angle=90 if orientation == "h" else 0,
-                pen="g",
-            )
-            max_line = pg.InfiniteLine(
-                angle=90 if orientation == "h" else 0,
-                pen="g",
-            )
-            min_line.setValue(indices[0])
-            max_line.setValue(indices[2])
-            self.viewer.view.addItem(min_line)
-            self.viewer.view.addItem(max_line)
-            index_lines.append(min_line)
-            index_lines.append(max_line)
-        else:
-            while len(index_lines) > 0:
-                self.viewer.view.removeItem(index_lines.pop())
+                text_max = pg.TextItem(
+                    text=str(indices[2]),
+                    color=sbrush,
+                    anchor=(.5, 1) if orientation == "h" else (1, .5),
+                )
+                text_max.setPos(*plot.get_translated_pos(indices[2], 0))
+                plot.addItem(text_max)
 
-        if show_all_bounds:
+            index_lines = (
+                self._index_lines_v if orientation == "v"
+                else self._index_lines_h
+            )
+            if show_index_lines:
+                while len(index_lines) > 0:
+                    self.viewer.view.removeItem(index_lines.pop())
+                min_line = pg.InfiniteLine(
+                    angle=90 if orientation == "h" else 0,
+                    pen=sbrush,
+                )
+                eye_line = pg.InfiniteLine(
+                    angle=90 if orientation == "h" else 0,
+                    pen=sbrush2,
+                )
+                max_line = pg.InfiniteLine(
+                    angle=90 if orientation == "h" else 0,
+                    pen=sbrush,
+                )
+                min_line.setValue(indices[0])
+                eye_line.setValue(indices[1])
+                max_line.setValue(indices[2])
+                self.viewer.view.addItem(min_line)
+                self.viewer.view.addItem(eye_line)
+                self.viewer.view.addItem(max_line)
+                index_lines.append(min_line)
+                index_lines.append(eye_line)
+                index_lines.append(max_line)
+            else:
+                while len(index_lines) > 0:
+                    self.viewer.view.removeItem(index_lines.pop())
+
+        if in_image:
             bounds_left, bounds_right = self.calculate_all(
                 orientation,
                 use_local_extrema=use_local_extrema,
@@ -309,14 +335,14 @@ class ROSEEAdapter:
                     bounds_left,
                     pen=None,
                     symbol='o',
-                    symbolBrush=pg.mkColor(0, 200, 0, 150),
+                    symbolBrush=pg.mkColor(200, 0, 200, 150),
                 ))
                 self._all_lines_v.append(self.viewer.view.plot(
                     np.arange(len(bounds_right)),
                     bounds_right,
                     pen=None,
                     symbol='o',
-                    symbolBrush=pg.mkColor(0, 200, 0, 150),
+                    symbolBrush=pg.mkColor(200, 0, 200, 150),
                 ))
         else:
             if orientation == "h":
