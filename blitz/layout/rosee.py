@@ -6,6 +6,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QLineEdit
 
 from ..data.tools import normalize, unify_range
+from ..tools import log
 from .viewer import ImageViewer
 from .widgets import ExtractionPlot
 
@@ -223,15 +224,7 @@ class ROSEEAdapter:
             )
 
             plot.plot_x_y(
-                indices[0:1],
-                fluctuation[indices[0]:indices[0]+1],
-                pen=None,
-                symbol='o',
-                symbolBrush=sbrush,
-                name='Min Index',
-            )
-            plot.plot_x_y(
-                indices[1:2],
+                indices[1:2]+0.5,
                 fluctuation[indices[1]:indices[1]+1],
                 pen=None,
                 symbol='t',
@@ -239,7 +232,15 @@ class ROSEEAdapter:
                 name='Max Slope Index',
             )
             plot.plot_x_y(
-                indices[2:3],
+                indices[0:1]+0.5,
+                fluctuation[indices[0]:indices[0]+1],
+                pen=None,
+                symbol='o',
+                symbolBrush=sbrush,
+                name='Min Index',
+            )
+            plot.plot_x_y(
+                indices[2:3]+0.5,
                 fluctuation[indices[2]:indices[2]+1],
                 pen=None,
                 symbol='o',
@@ -253,7 +254,7 @@ class ROSEEAdapter:
                     color=sbrush,
                     anchor=(.5, 1) if orientation == "h" else (1, .5),
                 )
-                text_min.setPos(*plot.get_translated_pos(indices[0], 0))
+                text_min.setPos(*plot.get_translated_pos(indices[0]+0.5, 0))
                 plot.addItem(text_min)
 
                 text_max_slope = pg.TextItem(
@@ -261,7 +262,9 @@ class ROSEEAdapter:
                     color=sbrush2,
                     anchor=(.5, 1) if orientation == "h" else (1, .5),
                 )
-                text_max_slope.setPos(*plot.get_translated_pos(indices[1], 0))
+                text_max_slope.setPos(
+                    *plot.get_translated_pos(indices[1]+0.5, 0)
+                )
                 plot.addItem(text_max_slope)
 
                 text_max = pg.TextItem(
@@ -269,7 +272,7 @@ class ROSEEAdapter:
                     color=sbrush,
                     anchor=(.5, 1) if orientation == "h" else (1, .5),
                 )
-                text_max.setPos(*plot.get_translated_pos(indices[2], 0))
+                text_max.setPos(*plot.get_translated_pos(indices[2]+0.5, 0))
                 plot.addItem(text_max)
 
             index_lines = (
@@ -291,9 +294,9 @@ class ROSEEAdapter:
                     angle=90 if orientation == "h" else 0,
                     pen=sbrush,
                 )
-                min_line.setValue(indices[0])
-                eye_line.setValue(indices[1])
-                max_line.setValue(indices[2])
+                min_line.setValue(indices[0]+0.5)
+                eye_line.setValue(indices[1]+0.5)
+                max_line.setValue(indices[2]+0.5)
                 self.viewer.view.addItem(min_line)
                 self.viewer.view.addItem(eye_line)
                 self.viewer.view.addItem(max_line)
@@ -305,7 +308,7 @@ class ROSEEAdapter:
                     self.viewer.view.removeItem(index_lines.pop())
 
         if in_image:
-            bounds_left, bounds_right = self.calculate_all(
+            bounds_left, max_slopes, bounds_right = self.calculate_all(
                 orientation,
                 use_local_extrema=use_local_extrema,
                 smoothing=smoothing,
@@ -314,35 +317,49 @@ class ROSEEAdapter:
                 while len(self._all_lines_h) > 0:
                     self.viewer.view.removeItem(self._all_lines_h.pop())
                 self._all_lines_h.append(self.viewer.view.plot(
-                    bounds_left,
-                    np.arange(len(bounds_left)),
+                    max_slopes+0.5,
+                    np.arange(len(max_slopes))+0.5,
+                    pen=None,
+                    symbol='t',
+                    symbolBrush=sbrush2,
+                ))
+                self._all_lines_h.append(self.viewer.view.plot(
+                    bounds_left+0.5,
+                    np.arange(len(bounds_left))+0.5,
                     pen=None,
                     symbol='o',
-                    symbolBrush=pg.mkColor(0, 200, 0, 150),
+                    symbolBrush=sbrush,
                  ))
                 self._all_lines_h.append(self.viewer.view.plot(
-                    bounds_right,
-                    np.arange(len(bounds_right)),
+                    bounds_right+0.5,
+                    np.arange(len(bounds_right))+0.5,
                     pen=None,
                     symbol='o',
-                    symbolBrush=pg.mkColor(0, 200, 0, 150),
+                    symbolBrush=sbrush,
                 ))
             else:
                 while len(self._all_lines_v) > 0:
                     self.viewer.view.removeItem(self._all_lines_v.pop())
                 self._all_lines_v.append(self.viewer.view.plot(
-                    np.arange(len(bounds_left)),
-                    bounds_left,
+                    np.arange(len(max_slopes))+0.5,
+                    max_slopes+0.5,
                     pen=None,
-                    symbol='o',
-                    symbolBrush=pg.mkColor(200, 0, 200, 150),
+                    symbol='t',
+                    symbolBrush=sbrush2,
                 ))
                 self._all_lines_v.append(self.viewer.view.plot(
-                    np.arange(len(bounds_right)),
-                    bounds_right,
+                    np.arange(len(bounds_left))+0.5,
+                    bounds_left+0.5,
                     pen=None,
                     symbol='o',
-                    symbolBrush=pg.mkColor(200, 0, 200, 150),
+                    symbolBrush=sbrush,
+                ))
+                self._all_lines_v.append(self.viewer.view.plot(
+                    np.arange(len(bounds_right))+0.5,
+                    bounds_right+0.5,
+                    pen=None,
+                    symbol='o',
+                    symbolBrush=sbrush,
                 ))
         else:
             if orientation == "h":
@@ -357,8 +374,9 @@ class ROSEEAdapter:
         orientation: Literal["h", "v"],
         use_local_extrema: bool = True,
         smoothing: int = 0,
-    ) -> tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         left = np.zeros(self.viewer.data.shape[1 if orientation == "h" else 0])
+        slope = left.copy()
         right = left.copy()
         for i in range(self.viewer.data.shape[1 if orientation == "h" else 0]):
             if orientation == "h":
@@ -374,8 +392,9 @@ class ROSEEAdapter:
                     smoothing=smoothing,
                 )
             left[i] = indices[0]
+            slope[i] = indices[1]
             right[i] = indices[2]
-        return left, right
+        return left, slope, right
 
     def calculate(
         self,
@@ -392,38 +411,30 @@ class ROSEEAdapter:
                 mode="same",
             )[smoothing // 2: -(smoothing) // 2]
 
-        diff_fluct = np.diff(fluctuation)
-        max_slope_index = int(np.argmax(diff_fluct))
-        if max_slope_index <= 0 or max_slope_index >= len(diff_fluct) - 1:
-            event_indices = np.zeros(3)
-        elif use_local_extrema:
-            left_diff = diff_fluct[:max_slope_index]
-            left_sign_change = np.where(np.diff(np.sign(left_diff)))[0]
-            if len(left_sign_change) == 0:
-                start_index = 0
-            else:
-                start_index = left_sign_change[-1] + 1
+        if not use_local_extrema:
+            start_index = np.argmin(fluctuation)
+            end_index = np.argmax(fluctuation)
+            max_slope = np.argmax(signal)
 
-            right_diff = diff_fluct[max_slope_index:]
-            right_sign_change = np.where(np.diff(np.sign(right_diff)))[0]
-            if len(right_sign_change) == 0:
-                end_index = len(fluctuation) - 1
-            else:
-                end_index = right_sign_change[0] + max_slope_index + 1
-            event_indices = np.array((start_index, max_slope_index, end_index))
+            event_indices = np.array((start_index, max_slope, end_index))
         else:
-            min_index = np.argmin(fluctuation[:max_slope_index])
-            max_index = (
-                np.argmax(fluctuation[max_slope_index:]) + max_slope_index
+            max_slope = np.argmax(signal)
+            diff_fluctuation = np.diff(fluctuation)
+            left_sign_change = np.where(
+                np.diff(np.sign(diff_fluctuation[:max_slope]))
+            )[0]
+            start_index = 0 if len(left_sign_change)==0 else (
+                left_sign_change[-1] + 1
             )
-            if min_index >= max_slope_index or max_index <= max_slope_index:
-                event_indices = np.zeros(3)
-            else:
-                start_index = min_index
-                end_index = max_index
-                event_indices = np.array(
-                    (start_index, max_slope_index, end_index)
-                )
+
+            right_sign_change = np.where(
+                np.diff(np.sign(diff_fluctuation[max_slope:]))
+            )[0]
+            end_index = len(fluctuation)-1 if len(right_sign_change)==0 else (
+                right_sign_change[0] + max_slope + 1
+            )
+            event_indices = np.array((start_index, max_slope, end_index))
+
         return cumsum, fluctuation, event_indices
 
     def _update_iso(self, smoothing: int = 0) -> None:

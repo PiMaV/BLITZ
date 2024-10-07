@@ -447,7 +447,7 @@ class ExtractionPlot(pg.PlotWidget):
         **kwargs,
     ) -> None:
         if x_values is None:
-            x_values = np.arange(image.shape[0])
+            x_values = np.arange(image.shape[0]) + 0.5
         image = image.squeeze()
         x_values = x_values.squeeze()
         self.plot_x_y(x_values, image, **kwargs)
