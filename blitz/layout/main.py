@@ -230,6 +230,15 @@ class MainWindow(QMainWindow):
             self.update_isocurves
         )
 
+        # --- setting synchronization ---
+
+        settings.connect_sync(
+            self.ui.spinbox_max_ram.valueChanged,
+            self.ui.spinbox_max_ram.value,
+            self.ui.spinbox_max_ram.setValue,
+            "default/max_ram",
+        )
+
     def reset_options(self) -> None:
         self.ui.spinbox_max_ram.setRange(.1, .8 * get_available_ram())
         self.ui.spinbox_max_ram.setValue(settings.get("default/max_ram"))
@@ -710,7 +719,7 @@ class MainWindow(QMainWindow):
             "window/docks",
             self.ui.dock_area.saveState(),
         )
-        settings.set("data/max_ram", self.ui.spinbox_max_ram.value())
+        settings.set("default/max_ram", self.ui.spinbox_max_ram.value())
 
     def load_settings(self) -> None:
         if settings.select():

@@ -124,12 +124,14 @@ def export() -> None:
     if SETTINGS is None:
         SETTINGS = _Settings()
 
-    path = QFileDialog.getSaveFileName(
+    path, _ = QFileDialog.getSaveFileName(
         caption="Save project file",
         directory=str(SETTINGS.path),
         filter="BLITZ project file (*.ini)",
     )
-    SETTINGS.file = Path(path[0]+".ini")
+    if not path.endswith(".ini"):
+        path += ".ini"
+    SETTINGS.file = Path(path)
     SETTINGS.write_all()
 
 
@@ -152,3 +154,13 @@ def new_settings(file: Optional[Path] = None) -> None:
         SETTINGS = _Settings()
     if file is not None:
         SETTINGS.file = file
+
+
+def connect_sync(
+    signal,
+    value_getter,
+    value_setter,
+    setting: str,
+) -> None:
+    signal.connect(lambda: set(setting, value_getter()))
+    value_setter(get(setting))
