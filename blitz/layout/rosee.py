@@ -6,7 +6,6 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QLineEdit
 
 from ..data.tools import normalize, unify_range
-from ..tools import log
 from .viewer import ImageViewer
 from .widgets import ExtractionPlot
 

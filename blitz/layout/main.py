@@ -45,17 +45,15 @@ class MainWindow(QMainWindow):
         )
         self.setup_connections()
         self.reset_options()
-
-        if (lut := settings.get("viewer/LUT")):
-            try:
-                self.ui.image_viewer.load_lut_config(lut)
-            except:
-                log("Failed to load LUT config given in the .ini file",
-                    color="red")
+        self.setup_sync()
 
         self.ui.checkbox_roi.setChecked(False)
         self.ui.checkbox_roi.setChecked(True)
         log("Welcome to BLITZ", color="pink")
+
+    def closeEvent(self, event):
+        self.save_settings()
+        event.accept()
 
     def setup_connections(self) -> None:
         # MainWindow connections
@@ -67,7 +65,7 @@ class MainWindow(QMainWindow):
         self.ui.action_open_folder.triggered.connect(self.browse_folder)
         self.ui.action_load_tof.triggered.connect(self.browse_tof)
         self.ui.action_export.triggered.connect(self.export)
-        self.ui.action_project_save.triggered.connect(self.sync_settings)
+        self.ui.action_project_save.triggered.connect(self.export_settings)
         self.ui.action_project_open.triggered.connect(self.load_settings)
         self.ui.action_restart.triggered.connect(restart)
         self.ui.action_link_inp.triggered.connect(
@@ -230,13 +228,104 @@ class MainWindow(QMainWindow):
             self.update_isocurves
         )
 
-        # --- setting synchronization ---
-
+    def setup_sync(self) -> None:
         settings.connect_sync(
-            self.ui.spinbox_max_ram.valueChanged,
+            self.ui.checkbox_load_8bit.stateChanged,
+            self.ui.checkbox_load_8bit.isChecked,
+            self.ui.checkbox_load_8bit.setChecked,
+            "default/load_8bit",
+        )
+        settings.connect_sync(
+            self.ui.checkbox_load_grayscale.stateChanged,
+            self.ui.checkbox_load_grayscale.isChecked,
+            self.ui.checkbox_load_grayscale.setChecked,
+            "default/load_grayscale",
+        )
+        settings.connect_sync(
+            self.ui.spinbox_load_size.editingFinished,
+            self.ui.spinbox_load_size.value,
+            self.ui.spinbox_load_size.setValue,
+            "default/size_ratio",
+        )
+        settings.connect_sync(
+            self.ui.spinbox_load_subset.editingFinished,
+            self.ui.spinbox_load_subset.value,
+            self.ui.spinbox_load_subset.setValue,
+            "default/subset_ratio",
+        )
+        settings.connect_sync(
+            self.ui.spinbox_max_ram.editingFinished,
             self.ui.spinbox_max_ram.value,
             self.ui.spinbox_max_ram.setValue,
             "default/max_ram",
+        )
+        settings.connect_sync(
+            self.ui.address_edit.editingFinished,
+            self.ui.address_edit.text,
+            self.ui.address_edit.setText,
+            "web/address",
+        )
+        settings.connect_sync(
+            self.ui.token_edit.editingFinished,
+            self.ui.token_edit.text,
+            self.ui.token_edit.setText,
+            "web/token",
+        )
+
+        if (path := settings.get("data/path")) != "":
+            self.ui.image_viewer.load_data(Path(path))
+            self.ui.image_viewer.data.load_options()
+            self.ui.image_viewer.update_image()
+        else:
+            self.ui.image_viewer.load_data()
+
+        settings.connect_sync(
+            self.ui.checkbox_flipx.stateChanged,
+            self.ui.checkbox_flipx.isChecked,
+            self.ui.checkbox_flipx.setChecked,
+            "data/flipped_x",
+            lambda: self.ui.image_viewer.manipulate("flip_x"),
+            True,
+        )
+        settings.connect_sync(
+            self.ui.checkbox_flipy.stateChanged,
+            self.ui.checkbox_flipy.isChecked,
+            self.ui.checkbox_flipy.setChecked,
+            "data/flipped_y",
+            lambda: self.ui.image_viewer.manipulate("flip_y"),
+            True,
+        )
+        settings.connect_sync(
+            self.ui.checkbox_transpose.stateChanged,
+            self.ui.checkbox_transpose.isChecked,
+            self.ui.checkbox_transpose.setChecked,
+            "data/transposed",
+            lambda: self.ui.image_viewer.manipulate("transpose"),
+            True,
+        )
+        settings.connect_sync(
+            self.ui.spinbox_pixel.editingFinished,
+            self.ui.spinbox_pixel.value,
+            self.ui.spinbox_pixel.setValue,
+            "default/measure_tool_pixels",
+        )
+        settings.connect_sync(
+            self.ui.spinbox_mm.editingFinished,
+            self.ui.spinbox_mm.value,
+            self.ui.spinbox_mm.setValue,
+            "default/measure_tool_au",
+        )
+        settings.connect_sync(
+            self.ui.image_viewer.ui.histogram.item.sigLevelChangeFinished,
+            self.ui.image_viewer.get_lut_config,
+            self.ui.image_viewer.load_lut_config,
+            "viewer/LUT",
+        )
+        settings.connect_sync(
+            self.ui.image_viewer.ui.histogram.item.sigLookupTableChanged,
+            self.ui.image_viewer.get_lut_config,
+            self.ui.image_viewer.load_lut_config,
+            "viewer/LUT",
         )
 
     def reset_options(self) -> None:
@@ -700,26 +789,27 @@ class MainWindow(QMainWindow):
             return
         self.ui.measure_roi.update_labels()
 
-    def sync_settings(self) -> None:
+    def export_settings(self) -> None:
         if (path := settings.get("data/path")) != "":
             path = Path(path)
             self.last_file_dir = path.parent
             self.last_file = path.name
         settings.export()
-        settings.set("viewer/LUT", self.ui.image_viewer.get_lut_config())
-        self.ui.image_viewer.data.save_options()
-        if self.last_file != "":
-            settings.set("data/path", str(self.last_file_dir / self.last_file))
+        self.save_settings()
+
+    def save_settings(self):
+        settings.set(
+            "window/docks",
+            self.ui.dock_area.saveState(),
+        )
         screen_geometry = QApplication.primaryScreen().availableGeometry()
         settings.set(
             "window/relative_size",
             self.width() / screen_geometry.width(),
         )
-        settings.set(
-            "window/docks",
-            self.ui.dock_area.saveState(),
-        )
-        settings.set("default/max_ram", self.ui.spinbox_max_ram.value())
+        self.ui.image_viewer.data.save_options()
+        if self.last_file != "":
+            settings.set("data/path", str(self.last_file_dir / self.last_file))
 
     def load_settings(self) -> None:
         if settings.select():

@@ -6,13 +6,14 @@ from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
                              QDoubleSpinBox, QFrame, QGridLayout, QHBoxLayout,
                              QLabel, QLayout, QLineEdit, QMenu, QMenuBar,
-                             QPushButton, QScrollArea, QSpinBox, QStatusBar,
-                             QStyle, QTabWidget, QVBoxLayout, QWidget, QSizePolicy)
+                             QPushButton, QScrollArea, QSizePolicy, QSpinBox,
+                             QStatusBar, QStyle, QTabWidget, QVBoxLayout,
+                             QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import __version__, resources, settings
 from ..data.ops import ReduceOperation
-from ..tools import LoggingTextEdit, get_available_ram, setup_logger
+from ..tools import LoggingTextEdit, setup_logger
 from .viewer import ImageViewer
 from .widgets import ExtractionPlot, MeasureROI, TimePlot
 
@@ -164,7 +165,7 @@ class UI_MainWindow(QWidget):
 
         project_menu = QMenu("Project", self)
         project_menu.setToolTipsVisible(True)
-        self.action_project_save = project_menu.addAction("Save")
+        self.action_project_save = project_menu.addAction("Save as")
         self.action_project_open = project_menu.addAction("Open")
         self.menubar.addMenu(project_menu)
 
@@ -631,76 +632,6 @@ class UI_MainWindow(QWidget):
         rosee_layout.addWidget(self.spinbox_iso_smoothing)
         rosee_layout.addStretch()
         self.create_option_tab(rosee_layout, "RoSEE")
-        # rosee_layout = QVBoxLayout()
-        # label_rosee = QLabel("RoSEE")
-        # label_rosee.setStyleSheet(style_heading)
-        # rosee_layout.addWidget(label_rosee)
-        # self.checkbox_rosee_local_extrema = QCheckBox("Use local extrema")
-        # self.checkbox_rosee_local_extrema.setChecked(True)
-        # rosee_layout.addWidget(self.checkbox_rosee_local_extrema)
-        # self.spinbox_rosee_smoothing = QSpinBox()
-        # self.spinbox_rosee_smoothing.setPrefix("Smoothing: ")
-        # rosee_layout.addWidget(self.spinbox_rosee_smoothing)
-        # self.checkbox_rosee_normalize = QCheckBox("Normalize values")
-        # rosee_layout.addWidget(self.checkbox_rosee_normalize)
-        # self.checkbox_rosee_show_indices = QCheckBox("Show Indices")
-        # self.checkbox_rosee_show_lines = QCheckBox("Show Lines")
-        # rosee_lines_hlay = QHBoxLayout()
-        # rosee_lines_hlay.addWidget(self.checkbox_rosee_show_indices)
-        # rosee_lines_hlay.addWidget(self.checkbox_rosee_show_lines)
-        # rosee_layout.addLayout(rosee_lines_hlay)
-        # self.checkbox_rosee_all = QCheckBox("show bounds in image")
-        # rosee_layout.addWidget(self.checkbox_rosee_all)
-        # hline = QFrame()
-        # hline.setFrameShape(QFrame.Shape.HLine)
-        # hline.setFrameShadow(QFrame.Shadow.Sunken)
-        # rosee_layout.addWidget(hline)
-        # self.checkbox_rosee_h = QCheckBox("horizontal")
-        # self.checkbox_rosee_v = QCheckBox("vertical")
-        # rosee_hlay = QHBoxLayout()
-        # rosee_hlay.addWidget(self.checkbox_rosee_h)
-        # rosee_hlay.addWidget(self.checkbox_rosee_v)
-        # rosee_layout.addLayout(rosee_hlay)
-        # hline = QFrame()
-        # hline.setFrameShape(QFrame.Shape.HLine)
-        # hline.setFrameShadow(QFrame.Shadow.Sunken)
-        # rosee_layout.addWidget(hline)
-        # self.textbox_rosee_interval_h = QLineEdit()
-        # self.textbox_rosee_interval_h.setEnabled(False)
-        # self.textbox_rosee_interval_v = QLineEdit()
-        # self.textbox_rosee_interval_v.setEnabled(False)
-        # self.textbox_rosee_slope_h = QLineEdit("eye: ")
-        # self.textbox_rosee_slope_h.setEnabled(False)
-        # self.textbox_rosee_slope_v = QLineEdit("eye: ")
-        # self.textbox_rosee_slope_v.setEnabled(False)
-        # rosee_index_vlayh = QVBoxLayout()
-        # rosee_index_vlayh.addWidget(self.textbox_rosee_interval_h)
-        # rosee_index_vlayh.addWidget(self.textbox_rosee_slope_h)
-        # rosee_index_vlayv = QVBoxLayout()
-        # rosee_index_vlayv.addWidget(self.textbox_rosee_interval_v)
-        # rosee_index_vlayv.addWidget(self.textbox_rosee_slope_v)
-        # rosee_index_hlay = QHBoxLayout()
-        # rosee_index_hlay.addLayout(rosee_index_vlayh)
-        # rosee_index_hlay.addLayout(rosee_index_vlayv)
-        # rosee_layout.addLayout(rosee_index_hlay)
-        # label_isocurves = QLabel("Isocurves")
-        # label_isocurves.setStyleSheet(style_heading)
-        # rosee_layout.addWidget(label_isocurves)
-        # self.checkbox_show_isocurve = QCheckBox("Show Isocurves")
-        # self.checkbox_show_isocurve.setChecked(False)
-        # self.spinbox_isocurves = QSpinBox()
-        # self.spinbox_isocurves.setMinimum(1)
-        # self.spinbox_isocurves.setValue(1)
-        # iso_hlay = QHBoxLayout()
-        # iso_hlay.addWidget(self.checkbox_show_isocurve)
-        # iso_hlay.addWidget(self.spinbox_isocurves)
-        # rosee_layout.addLayout(iso_hlay)
-        # self.spinbox_iso_smoothing = QSpinBox()
-        # self.spinbox_iso_smoothing.setPrefix("Smoothing: ")
-        # self.spinbox_iso_smoothing.setMinimum(0)
-        # rosee_layout.addWidget(self.spinbox_iso_smoothing)
-        # rosee_layout.addStretch()
-        # self.create_option_tab(rosee_layout, "RoSEE")
 
     def assign_tooltips(self) -> None:
         file = QFile(":/docs/tooltips.json")

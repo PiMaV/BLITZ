@@ -64,12 +64,7 @@ class ImageViewer(pg.ImageView):
         self.setAcceptDrops(True)
         self._auto_colormap = True
         self._background_image: ImageData | None = None
-        if (path := settings.get("data/path")) != "":
-            self.load_data(Path(path))
-            self.data.load_options()
-            self.update_image()
-        else:
-            self.load_data()
+        self.load_data()
 
     @property
     def now(self) -> np.ndarray:

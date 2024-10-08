@@ -1,8 +1,10 @@
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Callable
 
 from PyQt5.QtCore import QSettings
 from PyQt5.QtWidgets import QFileDialog
+
+from .tools import log
 
 SETTINGS: "_Settings" = None  # type: ignore
 
@@ -20,7 +22,13 @@ _default_settings = {
 
     "default/multicore_size_threshold": 1.3 * (2**30),
     "default/multicore_files_threshold": 333,
-    "default/max_ram": 1.0,
+    "default/load_8bit": False,
+    "default/load_grayscale": True,
+    "default/size_ratio": 1.0,
+    "default/subset_ratio": 1.0,
+    "default/max_ram": 0.1,
+    "default/measure_tool_pixels": 1,
+    "default/measure_tool_au": 1.0,
     "default/isocurve_smoothing": 3,
 
     "data/path": "",
@@ -30,6 +38,8 @@ _default_settings = {
     "data/flipped_y": False,
     "data/transposed": False,
 
+    "web/address": "",
+    "web/token": "",
     "web/connect_attempts": 3,
     "web/connect_timeout": 1,
     "web/download_attempts": 3,
@@ -93,10 +103,13 @@ class _Settings:
     def __setitem__(self, setting: str, value: Any) -> None:
         type_ = type(_default_settings[setting])
         if type(value) != type_:
-            raise ValueError(
-                f"Setting '{setting}' of type {type_} was given as incorrect "
-                f"type {type(value)}"
-            )
+            try:
+                value = type_(value)
+            except:
+                raise ValueError(
+                    f"Setting '{setting}' of type {type_} was given as "
+                    f"incorrect type {type(value)}"
+                )
         self.settings.setValue(setting, value)
 
 
@@ -158,9 +171,18 @@ def new_settings(file: Optional[Path] = None) -> None:
 
 def connect_sync(
     signal,
-    value_getter,
-    value_setter,
+    value_getter: Callable,
+    value_setter: Callable,
     setting: str,
+    manipulator: Optional[Callable] = None,
+    manipulator_target = None,
 ) -> None:
     signal.connect(lambda: set(setting, value_getter()))
-    value_setter(get(setting))
+    if get(setting) != _default_settings[setting]:
+        try:
+            value_setter(get(setting))
+        except:
+            log(f"Failed to load setting {setting!r} from the .ini file",
+                color="red")
+    if manipulator is not None and get(setting) == manipulator_target:
+        manipulator()

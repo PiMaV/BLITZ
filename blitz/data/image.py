@@ -239,21 +239,12 @@ class ImageData:
         self._flipped_y = not self._flipped_y
 
     def save_options(self) -> None:
-        settings.set("data/flipped_x", self._flipped_x)
-        settings.set("data/flipped_x", self._flipped_x)
-        settings.set("data/transposed", self._transposed)
         if self._mask is not None:
             settings.set("data/mask", self._mask)
         if self._cropped is not None:
             settings.set("data/cropped", self._cropped)
 
     def load_options(self) -> None:
-        if settings.get("data/flipped_x"):
-            self.flip_x()
-        if settings.get("data/flipped_x"):
-            self.flip_y()
-        if settings.get("data/transposed"):
-            self.transpose()
         if mask := settings.get("data/mask"):
             self._mask = mask
         if cropped := settings.get("data/cropped"):
