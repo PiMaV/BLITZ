@@ -272,10 +272,23 @@ class MainWindow(QMainWindow):
             "web/token",
         )
 
-        if (path := settings.get("data/path")) != "":
-            self.ui.image_viewer.load_data(Path(path))
-            self.ui.image_viewer.data.load_options()
-            self.ui.image_viewer.update_image()
+        settings.connect_sync(
+            self.ui.checkbox_sync_file.stateChanged,
+            self.ui.checkbox_sync_file.isChecked,
+            self.ui.checkbox_sync_file.setChecked,
+            "data/sync",
+        )
+        if (settings.get("data/sync")
+                and ((path := settings.get("data/path")) != "")):
+            if Path(path).exists():
+                self.ui.image_viewer.load_data(Path(path))
+                self.ui.image_viewer.data.load_options()
+                self.ui.image_viewer.update_image()
+            else:
+                log("Path to dataset in ini file does not point to a valid "
+                    "file or folder location. Deleting entry...",
+                    color="red")
+                settings.set("data/path", "")
         else:
             self.ui.image_viewer.load_data()
 
@@ -790,10 +803,6 @@ class MainWindow(QMainWindow):
         self.ui.measure_roi.update_labels()
 
     def export_settings(self) -> None:
-        if (path := settings.get("data/path")) != "":
-            path = Path(path)
-            self.last_file_dir = path.parent
-            self.last_file = path.name
         settings.export()
         self.save_settings()
 
@@ -808,7 +817,7 @@ class MainWindow(QMainWindow):
             self.width() / screen_geometry.width(),
         )
         self.ui.image_viewer.data.save_options()
-        if self.last_file != "":
+        if (settings.get("data/sync") and (self.last_file != "")):
             settings.set("data/path", str(self.last_file_dir / self.last_file))
 
     def load_settings(self) -> None:

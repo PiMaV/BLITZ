@@ -1,6 +1,7 @@
 {
     "action_open_file": "Select a single file containing one or more images (.png, .npy, ...).",
     "action_open_folder": "Select a folder containing multiple (single-image) files.",
+    "checkbox_sync_file": "Synchronize the path to the dataset with the selected ini file. Also loads this dataset at the start of BLITZ.",
     "action_load_tof": "Load a tof .json file that is recorded additionally to the data.",
     "action_export": "Export the currently displayed images to the selected folder.",
     "action_project_save": "Writes an .ini project file with all current configurations.",

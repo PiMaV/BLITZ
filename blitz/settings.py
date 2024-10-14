@@ -31,6 +31,7 @@ _default_settings = {
     "default/measure_tool_au": 1.0,
     "default/isocurve_smoothing": 3,
 
+    "data/sync": True,
     "data/path": "",
     "data/mask": (),
     "data/cropped": (),
@@ -178,7 +179,8 @@ def connect_sync(
     manipulator_target = None,
 ) -> None:
     signal.connect(lambda: set(setting, value_getter()))
-    if get(setting) != _default_settings[setting]:
+    if ((get(setting) != _default_settings[setting])
+            or get(setting) != value_getter()):
         try:
             value_setter(get(setting))
         except:
