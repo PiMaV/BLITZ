@@ -165,7 +165,8 @@ class UI_MainWindow(QWidget):
 
         project_menu = QMenu("Project", self)
         project_menu.setToolTipsVisible(True)
-        self.action_project_save = project_menu.addAction("Save as")
+        self.action_project_save = project_menu.addAction("Save")
+        self.action_project_save_as = project_menu.addAction("Save as")
         self.action_project_open = project_menu.addAction("Open")
         self.menubar.addMenu(project_menu)
 
@@ -279,7 +280,7 @@ class UI_MainWindow(QWidget):
         self.spinbox_max_ram.setSingleStep(0.1)
         self.spinbox_max_ram.setPrefix("Max. RAM: ")
         file_layout.addWidget(self.spinbox_max_ram)
-        self.checkbox_sync_file = QCheckBox("Sync data with ini file")
+        self.checkbox_sync_file = QCheckBox("Save ini file")
         self.checkbox_sync_file.setChecked(True)
         file_layout.addWidget(self.checkbox_sync_file)
         load_btn_lay = QHBoxLayout()

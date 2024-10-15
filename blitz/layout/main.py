@@ -53,6 +53,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self.save_settings()
+        settings.clean_up()
         event.accept()
 
     def setup_connections(self) -> None:
@@ -65,7 +66,8 @@ class MainWindow(QMainWindow):
         self.ui.action_open_folder.triggered.connect(self.browse_folder)
         self.ui.action_load_tof.triggered.connect(self.browse_tof)
         self.ui.action_export.triggered.connect(self.export)
-        self.ui.action_project_save.triggered.connect(self.export_settings)
+        self.ui.action_project_save.triggered.connect(self.save)
+        self.ui.action_project_save_as.triggered.connect(self.save_as)
         self.ui.action_project_open.triggered.connect(self.load_settings)
         self.ui.action_restart.triggered.connect(restart)
         self.ui.action_link_inp.triggered.connect(
@@ -281,7 +283,7 @@ class MainWindow(QMainWindow):
         if (settings.get("data/sync")
                 and ((path := settings.get("data/path")) != "")):
             if Path(path).exists():
-                self.ui.image_viewer.load_data(Path(path))
+                self.load_images(Path(path))
                 self.ui.image_viewer.data.load_options()
                 self.ui.image_viewer.update_image()
             else:
@@ -333,12 +335,14 @@ class MainWindow(QMainWindow):
             self.ui.image_viewer.get_lut_config,
             self.ui.image_viewer.load_lut_config,
             "viewer/LUT",
+            sync_at_start=False,
         )
         settings.connect_sync(
             self.ui.image_viewer.ui.histogram.item.sigLookupTableChanged,
             self.ui.image_viewer.get_lut_config,
             self.ui.image_viewer.load_lut_config,
             "viewer/LUT",
+            sync_at_start=False,
         )
 
     def reset_options(self) -> None:
@@ -768,10 +772,12 @@ class MainWindow(QMainWindow):
             )
         if file_path is not None:
             log(f"Loaded in {lm.duration:.2f}s")
-            self.last_file_dir = Path(file_path).parent
-            self.last_file = Path(file_path).name
+            self.last_file_dir = file_path.parent
+            self.last_file = file_path.name
             self.update_statusbar()
             self.reset_options()
+            if self.ui.checkbox_sync_file.isChecked():
+                self.save()
 
     def operation_changed(self) -> None:
         self.update_statusbar()
@@ -802,7 +808,16 @@ class MainWindow(QMainWindow):
             return
         self.ui.measure_roi.update_labels()
 
-    def export_settings(self) -> None:
+    def save(self) -> None:
+        name = self.last_file
+        if name == "":
+            name = "settings"
+        if "." in name:
+            name = name.split(".")[0]
+        settings.export(self.last_file_dir / (name+".ini"))
+        self.save_settings()
+
+    def save_as(self) -> None:
         settings.export()
         self.save_settings()
 

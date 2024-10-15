@@ -1,10 +1,11 @@
 {
     "action_open_file": "Select a single file containing one or more images (.png, .npy, ...).",
     "action_open_folder": "Select a folder containing multiple (single-image) files.",
-    "checkbox_sync_file": "Synchronize the path to the dataset with the selected ini file. Also loads this dataset at the start of BLITZ.",
+    "checkbox_sync_file": "Saves an .ini file automatically when loading new data. The .ini file is created in the same folder as the dataset with the same name.",
     "action_load_tof": "Load a tof .json file that is recorded additionally to the data.",
     "action_export": "Export the currently displayed images to the selected folder.",
-    "action_project_save": "Writes an .ini project file with all current configurations.",
+    "action_project_save": "Writes an .ini project file to the current dataset path with the same name as the dataset. If no dataset is loaded, instead writes it to the path of BLITZ.",
+    "action_project_save_as": "Writes an .ini project file with all current configurations at the selected file location.",
     "action_project_open": "Select an .ini project file.",
     "action_restart": "Manually restart the application.",
 

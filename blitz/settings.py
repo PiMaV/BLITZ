@@ -53,7 +53,8 @@ class _Settings:
 
     def __init__(self) -> None:
         self._path = Path.cwd()
-        self._file = "settings.ini"
+        self._file = "_cache.ini"
+        self.prevent_deletion = False
         self.select_ini()
 
     @property
@@ -62,6 +63,7 @@ class _Settings:
 
     @path.setter
     def path(self, path: Path) -> None:
+        self.prevent_deletion = True
         self._path = path
         self.select_ini()
 
@@ -71,6 +73,7 @@ class _Settings:
 
     @file.setter
     def file(self, file: Path) -> None:
+        self.prevent_deletion = True
         self._file = file.name
         self.path = file.parent
         self.select_ini()
@@ -132,20 +135,22 @@ def set(setting: str, value: Any) -> None:
     SETTINGS[setting] = value
 
 
-def export() -> None:
+def export(path: Optional[Path] = None) -> None:
     global SETTINGS
 
     if SETTINGS is None:
         SETTINGS = _Settings()
 
-    path, _ = QFileDialog.getSaveFileName(
-        caption="Save project file",
-        directory=str(SETTINGS.path),
-        filter="BLITZ project file (*.ini)",
-    )
-    if not path.endswith(".ini"):
-        path += ".ini"
-    SETTINGS.file = Path(path)
+    if path is None:
+        path_, _ = QFileDialog.getSaveFileName(
+            caption="Save project file",
+            directory=str(SETTINGS.path),
+            filter="BLITZ project file (*.ini)",
+        )
+        if not path_.endswith(".ini"):
+            path_ += ".ini"
+        path = Path(path_)
+    SETTINGS.file = path
     SETTINGS.write_all()
 
 
@@ -170,6 +175,13 @@ def new_settings(file: Optional[Path] = None) -> None:
         SETTINGS.file = file
 
 
+def clean_up() -> None:
+    global SETTINGS
+
+    if not SETTINGS.prevent_deletion:
+        (SETTINGS.path / SETTINGS.file).unlink()
+
+
 def connect_sync(
     signal,
     value_getter: Callable,
@@ -177,8 +189,12 @@ def connect_sync(
     setting: str,
     manipulator: Optional[Callable] = None,
     manipulator_target = None,
+    *,
+    sync_at_start: bool = True,
 ) -> None:
     signal.connect(lambda: set(setting, value_getter()))
+    if not sync_at_start:
+        return
     if ((get(setting) != _default_settings[setting])
             or get(setting) != value_getter()):
         try:
