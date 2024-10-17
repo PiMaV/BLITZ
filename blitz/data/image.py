@@ -41,6 +41,7 @@ class ImageData:
         self._mask: tuple[slice, slice, slice] | None = None
         self._image_mask: np.ndarray | None = None
         self._cropped: tuple[int, int] | None = None
+        self._save_cropped: tuple[int, int] | None = None
         self._transposed = False
         self._flipped_x = False
         self._flipped_y = False
@@ -101,6 +102,7 @@ class ImageData:
         else:
             self._cropped = None
             self._image = self._image[left:right+1]
+        self._save_cropped = (left, right)
 
     def undo_crop(self) -> bool:
         if self._cropped is None:
@@ -241,11 +243,5 @@ class ImageData:
     def save_options(self) -> None:
         if self._mask is not None:
             settings.set("data/mask", self._mask)
-        if self._cropped is not None:
-            settings.set("data/cropped", self._cropped)
-
-    def load_options(self) -> None:
-        if mask := settings.get("data/mask"):
-            self._mask = mask
-        if cropped := settings.get("data/cropped"):
-            self._cropped = cropped
+        if self._save_cropped is not None:
+            settings.set("data/cropped", self._save_cropped)

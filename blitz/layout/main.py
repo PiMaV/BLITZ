@@ -283,9 +283,13 @@ class MainWindow(QMainWindow):
         if (settings.get("data/sync")
                 and ((path := settings.get("data/path")) != "")):
             if Path(path).exists():
-                self.load_images(Path(path))
-                self.ui.image_viewer.data.load_options()
-                self.ui.image_viewer.update_image()
+                mask = settings.get("data/mask")[1:]
+                crop = settings.get("data/cropped")
+                self.load_images(
+                    Path(path),
+                    mask=mask if mask else None,
+                    crop=crop if crop else None,
+                )
             else:
                 log("Path to dataset in ini file does not point to a valid "
                     "file or folder location. Deleting entry...",
@@ -759,7 +763,12 @@ class MainWindow(QMainWindow):
         else:
             self.load_images()
 
-    def load_images(self, file_path: Optional[Path] = None) -> None:
+    def load_images(
+        self,
+        file_path: Optional[Path] = None,
+        mask: Optional[tuple[slice, slice]] = None,
+        crop: Optional[tuple[int, int]] = None,
+    ) -> None:
         text = f"Loading {'...' if file_path is None else file_path}"
         with LoadingManager(self, text) as lm:
             self.ui.image_viewer.load_data(
@@ -769,6 +778,8 @@ class MainWindow(QMainWindow):
                 max_ram=self.ui.spinbox_max_ram.value(),
                 convert_to_8_bit=self.ui.checkbox_load_8bit.isChecked(),
                 grayscale=self.ui.checkbox_load_grayscale.isChecked(),
+                mask=mask,
+                crop=crop,
             )
         if file_path is not None:
             log(f"Loaded in {lm.duration:.2f}s")
