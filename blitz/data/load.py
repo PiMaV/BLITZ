@@ -3,6 +3,7 @@ import os
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
 from typing import Optional
+from natsort import natsort
 
 import cv2
 import numpy as np
@@ -106,6 +107,7 @@ class DataLoader:
             ]
         except ValueError:
             content = [f for f in path.iterdir() if not f.is_dir()]
+        content = natsort(content)
         suffixes = {s: len([f for f in content if f.suffix == s])
                     for s in set(f.suffix for f in content)}
         most_frequent_suffix = max(suffixes, key=suffixes.get)  # type: ignore
