@@ -73,6 +73,21 @@ class ROSEEAdapter:
                 curve.hide()
                 line.hide()
 
+        mean_val = np.mean(self.viewer.now)
+        if self._n_iso > 1:
+            std_val = np.std(self.viewer.now)
+            levels = np.linspace(
+                mean_val-std_val,
+                mean_val+std_val,
+                self._n_iso,
+            )
+            levels = np.clip(levels, 0, np.max(self.viewer.now))
+        else:
+            levels = [mean_val]
+
+        for isoLine, level in zip(self._isolines, levels):
+            isoLine.setValue(level)
+
     def toggle(
         self,
         h_plot: bool = False,
@@ -454,12 +469,9 @@ class ROSEEAdapter:
             (smoothing, smoothing),
         )
 
-        for iso, level in zip(self._isocurves, levels):
-            iso.setLevel(level)
+        for iso, line in zip(self._isocurves, self._isolines):
+            iso.setLevel(line.value())
             iso.setData(filtered_data)
-
-        for isoLine, level in zip(self._isolines, levels):
-            isoLine.setValue(level)
 
     def _update_iso_level(self) -> None:
         for curve, line in zip(self._isocurves, self._isolines):
