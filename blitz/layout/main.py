@@ -756,6 +756,8 @@ class MainWindow(QMainWindow):
             file_path = Path(file_path)
         if file_path is not None:
             if file_path.suffix == ".ini":
+                log(f"Loading '{file_path.name}' configuration file...",
+                    color="green")
                 settings.new_settings(file_path)
                 restart()
             else:
@@ -825,8 +827,14 @@ class MainWindow(QMainWindow):
             name = "settings"
         if "." in name:
             name = name.split(".")[0]
-        settings.export(self.last_file_dir / (name+".ini"))
-        self.save_settings()
+        name += ".ini"
+        if (self.last_file_dir / name).exists():
+            log(f"Loading '{name}' configuration file...", color="green")
+            settings.new_settings(self.last_file_dir / name)
+            restart()
+        else:
+            settings.export(self.last_file_dir / (name+".ini"))
+            self.save_settings()
 
     def save_as(self) -> None:
         settings.export()

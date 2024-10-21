@@ -171,6 +171,9 @@ def new_settings(file: Optional[Path] = None) -> None:
     global SETTINGS
     if SETTINGS is None:
         SETTINGS = _Settings()
+    elif file is not None:
+        if not SETTINGS.prevent_deletion:
+            (SETTINGS.path / SETTINGS.file).unlink()
     if file is not None:
         SETTINGS.file = file
 
