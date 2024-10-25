@@ -1,18 +1,18 @@
 {
     "action_open_file": "Select a single file containing one or more images (.png, .npy, ...).",
     "action_open_folder": "Select a folder containing multiple (single-image) files.",
-    "checkbox_sync_file": "Saves an .ini file automatically when loading new data. The .ini file is created in the same folder as the dataset with the same name.",
+    "checkbox_sync_file": "Saves an .blitz project file automatically when loading new data. The .blitz file is created in the same folder as the dataset with the same name.",
     "action_load_tof": "Load a tof .json file that is recorded additionally to the data.",
     "action_export": "Export the currently displayed images to the selected folder.",
-    "action_project_save": "Writes an .ini project file to the current dataset path with the same name as the dataset. If no dataset is loaded, instead writes it to the path of BLITZ.",
-    "action_project_save_as": "Writes an .ini project file with all current configurations at the selected file location.",
-    "action_project_open": "Select an .ini project file.",
+    "action_project_save": "Writes an .blitz project file to the current dataset path with the same name as the dataset. If no dataset is loaded, instead writes it to the path of BLITZ.",
+    "action_project_save_as": "Writes an .blitz project file with all current configurations at the selected file location.",
+    "action_project_open": "Select an .blitz project file.",
     "action_restart": "Manually restart the application.",
 
     "button_autofit": "Automatically fits the range of the colormap to the colors in the image.",
     "checkbox_auto_colormap": "If set, switches to a centered diverging colormap if negative values in the image appear (e.g. through normalization).",
     "button_load_lut": "Loads a LUT from a .json file.",
-    "button_export_lut": "Saves the current LUT to a .json file. If an .ini file is selected, this LUT gets loaded automatically the next time the application is opened.",
+    "button_export_lut": "Saves the current LUT to a .json file. If an .blitz project file is selected, this LUT gets loaded automatically the next time the application is opened.",
 
     "button_open_file": "Select a single file containing one or more images (.png, .npy, ...).",
     "button_open_folder": "Select a folder containing multiple (single-image) files.",

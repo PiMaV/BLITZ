@@ -53,7 +53,7 @@ class _Settings:
 
     def __init__(self) -> None:
         self._path = Path.cwd()
-        self._file = "_cache.ini"
+        self._file = "_cache.blitz"
         self.prevent_deletion = False
         self.select_ini()
 
@@ -145,10 +145,10 @@ def export(path: Optional[Path] = None) -> None:
         path_, _ = QFileDialog.getSaveFileName(
             caption="Save project file",
             directory=str(SETTINGS.path),
-            filter="BLITZ project file (*.ini)",
+            filter="BLITZ project file (*.blitz)",
         )
-        if not path_.endswith(".ini"):
-            path_ += ".ini"
+        if not path_.endswith(".blitz"):
+            path_ += ".blitz"
         path = Path(path_)
     SETTINGS.file = path
     SETTINGS.write_all()
@@ -159,7 +159,7 @@ def select() -> bool:
     file, _ = QFileDialog.getOpenFileName(
         caption="Select project file",
         directory=str(SETTINGS.path),
-        filter="BLITZ project file (*.ini)",
+        filter="BLITZ project file (*.blitz)",
     )
     if file:
         new_settings(Path(file))
@@ -193,17 +193,17 @@ def connect_sync(
     manipulator: Optional[Callable] = None,
     manipulator_target = None,
     *,
-    sync_at_start: bool = True,
+    rule_out_default: Optional[Any] = None,
 ) -> None:
     signal.connect(lambda: set(setting, value_getter()))
-    if not sync_at_start:
+    if rule_out_default is not None and get(setting) == rule_out_default:
         return
     if ((get(setting) != _default_settings[setting])
             or get(setting) != value_getter()):
         try:
             value_setter(get(setting))
         except:
-            log(f"Failed to load setting {setting!r} from the .ini file",
+            log(f"Failed to load setting {setting!r} from the .blitz file",
                 color="red")
     if manipulator is not None and get(setting) == manipulator_target:
         manipulator()

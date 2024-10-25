@@ -291,8 +291,8 @@ class MainWindow(QMainWindow):
                     crop=crop if crop else None,
                 )
             else:
-                log("Path to dataset in ini file does not point to a valid "
-                    "file or folder location. Deleting entry...",
+                log("Path to dataset in .blitz project file does not point to "
+                    "a valid file or folder location. Deleting entry...",
                     color="red")
                 settings.set("data/path", "")
         else:
@@ -339,14 +339,14 @@ class MainWindow(QMainWindow):
             self.ui.image_viewer.get_lut_config,
             self.ui.image_viewer.load_lut_config,
             "viewer/LUT",
-            sync_at_start=False,
+            rule_out_default={},
         )
         settings.connect_sync(
             self.ui.image_viewer.ui.histogram.item.sigLookupTableChanged,
             self.ui.image_viewer.get_lut_config,
             self.ui.image_viewer.load_lut_config,
             "viewer/LUT",
-            sync_at_start=False,
+            rule_out_default={},
         )
 
     def reset_options(self) -> None:
@@ -755,7 +755,7 @@ class MainWindow(QMainWindow):
         if isinstance(file_path, str):
             file_path = Path(file_path)
         if file_path is not None:
-            if file_path.suffix == ".ini":
+            if file_path.suffix == ".blitz":
                 log(f"Loading '{file_path.name}' configuration file...",
                     color="green")
                 settings.new_settings(file_path)
@@ -827,13 +827,13 @@ class MainWindow(QMainWindow):
             name = "settings"
         if "." in name:
             name = name.split(".")[0]
-        name += ".ini"
+        name += ".blitz"
         if (self.last_file_dir / name).exists():
             log(f"Loading '{name}' configuration file...", color="green")
             settings.new_settings(self.last_file_dir / name)
             restart()
         else:
-            settings.export(self.last_file_dir / (name+".ini"))
+            settings.export(self.last_file_dir / name)
             self.save_settings()
 
     def save_as(self) -> None:
