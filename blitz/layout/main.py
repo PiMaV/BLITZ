@@ -9,6 +9,7 @@ from PyQt5.QtWidgets import QApplication, QFileDialog, QMainWindow, QShortcut
 from .. import __version__, settings
 from ..data.image import ImageData
 from ..data.web import WebDataLoader
+from ..data.live import LiveView
 from ..tools import LoadingManager, get_available_ram, log
 from .rosee import ROSEEAdapter
 from .tof import TOFAdapter
@@ -43,6 +44,7 @@ class MainWindow(QMainWindow):
             (self.ui.textbox_rosee_slope_h,
              self.ui.textbox_rosee_slope_v),
         )
+        self._live_view: None | LiveView = None
         self.setup_connections()
         self.reset_options()
 
@@ -107,6 +109,8 @@ class MainWindow(QMainWindow):
         self.ui.button_disconnect.pressed.connect(
             lambda: self.end_web_connection(None)
         )
+        self.ui.button_watch_start.pressed.connect(self.start_live_view)
+        self.ui.button_watch_stop.pressed.connect(self.end_live_view)
         self.ui.checkbox_flipx.clicked.connect(
             lambda: self.ui.image_viewer.manipulate("flip_x")
         )
@@ -226,6 +230,8 @@ class MainWindow(QMainWindow):
     def reset_options(self) -> None:
         self.ui.spinbox_max_ram.setRange(.1, .8 * get_available_ram())
         self.ui.spinbox_max_ram.setValue(settings.get("default/max_ram"))
+        self.ui.spinbox_camera.setValue(0)
+        self.ui.spinbox_frame_pause.setValue(500)
         self.ui.button_apply_mask.setChecked(False)
         self.ui.checkbox_flipx.setChecked(settings.get("data/flipped_x"))
         self.ui.checkbox_flipy.setChecked(settings.get("data/flipped_y"))
@@ -606,6 +612,31 @@ class MainWindow(QMainWindow):
             self.ui.button_connect.setText("Connect")
             self.ui.button_disconnect.setEnabled(False)
             self._web_connection.deleteLater()
+
+    def start_live_view(self) -> None:
+        if self._live_view is not None:
+            return
+        self._live_view = LiveView(
+            cam=self.ui.spinbox_camera.value(),
+            buffer=self.ui.spinbox_buffer_size.value(),
+            frame_rate=self.ui.spinbox_frame_pause.value(),
+            grayscale=self.ui.checkbox_load_grayscale.isChecked(),
+        )
+        if not self._live_view.available:
+            self._live_view = None
+            return
+        self._live_view.on_next_image.connect(self.ui.image_viewer.set_image)
+        self._live_view.start()
+
+    def end_live_view(self) -> None:
+        if self._live_view is None:
+            return
+        self._live_view.end()
+        self._live_view.on_next_image.disconnect(
+            self.ui.image_viewer.set_image
+        )
+        self._live_view.deleteLater()
+        self._live_view = None
 
     def load_images_adapter(
         self,

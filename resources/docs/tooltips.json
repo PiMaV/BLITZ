@@ -23,6 +23,10 @@
     "button_connect": "Connect to the given server address. Keeps listening until manually disconnected.",
     "button_disconnect": "Disconnect from the server.",
 
+    "spinbox_camera": "The index of the camera device listed by cv2. For one camera available, this is 0.",
+    "spinbox_frame_pause": "The wait time in between two consecutive frames in milliseconds.",
+    "spinbox_buffer_size": "The number of images that can be stored in the buffer at once.",
+
     "checkbox_mask": "Shows a rectangular selection area. Resize and apply for masking all images.",
     "button_reset_mask": "Resets the mask and shows the original image.",
     "button_image_mask": "Select a binary image of the same size as the current data to mask all pixels where that image has value 1.",

@@ -137,7 +137,7 @@ class WebDataLoader(QObject):
             self._connect_thread.quit()
             self._connect_thread.wait()
 
-    def _start_download(self, file_name: str):
+    def _start_download(self, file_name: str) -> None:
         target = self._target
         if not target.endswith("/"):
             target += "/"

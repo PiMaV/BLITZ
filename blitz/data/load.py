@@ -339,6 +339,26 @@ class DataLoader:
         return array, metadata
 
     @staticmethod
+    def from_array(
+        array: np.ndarray,
+        name: str = "",
+    ) -> ImageData:
+        if array.ndim == 2:
+            array = array[np.newaxis, ...]
+        metadata = [MetaData(
+            file_name=f"{name}-{i}",
+            file_size_MB=array.nbytes/2**20,
+            size=(array.shape[0], array.shape[1]),
+            dtype=array.dtype,
+            bit_depth=8*array.dtype.itemsize,
+            color_model=(
+                "rgb" if (array.ndim == 4 and array.shape[-1] == 3)
+                else "grayscale"
+            ),
+        ) for i in range(array.shape[0])]
+        return ImageData(array, metadata)
+
+    @staticmethod
     def from_text(
         text: str,
         height: int = 50,
