@@ -172,8 +172,7 @@ def new_settings(file: Optional[Path] = None) -> None:
     if SETTINGS is None:
         SETTINGS = _Settings()
     elif file is not None:
-        if not SETTINGS.prevent_deletion:
-            (SETTINGS.path / SETTINGS.file).unlink()
+        clean_up()
     if file is not None:
         SETTINGS.file = file
 
@@ -181,7 +180,8 @@ def new_settings(file: Optional[Path] = None) -> None:
 def clean_up() -> None:
     global SETTINGS
 
-    if not SETTINGS.prevent_deletion:
+    if (not SETTINGS.prevent_deletion
+            and (SETTINGS.path / SETTINGS.file).exists()):
         (SETTINGS.path / SETTINGS.file).unlink()
 
 

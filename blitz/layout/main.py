@@ -231,6 +231,8 @@ class MainWindow(QMainWindow):
         )
 
     def setup_sync(self) -> None:
+        if (path := (self.last_file_dir / "settings.blitz")).exists():
+            settings.new_settings(path)
         settings.connect_sync(
             self.ui.checkbox_load_8bit.stateChanged,
             self.ui.checkbox_load_8bit.isChecked,
