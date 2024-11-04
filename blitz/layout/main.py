@@ -190,6 +190,9 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_pixel.valueChanged.connect(self.update_roi_settings)
         self.ui.spinbox_mm.valueChanged.connect(self.update_roi_settings)
         self.ui.checkbox_rosee_active.stateChanged.connect(self.toggle_rosee)
+        self.ui.checkbox_rosee_active.stateChanged.connect(
+            self.update_isocurves
+        )
         self.ui.checkbox_rosee_h.stateChanged.connect(self.toggle_rosee)
         self.ui.checkbox_rosee_v.stateChanged.connect(self.toggle_rosee)
         self.ui.checkbox_rosee_local_extrema.stateChanged.connect(
@@ -425,17 +428,22 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_isocurves.setValue(1)
         self.ui.checkbox_rosee_active.setChecked(False)
         self.ui.checkbox_rosee_h.setEnabled(False)
+        self.ui.checkbox_rosee_h.setChecked(True)
         self.ui.checkbox_rosee_v.setEnabled(False)
+        self.ui.checkbox_rosee_v.setChecked(True)
         self.ui.checkbox_rosee_normalize.setEnabled(False)
         self.ui.spinbox_rosee_smoothing.setEnabled(False)
         self.ui.spinbox_isocurves.setEnabled(False)
         self.ui.checkbox_show_isocurve.setEnabled(False)
+        self.ui.checkbox_show_isocurve.setChecked(False)
         self.ui.spinbox_iso_smoothing.setEnabled(False)
         self.ui.checkbox_rosee_local_extrema.setEnabled(False)
         self.ui.checkbox_rosee_show_lines.setEnabled(False)
         self.ui.checkbox_rosee_show_indices.setEnabled(False)
         self.ui.checkbox_rosee_in_image_h.setEnabled(False)
+        self.ui.checkbox_rosee_in_image_h.setChecked(False)
         self.ui.checkbox_rosee_in_image_v.setEnabled(False)
+        self.ui.checkbox_rosee_in_image_v.setChecked(False)
         self.ui.label_rosee_plots.setEnabled(False)
         self.ui.label_rosee_image.setEnabled(False)
 
@@ -625,7 +633,8 @@ class MainWindow(QMainWindow):
 
     def update_isocurves(self) -> None:
         self.rosee_adapter.update_iso(
-            on=self.ui.checkbox_show_isocurve.isChecked(),
+            on=self.ui.checkbox_show_isocurve.isChecked()
+                and self.ui.checkbox_rosee_active.isChecked(),
             n=self.ui.spinbox_isocurves.value(),
             smoothing=self.ui.spinbox_iso_smoothing.value(),
         )
