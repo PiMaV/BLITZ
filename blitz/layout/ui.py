@@ -6,8 +6,9 @@ from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
                              QDoubleSpinBox, QFrame, QGridLayout, QHBoxLayout,
                              QLabel, QLayout, QLineEdit, QMenu, QMenuBar,
-                             QPushButton, QScrollArea, QSpinBox, QStatusBar,
-                             QStyle, QTabWidget, QVBoxLayout, QWidget, QSizePolicy)
+                             QPushButton, QScrollArea, QSizePolicy, QSpinBox,
+                             QStatusBar, QStyle, QTabWidget, QVBoxLayout,
+                             QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import __version__, resources, settings
@@ -313,6 +314,11 @@ class UI_MainWindow(QWidget):
         self.spinbox_buffer_size = QSpinBox()
         self.spinbox_buffer_size.setMinimum(1)
         self.spinbox_buffer_size.setMaximum(1000)
+        label_downsample = QLabel("Downsample")
+        self.spinbox_downsample = QDoubleSpinBox()
+        self.spinbox_downsample.setSingleStep(0.01)
+        self.spinbox_downsample.setMinimum(0.01)
+        self.spinbox_downsample.setMaximum(1.0)
         gridlay_camera = QGridLayout()
         gridlay_camera.addWidget(label_camera, 0, 0, 1, 1)
         gridlay_camera.addWidget(self.spinbox_camera, 0, 1, 1, 1)
@@ -320,6 +326,8 @@ class UI_MainWindow(QWidget):
         gridlay_camera.addWidget(self.spinbox_frame_pause, 1, 1, 1, 1)
         gridlay_camera.addWidget(label_buffer, 2, 0, 1, 1)
         gridlay_camera.addWidget(self.spinbox_buffer_size, 2, 1, 1, 1)
+        gridlay_camera.addWidget(label_downsample, 3, 0, 1, 1)
+        gridlay_camera.addWidget(self.spinbox_downsample, 3, 1, 1, 1)
         file_layout.addLayout(gridlay_camera)
         self.button_watch_start = QPushButton("start")
         self.button_watch_stop = QPushButton("stop")

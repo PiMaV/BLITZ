@@ -8,8 +8,8 @@ from PyQt5.QtWidgets import QApplication, QFileDialog, QMainWindow, QShortcut
 
 from .. import __version__, settings
 from ..data.image import ImageData
-from ..data.web import WebDataLoader
 from ..data.live import LiveView
+from ..data.web import WebDataLoader
 from ..tools import LoadingManager, get_available_ram, log
 from .rosee import ROSEEAdapter
 from .tof import TOFAdapter
@@ -232,6 +232,7 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_max_ram.setValue(settings.get("default/max_ram"))
         self.ui.spinbox_camera.setValue(0)
         self.ui.spinbox_frame_pause.setValue(500)
+        self.ui.spinbox_downsample.setValue(1.0)
         self.ui.button_apply_mask.setChecked(False)
         self.ui.checkbox_flipx.setChecked(settings.get("data/flipped_x"))
         self.ui.checkbox_flipy.setChecked(settings.get("data/flipped_y"))
@@ -369,39 +370,6 @@ class MainWindow(QMainWindow):
         )
         with LoadingManager(self, "Masking..."):
             self.ui.image_viewer.image_mask(Path(file_path))
-
-    # def _normalization_update(self) -> None:
-    #     name = None
-    #     if self.ui.checkbox_norm_subtract.isChecked():
-    #         name = "subtract"
-    #     if self.ui.checkbox_norm_divide.isChecked():
-    #         name = "divide"
-    #     if name is not None:
-    #         bounds = None
-    #         if self.ui.checkbox_norm_range.isChecked():
-    #             bounds = (
-    #                 self.ui.spinbox_norm_range_start.value(),
-    #                 self.ui.spinbox_norm_range_end.value(),
-    #             )
-    #         window_lag = None
-    #         if self.ui.checkbox_norm_lag.isChecked():
-    #             window_lag = (
-    #                 self.ui.spinbox_norm_window.value(),
-    #                 self.ui.spinbox_norm_lag.value(),
-    #             )
-    #         with LoadingManager(self, "Calculating...") as lm:
-    #             self.ui.image_viewer.norm(
-    #                 operation=name,
-    #                 use=self.ui.combobox_norm.currentText(),
-    #                 beta=self.ui.spinbox_norm_beta.value() / 100.0,
-    #                 gaussian_blur=self.ui.spinbox_norm_blur.value(),
-    #                 bounds=bounds,
-    #                 background=self.ui.checkbox_norm_bg.isChecked(),
-    #                 window_lag=window_lag,
-    #                 force_calculation=True,
-    #             )
-    #         log(f"Normalized in {lm.duration:.2f}s")
-    #         self.update_statusbar()
 
     def _normalization(self, name: str) -> None:
         if ((not self.ui.checkbox_norm_range.isChecked()
@@ -621,6 +589,7 @@ class MainWindow(QMainWindow):
             buffer=self.ui.spinbox_buffer_size.value(),
             frame_rate=self.ui.spinbox_frame_pause.value(),
             grayscale=self.ui.checkbox_load_grayscale.isChecked(),
+            downsample=self.ui.spinbox_downsample.value(),
         )
         if not self._live_view.available:
             self._live_view = None

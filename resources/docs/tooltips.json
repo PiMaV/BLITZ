@@ -26,6 +26,7 @@
     "spinbox_camera": "The index of the camera device listed by cv2. For one camera available, this is 0.",
     "spinbox_frame_pause": "The wait time in between two consecutive frames in milliseconds.",
     "spinbox_buffer_size": "The number of images that can be stored in the buffer at once.",
+    "spinbox_downsample": "The ratio of the downsampled image size and the original size as a number between 0 and 1. 1 means no downsampling.",
 
     "checkbox_mask": "Shows a rectangular selection area. Resize and apply for masking all images.",
     "button_reset_mask": "Resets the mask and shows the original image.",

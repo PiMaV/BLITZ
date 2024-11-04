@@ -16,6 +16,7 @@ class CamWatcher(QObject):
         buffer: int,
         frame_rate: int,
         grayscale: bool,
+        downsample: float,
     ) -> None:
         super().__init__()
         self.cam = cv2.VideoCapture(cam)
@@ -29,6 +30,10 @@ class CamWatcher(QObject):
         self._index = 0
         self.grayscale = grayscale
         self.frame_rate = frame_rate
+        self.downsample = downsample
+        if downsample < 1.0:
+            width = round(width * downsample)
+            height = round(height * downsample)
         if self.grayscale:
             self.output = np.zeros((buffer, width, height))
         else:
@@ -39,6 +44,14 @@ class CamWatcher(QObject):
         while self.watching:
             _, frame = self.cam.read()
             self.output[:-1] = self.output[1:]
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            if self.downsample < 1.0:
+                frame = cv2.resize(
+                    frame,
+                    (0, 0),
+                    fx=self.downsample,
+                    fy=self.downsample,
+                )
             if self.grayscale:
                 frame: np.ndarray = np.sum(
                     frame * np.array([0.2989, 0.5870, 0.1140]),
@@ -59,9 +72,16 @@ class LiveView(QObject):
         buffer: int,
         frame_rate: int,
         grayscale: bool,
+        downsample: float,
     ) -> None:
         super().__init__()
-        self._watcher = CamWatcher(cam, buffer, frame_rate, grayscale)
+        self._watcher = CamWatcher(
+            cam,
+            buffer,
+            frame_rate,
+            grayscale,
+            downsample,
+        )
         self._reader_thread = QThread()
 
     @property
