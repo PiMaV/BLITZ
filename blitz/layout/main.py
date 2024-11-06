@@ -53,7 +53,6 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self.save_settings()
-        settings.clean_up()
         event.accept()
 
     def setup_connections(self) -> None:
@@ -66,9 +65,6 @@ class MainWindow(QMainWindow):
         self.ui.action_open_folder.triggered.connect(self.browse_folder)
         self.ui.action_load_tof.triggered.connect(self.browse_tof)
         self.ui.action_export.triggered.connect(self.export)
-        self.ui.action_project_save.triggered.connect(self.save)
-        self.ui.action_project_save_as.triggered.connect(self.save_as)
-        self.ui.action_project_open.triggered.connect(self.load_settings)
         self.ui.action_restart.triggered.connect(restart)
         self.ui.action_link_inp.triggered.connect(
             lambda: QDesktopServices.openUrl(URL_INP)  # type: ignore
@@ -78,7 +74,7 @@ class MainWindow(QMainWindow):
         )
 
         # image_viewer connections
-        self.ui.image_viewer.file_dropped.connect(self.load_images_adapter)
+        self.ui.image_viewer.file_dropped.connect(self.load)
         self.ui.roi_plot.norm_range.sigRegionChanged.connect(
             self.update_norm_range_labels
         )
@@ -234,8 +230,22 @@ class MainWindow(QMainWindow):
         )
 
     def setup_sync(self) -> None:
-        if (path := (self.last_file_dir / "settings.blitz")).exists():
-            settings.new_settings(path)
+        screen_geometry = QApplication.primaryScreen().availableGeometry()
+        relative_size = settings.get("window/relative_size")
+        width = int(screen_geometry.width() * relative_size)
+        height = int(screen_geometry.height() * relative_size)
+        self.setGeometry(
+            (screen_geometry.width() - width) // 2,
+            (screen_geometry.height() - height) // 2,
+            width,
+            height,
+        )
+        if relative_size == 1.0:
+            self.showMaximized()
+
+        if (docks_arrangement := settings.get("window/docks")):
+            self.ui.dock_area.restoreState(docks_arrangement)
+
         settings.connect_sync(
             self.ui.checkbox_load_8bit.stateChanged,
             self.ui.checkbox_load_8bit.isChecked,
@@ -278,90 +288,62 @@ class MainWindow(QMainWindow):
             self.ui.token_edit.setText,
             "web/token",
         )
-
         settings.connect_sync(
             self.ui.checkbox_sync_file.stateChanged,
             self.ui.checkbox_sync_file.isChecked,
             self.ui.checkbox_sync_file.setChecked,
             "data/sync",
         )
-        if (settings.get("data/sync")
-                and ((path := settings.get("data/path")) != "")):
-            if Path(path).exists():
-                mask = settings.get("data/mask")[1:]
-                crop = settings.get("data/cropped")
-                self.load_images(
-                    Path(path),
-                    mask=mask if mask else None,
-                    crop=crop if crop else None,
-                )
-            else:
-                log("Path to dataset in .blitz project file does not point to "
-                    "a valid file or folder location. Deleting entry...",
-                    color="red")
-                settings.set("data/path", "")
-        else:
-            self.ui.image_viewer.load_data()
 
-        settings.connect_sync(
+    def sync_project(self) -> None:
+        settings.connect_sync_project(
             self.ui.checkbox_flipx.stateChanged,
             self.ui.checkbox_flipx.isChecked,
             self.ui.checkbox_flipx.setChecked,
-            "data/flipped_x",
+            "flipped_x",
             lambda: self.ui.image_viewer.manipulate("flip_x"),
             True,
         )
-        settings.connect_sync(
+        settings.connect_sync_project(
             self.ui.checkbox_flipy.stateChanged,
             self.ui.checkbox_flipy.isChecked,
             self.ui.checkbox_flipy.setChecked,
-            "data/flipped_y",
+            "flipped_y",
             lambda: self.ui.image_viewer.manipulate("flip_y"),
             True,
         )
-        settings.connect_sync(
+        settings.connect_sync_project(
             self.ui.checkbox_transpose.stateChanged,
             self.ui.checkbox_transpose.isChecked,
             self.ui.checkbox_transpose.setChecked,
-            "data/transposed",
+            "transposed",
             lambda: self.ui.image_viewer.manipulate("transpose"),
             True,
         )
-        settings.connect_sync(
+        settings.connect_sync_project(
             self.ui.spinbox_pixel.editingFinished,
             self.ui.spinbox_pixel.value,
             self.ui.spinbox_pixel.setValue,
-            "default/measure_tool_pixels",
+            "measure_tool_pixels",
         )
-        settings.connect_sync(
+        settings.connect_sync_project(
             self.ui.spinbox_mm.editingFinished,
             self.ui.spinbox_mm.value,
             self.ui.spinbox_mm.setValue,
-            "default/measure_tool_au",
+            "measure_tool_au",
         )
-        settings.connect_sync(
-            self.ui.image_viewer.ui.histogram.item.sigLevelChangeFinished,
-            self.ui.image_viewer.get_lut_config,
-            self.ui.image_viewer.load_lut_config,
-            "viewer/LUT",
-            rule_out_default={},
-        )
-        settings.connect_sync(
-            self.ui.image_viewer.ui.histogram.item.sigLookupTableChanged,
-            self.ui.image_viewer.get_lut_config,
-            self.ui.image_viewer.load_lut_config,
-            "viewer/LUT",
-            rule_out_default={},
+        settings.connect_sync_project(
+            self.ui.spinbox_iso_smoothing.editingFinished,
+            self.ui.spinbox_iso_smoothing.value,
+            self.ui.spinbox_iso_smoothing.setValue,
+            "isocurve_smoothing",
         )
 
     def reset_options(self) -> None:
-        self.ui.spinbox_max_ram.setRange(.1, .8 * get_available_ram())
-        self.ui.spinbox_max_ram.setValue(settings.get("default/max_ram"))
-        self.ui.button_apply_mask.setChecked(False)
-        self.ui.checkbox_flipx.setChecked(settings.get("data/flipped_x"))
-        self.ui.checkbox_flipy.setChecked(settings.get("data/flipped_y"))
-        self.ui.checkbox_transpose.setChecked(settings.get("data/transposed"))
         self.ui.combobox_reduce.setCurrentIndex(0)
+        self.ui.checkbox_flipx.setChecked(False)
+        self.ui.checkbox_flipy.setChecked(False)
+        self.ui.checkbox_transpose.setChecked(False)
         if self.ui.image_viewer.data.is_single_image():
             self.ui.combobox_reduce.setEnabled(False)
         else:
@@ -421,9 +403,6 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_rosee_smoothing.setValue(0)
         self.ui.spinbox_rosee_smoothing.setMaximum(
             min(self.ui.image_viewer.data.shape)
-        )
-        self.ui.spinbox_iso_smoothing.setValue(
-            settings.get("default/isocurve_smoothing")
         )
         self.ui.spinbox_isocurves.setValue(1)
         self.ui.checkbox_rosee_active.setChecked(False)
@@ -491,9 +470,10 @@ class MainWindow(QMainWindow):
     def undo_crop(self) -> None:
         with LoadingManager(self, "Undo Cropping..."):
             success = self.ui.image_viewer.undo_crop()
-            if not success:
-                self.load_images(self.last_file_dir / self.last_file)
-        self.reset_options()
+            if success:
+                self.reset_options()
+            else:
+                self.load(self.last_file_dir / self.last_file)
 
     def apply_mask(self) -> None:
         with LoadingManager(self, "Masking..."):
@@ -688,14 +668,14 @@ class MainWindow(QMainWindow):
             directory=str(self.last_file_dir),
         )
         if file_path:
-            self.load_images(Path(file_path))
+            self.load(Path(file_path))
 
     def browse_folder(self) -> None:
         folder_path = QFileDialog.getExistingDirectory(
             directory=str(self.last_file_dir),
         )
         if folder_path:
-            self.load_images(Path(folder_path))
+            self.load(Path(folder_path))
 
     def export(self) -> None:
         with LoadingManager(self, "Exporting..."):
@@ -759,49 +739,76 @@ class MainWindow(QMainWindow):
             self.ui.button_disconnect.setEnabled(False)
             self._web_connection.deleteLater()
 
-    def load_images_adapter(
-        self,
-        file_path: Optional[Path | str] = None,
-    ) -> None:
-        if isinstance(file_path, str):
-            file_path = Path(file_path)
-        if file_path is not None:
-            if file_path.suffix == ".blitz":
-                log(f"Loading '{file_path.name}' configuration file...",
-                    color="green")
-                settings.new_settings(file_path)
-                restart()
-            else:
-                self.load_images(file_path)
-        else:
-            self.load_images()
+    def load(self, path: Optional[Path | str] = None) -> None:
+        if path is None:
+            return self.ui.image_viewer.load_data()
 
-    def load_images(
-        self,
-        file_path: Optional[Path] = None,
-        mask: Optional[tuple[slice, slice]] = None,
-        crop: Optional[tuple[int, int]] = None,
-    ) -> None:
-        text = f"Loading {'...' if file_path is None else file_path}"
-        with LoadingManager(self, text) as lm:
+        if isinstance(path, str):
+            path = Path(path)
+        project_file = path.parent / (path.name.split(".")[0] + ".blitz")
+
+        if path.suffix == ".blitz":
+            self.load_project(path)
+        elif self.ui.checkbox_sync_file.isChecked() and project_file.exists():
+            self.load_project(project_file)
+        else:
+            self.load_images(path)
+            if self.ui.checkbox_sync_file.isChecked():
+                settings.create_project(
+                    path.parent / (path.name.split(".")[0] + ".blitz")
+                )
+                settings.set_project("path", path)
+                self.sync_project()
+
+    def load_project(self, path: Path) -> None:
+        log(f"Loading '{path.name}' configuration file...",
+            color="green")
+        self.last_file_dir = path.parent
+        self.last_file = path.name
+        settings.create_project(path)
+        saved_path = Path(settings.get_project("path"))
+        if saved_path.exists():
+            mask = settings.get_project("mask")[1:]
+            crop = settings.get_project("cropped")
+            with LoadingManager(self, f"Loading {saved_path}") as lm:
+                self.ui.image_viewer.load_data(
+                    saved_path,
+                    size_ratio=self.ui.spinbox_load_size.value(),
+                    subset_ratio=self.ui.spinbox_load_subset.value(),
+                    max_ram=self.ui.spinbox_max_ram.value(),
+                    convert_to_8_bit=
+                        self.ui.checkbox_load_8bit.isChecked(),
+                    grayscale=self.ui.checkbox_load_grayscale.isChecked(),
+                    mask=mask,
+                    crop=crop,
+                )
+            log(f"Loaded in {lm.duration:.2f}s")
+            self.last_file_dir = saved_path.parent
+            self.last_file = saved_path.name
+            self.update_statusbar()
+            self.reset_options()
+            self.sync_project()
+        else:
+            log("Path to dataset in .blitz project file does not point to "
+                "a valid file or folder location. Deleting entry...",
+                color="red")
+            settings.set("path", "")
+
+    def load_images(self, path: Path) -> None:
+        with LoadingManager(self, f"Loading {path}") as lm:
             self.ui.image_viewer.load_data(
-                file_path,
+                path,
                 size_ratio=self.ui.spinbox_load_size.value(),
                 subset_ratio=self.ui.spinbox_load_subset.value(),
                 max_ram=self.ui.spinbox_max_ram.value(),
                 convert_to_8_bit=self.ui.checkbox_load_8bit.isChecked(),
                 grayscale=self.ui.checkbox_load_grayscale.isChecked(),
-                mask=mask,
-                crop=crop,
             )
-        if file_path is not None:
-            log(f"Loaded in {lm.duration:.2f}s")
-            self.last_file_dir = file_path.parent
-            self.last_file = file_path.name
-            self.update_statusbar()
-            self.reset_options()
-            if self.ui.checkbox_sync_file.isChecked():
-                self.save()
+        log(f"Loaded in {lm.duration:.2f}s")
+        self.last_file_dir = path.parent
+        self.last_file = path.name
+        self.update_statusbar()
+        self.reset_options()
 
     def operation_changed(self) -> None:
         self.update_statusbar()
@@ -832,39 +839,11 @@ class MainWindow(QMainWindow):
             return
         self.ui.measure_roi.update_labels()
 
-    def save(self) -> None:
-        name = self.last_file
-        if name == "":
-            name = "settings"
-        if "." in name:
-            name = name.split(".")[0]
-        name += ".blitz"
-        if (self.last_file_dir / name).exists():
-            log(f"Loading '{name}' configuration file...", color="green")
-            settings.new_settings(self.last_file_dir / name)
-            restart()
-        else:
-            settings.export(self.last_file_dir / name)
-            self.save_settings()
-
-    def save_as(self) -> None:
-        settings.export()
-        self.save_settings()
-
     def save_settings(self):
-        settings.set(
-            "window/docks",
-            self.ui.dock_area.saveState(),
-        )
+        settings.set("window/docks", self.ui.dock_area.saveState())
         screen_geometry = QApplication.primaryScreen().availableGeometry()
-        settings.set(
-            "window/relative_size",
+        settings.set("window/relative_size",
             self.width() / screen_geometry.width(),
         )
-        self.ui.image_viewer.data.save_options()
-        if (settings.get("data/sync") and (self.last_file != "")):
-            settings.set("data/path", str(self.last_file_dir / self.last_file))
-
-    def load_settings(self) -> None:
-        if settings.select():
-            restart()
+        if self.ui.checkbox_sync_file.isChecked():
+            self.ui.image_viewer.data.save_options()

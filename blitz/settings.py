@@ -1,20 +1,15 @@
 from pathlib import Path
-from typing import Any, Optional, Callable
+from typing import Any, Callable, Optional
 
-from PyQt5.QtCore import QSettings
-from PyQt5.QtWidgets import QFileDialog
+from PyQt5.QtCore import QMetaObject, QSettings, pyqtBoundSignal
 
 from .tools import log
 
-SETTINGS: "_Settings" = None  # type: ignore
-
-
-_default_settings = {
+_default_core_settings = {
     "window/relative_size": 0.85,
     "window/docks": {},
 
     "viewer/ROI_on_drop_threshold": 500_000,
-    "viewer/LUT": {},
     "viewer/font_size_status_bar": 10,
     "viewer/font_size_log": 9,
     "viewer/max_file_name_length": 40,
@@ -27,17 +22,8 @@ _default_settings = {
     "default/size_ratio": 1.0,
     "default/subset_ratio": 1.0,
     "default/max_ram": 0.1,
-    "default/measure_tool_pixels": 1,
-    "default/measure_tool_au": 1.0,
-    "default/isocurve_smoothing": 3,
 
-    "data/sync": True,
-    "data/path": "",
-    "data/mask": (),
-    "data/cropped": (),
-    "data/flipped_x": False,
-    "data/flipped_y": False,
-    "data/transposed": False,
+    "data/sync": False,
 
     "web/address": "",
     "web/token": "",
@@ -48,162 +34,160 @@ _default_settings = {
     "app/restart_exit_code": -12341234,
 }
 
+_default_project_settings = {
+    "path": "",
+    "mask": (),
+    "cropped": (),
+    "flipped_x": False,
+    "flipped_y": False,
+    "transposed": False,
+
+    "measure_tool_pixels": 1,
+    "measure_tool_au": 1.0,
+    "isocurve_smoothing": 3,
+}
+
 
 class _Settings:
 
-    def __init__(self) -> None:
-        self._path = Path.cwd()
-        self._file = "_cache.blitz"
-        self.prevent_deletion = False
-        self.select_ini()
+    def __init__(self, default: dict, path: Optional[Path] = None) -> None:
+        self._path = (Path.cwd() / "settings.blitz") if path is None else path
+        self._default = default
+        self.settings = QSettings(str(self._path), QSettings.Format.IniFormat)
+        self._keep = False
+        self._connections: list[
+            tuple[pyqtBoundSignal, QMetaObject.Connection]
+        ] = []
 
-    @property
-    def path(self) -> Path:
-        return self._path
-
-    @path.setter
-    def path(self, path: Path) -> None:
-        self.prevent_deletion = True
-        self._path = path
-        self.select_ini()
-
-    @property
-    def file(self) -> str:
-        return self._file
-
-    @file.setter
-    def file(self, file: Path) -> None:
-        self.prevent_deletion = True
-        self._file = file.name
-        self.path = file.parent
-        self.select_ini()
-
-    def select_ini(self) -> None:
-        self.settings = QSettings(
-            str(self.path / self._file),
-            QSettings.Format.IniFormat,
-        )
+    def keep(self) -> None:
+        self._keep = True
 
     def write_all(self) -> None:
         self.settings.sync()
-        for key in _default_settings.keys():
+        for key in self._default.keys():
             self.settings.setValue(
                 key,
                 self.settings.value(
                     key,
-                    _default_settings[key],
-                    type(_default_settings[key]),
+                    self._default[key],
+                    type(self._default[key]),
                 ),
             )
+
+    def connect_sync(
+        self,
+        signal: pyqtBoundSignal,
+        value_getter: Callable,
+        value_setter: Callable,
+        setting: str,
+    ) -> None:
+        self._connections.append(
+            (signal, signal.connect(
+                lambda: self.__setitem__(setting, value_getter())
+            ))
+        )
+        default = self._default[setting]
+        if (self[setting] != default) or self[setting] != value_getter():
+            try:
+                value_setter(self[setting])
+            except:
+                log(f"Failed to load setting {setting!r} from "
+                    f"{self._path.name}", color="red")
 
     def __getitem__(self, setting: str) -> Any:
         self.settings.sync()
         return self.settings.value(
             setting,
-            _default_settings[setting],
-            type(_default_settings[setting]),
+            self._default[setting],
+            type(self._default[setting]),
         )
 
     def __setitem__(self, setting: str, value: Any) -> None:
-        type_ = type(_default_settings[setting])
-        if type(value) != type_:
+        if (def_type := type(self._default[setting])) != type(value):
             try:
-                value = type_(value)
+                value = def_type(value)
             except:
                 raise ValueError(
-                    f"Setting '{setting}' of type {type_} was given as "
+                    f"Setting '{setting}' of type {def_type} was given as "
                     f"incorrect type {type(value)}"
                 )
         self.settings.setValue(setting, value)
 
+    def remove(self) -> None:
+        for signal, connection in self._connections:
+            signal.disconnect(connection)
+        if not self._keep:
+            self._path.unlink()
 
-def get(setting: str) -> Any:
+
+SETTINGS: _Settings = None  # type: ignore
+PROJECT_SETTINGS: _Settings = None  # type: ignore
+
+
+def create() -> Any:
     global SETTINGS
 
     if SETTINGS is None:
-        SETTINGS = _Settings()
+        SETTINGS = _Settings(_default_core_settings)
+        SETTINGS.keep()
 
+
+def create_project(path: Path) -> Any:
+    global PROJECT_SETTINGS
+    if PROJECT_SETTINGS is not None:
+        PROJECT_SETTINGS.remove()
+    PROJECT_SETTINGS = _Settings(_default_project_settings, path)
+    PROJECT_SETTINGS.keep()
+
+
+def get(setting: str) -> Any:
+    global SETTINGS
+    create()
     return SETTINGS[setting]
+
+
+def get_project(setting: str) -> Any:
+    global PROJECT_SETTINGS
+    if PROJECT_SETTINGS is None:
+        raise RuntimeError("Project settings are not selected")
+    return PROJECT_SETTINGS[setting]
 
 
 def set(setting: str, value: Any) -> None:
     global SETTINGS
-
-    if SETTINGS is None:
-        SETTINGS = _Settings()
-
+    create()
     SETTINGS[setting] = value
 
 
-def export(path: Optional[Path] = None) -> None:
-    global SETTINGS
-
-    if SETTINGS is None:
-        SETTINGS = _Settings()
-
-    if path is None:
-        path_, _ = QFileDialog.getSaveFileName(
-            caption="Save project file",
-            directory=str(SETTINGS.path),
-            filter="BLITZ project file (*.blitz)",
-        )
-        if not path_.endswith(".blitz"):
-            path_ += ".blitz"
-        path = Path(path_)
-    SETTINGS.file = path
-    SETTINGS.write_all()
-
-
-def select() -> bool:
-    global SETTINGS
-    file, _ = QFileDialog.getOpenFileName(
-        caption="Select project file",
-        directory=str(SETTINGS.path),
-        filter="BLITZ project file (*.blitz)",
-    )
-    if file:
-        new_settings(Path(file))
-        return True
-    return False
-
-
-def new_settings(file: Optional[Path] = None) -> None:
-    global SETTINGS
-    if SETTINGS is None:
-        SETTINGS = _Settings()
-    elif file is not None:
-        clean_up()
-    if file is not None:
-        SETTINGS.file = file
-
-
-def clean_up() -> None:
-    global SETTINGS
-
-    if (not SETTINGS.prevent_deletion
-            and (SETTINGS.path / SETTINGS.file).exists()):
-        (SETTINGS.path / SETTINGS.file).unlink()
+def set_project(setting: str, value: Any) -> None:
+    global PROJECT_SETTINGS
+    if PROJECT_SETTINGS is None:
+        raise RuntimeError("Project settings are not selected")
+    PROJECT_SETTINGS[setting] = value
 
 
 def connect_sync(
+    signal: pyqtBoundSignal,
+    value_getter: Callable,
+    value_setter: Callable,
+    setting: str,
+) -> None:
+    global SETTINGS
+    create()
+    SETTINGS.connect_sync(signal, value_getter, value_setter, setting)
+
+
+def connect_sync_project(
     signal,
     value_getter: Callable,
     value_setter: Callable,
     setting: str,
     manipulator: Optional[Callable] = None,
     manipulator_target = None,
-    *,
-    rule_out_default: Optional[Any] = None,
 ) -> None:
-    signal.connect(lambda: set(setting, value_getter()))
-    if rule_out_default is not None and get(setting) == rule_out_default:
-        return
-    if ((get(setting) != _default_settings[setting])
-            or get(setting) != value_getter()):
-        try:
-            value_setter(get(setting))
-        except:
-            log(f"Failed to load setting {setting!r} from the .blitz file",
-                color="red")
-    if manipulator is not None and get(setting) == manipulator_target:
+    global PROJECT_SETTINGS
+    if PROJECT_SETTINGS is None:
+        raise RuntimeError("Project settings are not selected")
+    PROJECT_SETTINGS.connect_sync(signal, value_getter, value_setter, setting)
+    if manipulator is not None and get_project(setting) == manipulator_target:
         manipulator()

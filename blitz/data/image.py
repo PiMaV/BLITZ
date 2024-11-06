@@ -242,6 +242,6 @@ class ImageData:
 
     def save_options(self) -> None:
         if self._mask is not None:
-            settings.set("data/mask", self._mask)
+            settings.set_project("mask", self._mask)
         if self._save_cropped is not None:
-            settings.set("data/cropped", self._save_cropped)
+            settings.set_project("cropped", self._save_cropped)

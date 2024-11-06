@@ -3,17 +3,16 @@ import json
 import pyqtgraph as pg
 from PyQt5.QtCore import QFile, Qt
 from PyQt5.QtGui import QFont, QIcon
-from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
-                             QDoubleSpinBox, QFrame, QGridLayout, QHBoxLayout,
-                             QLabel, QLayout, QLineEdit, QMenu, QMenuBar,
-                             QPushButton, QScrollArea, QSizePolicy, QSpinBox,
-                             QStatusBar, QStyle, QTabWidget, QVBoxLayout,
-                             QWidget)
+from PyQt5.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFrame,
+                             QGridLayout, QHBoxLayout, QLabel, QLayout,
+                             QLineEdit, QMenu, QMenuBar, QPushButton,
+                             QScrollArea, QSizePolicy, QSpinBox, QStatusBar,
+                             QStyle, QTabWidget, QVBoxLayout, QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import __version__, resources, settings
 from ..data.ops import ReduceOperation
-from ..tools import LoggingTextEdit, setup_logger
+from ..tools import LoggingTextEdit, get_available_ram, setup_logger
 from .viewer import ImageViewer
 from .widgets import ExtractionPlot, MeasureROI, TimePlot
 
@@ -29,19 +28,6 @@ class UI_MainWindow(QWidget):
         super().__init__()
         form.setWindowTitle(TITLE)
         form.setWindowIcon(QIcon(":/icon/blitz.ico"))
-
-        screen_geometry = QApplication.primaryScreen().availableGeometry()
-        relative_size = settings.get("window/relative_size")
-        width = int(screen_geometry.width() * relative_size)
-        height = int(screen_geometry.height() * relative_size)
-        form.setGeometry(
-            (screen_geometry.width() - width) // 2,
-            (screen_geometry.height() - height) // 2,
-            width,
-            height,
-        )
-        if relative_size == 1.0:
-            form.showMaximized()
 
         self.dock_area = DockArea()
         self.setup_docks()
@@ -105,8 +91,6 @@ class UI_MainWindow(QWidget):
         self.dock_area.addDock(self.dock_option, 'top', self.dock_lookup)
         self.dock_area.addDock(self.dock_h_plot, 'top', self.dock_viewer)
         self.dock_area.addDock(self.dock_status, 'top', self.dock_v_plot)
-        if (docks_arrangement := settings.get("window/docks")):
-            self.dock_area.restoreState(docks_arrangement)
 
     def setup_logger(self) -> None:
         logger = LoggingTextEdit()
@@ -162,13 +146,6 @@ class UI_MainWindow(QWidget):
         file_menu.addSeparator()
         self.action_restart = file_menu.addAction("Restart")
         self.menubar.addMenu(file_menu)
-
-        project_menu = QMenu("Project", self)
-        project_menu.setToolTipsVisible(True)
-        self.action_project_save = project_menu.addAction("Save")
-        self.action_project_save_as = project_menu.addAction("Save as")
-        self.action_project_open = project_menu.addAction("Open")
-        self.menubar.addMenu(project_menu)
 
         about_menu = QMenu("About", self)
         about_menu.setToolTipsVisible(True)
@@ -260,7 +237,7 @@ class UI_MainWindow(QWidget):
         load_hlay = QHBoxLayout()
         self.checkbox_load_8bit = QCheckBox("8 bit")
         load_hlay.addWidget(self.checkbox_load_8bit)
-        self.checkbox_load_grayscale = QCheckBox("Grayscale")
+        self.checkbox_load_grayscale = QCheckBox("grayscale")
         self.checkbox_load_grayscale.setChecked(True)
         load_hlay.addWidget(self.checkbox_load_grayscale)
         file_layout.addLayout(load_hlay)
@@ -268,20 +245,21 @@ class UI_MainWindow(QWidget):
         self.spinbox_load_size.setRange(0, 1)
         self.spinbox_load_size.setValue(1)
         self.spinbox_load_size.setSingleStep(0.1)
-        self.spinbox_load_size.setPrefix("Size-ratio: ")
+        self.spinbox_load_size.setPrefix("size ratio: ")
         file_layout.addWidget(self.spinbox_load_size)
         self.spinbox_load_subset = QDoubleSpinBox()
         self.spinbox_load_subset.setRange(0, 1)
         self.spinbox_load_subset.setValue(1)
         self.spinbox_load_subset.setSingleStep(0.1)
-        self.spinbox_load_subset.setPrefix("Subset-ratio: ")
+        self.spinbox_load_subset.setPrefix("subset ratio: ")
         file_layout.addWidget(self.spinbox_load_subset)
         self.spinbox_max_ram = QDoubleSpinBox()
         self.spinbox_max_ram.setSingleStep(0.1)
-        self.spinbox_max_ram.setPrefix("Max. RAM: ")
+        self.spinbox_max_ram.setPrefix("max. RAM: ")
+        self.spinbox_max_ram.setRange(.1, .8 * get_available_ram())
         file_layout.addWidget(self.spinbox_max_ram)
-        self.checkbox_sync_file = QCheckBox("Save ini file")
-        self.checkbox_sync_file.setChecked(True)
+        self.checkbox_sync_file = QCheckBox("load/save project file")
+        self.checkbox_sync_file.setChecked(False)
         file_layout.addWidget(self.checkbox_sync_file)
         load_btn_lay = QHBoxLayout()
         self.button_open_file = QPushButton("Open File")
@@ -633,6 +611,7 @@ class UI_MainWindow(QWidget):
         self.spinbox_iso_smoothing = QSpinBox()
         self.spinbox_iso_smoothing.setPrefix("Smoothing: ")
         self.spinbox_iso_smoothing.setMinimum(0)
+        self.spinbox_iso_smoothing.setValue(3)
         rosee_layout.addWidget(self.spinbox_iso_smoothing)
         rosee_layout.addStretch()
         self.create_option_tab(rosee_layout, "RoSEE")
