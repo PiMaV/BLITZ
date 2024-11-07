@@ -21,7 +21,7 @@ _default_core_settings = {
     "default/load_grayscale": True,
     "default/size_ratio": 1.0,
     "default/subset_ratio": 1.0,
-    "default/max_ram": 0.1,
+    "default/max_ram": 2,
 
     "data/sync": False,
 
