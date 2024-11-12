@@ -260,6 +260,11 @@ class UI_MainWindow(QWidget):
         file_layout.addWidget(self.spinbox_max_ram)
         self.checkbox_sync_file = QCheckBox("load/save project file")
         self.checkbox_sync_file.setChecked(False)
+        self.checkbox_sync_file.setStyleSheet("""
+            QCheckBox:checked {
+                color: rgb(250, 125, 125);
+            }
+        """)
         file_layout.addWidget(self.checkbox_sync_file)
         load_btn_lay = QHBoxLayout()
         self.button_open_file = QPushButton("Open File")

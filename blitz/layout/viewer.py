@@ -20,6 +20,8 @@ class ImageViewer(pg.ImageView):
     file_dropped = pyqtSignal(str)
     image_size_changed = pyqtSignal()
     image_changed = pyqtSignal()
+    image_mask_changed = pyqtSignal()
+    image_crop_changed = pyqtSignal()
 
     def __init__(self) -> None:
         view = pg.PlotItem()
@@ -247,6 +249,7 @@ class ImageViewer(pg.ImageView):
             autoLevels=False,
         )
         self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
+        self.image_crop_changed.emit()
 
     def undo_crop(self) -> bool:
         success = self.data.undo_crop()
@@ -291,22 +294,24 @@ class ImageViewer(pg.ImageView):
     def apply_mask(self) -> None:
         if self.mask is None:
             return
-        self.data.mask(self.mask)
+        if self.data.mask(self.mask):
+            self.setImage(
+                self.data.image,
+                keep_timestep=True,
+                autoLevels=False,
+            )
+            self.image_size_changed.emit()
+            self.image_mask_changed.emit()
         self.toggle_mask()
-        self.setImage(
-            self.data.image,
-            keep_timestep=True,
-            autoLevels=False,
-        )
-        self.image_size_changed.emit()
 
     def reset_mask(self) -> None:
-        self.data.reset_mask()
-        self.setImage(
-            self.data.image,
-            autoLevels=False,
-        )
-        self.image_size_changed.emit()
+        if self.data.reset_mask():
+            self.setImage(
+                self.data.image,
+                autoLevels=False,
+            )
+            self.image_size_changed.emit()
+            self.image_mask_changed.emit()
 
     def toggle_mask(self) -> None:
         if self.mask is None:

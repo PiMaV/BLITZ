@@ -247,96 +247,114 @@ class MainWindow(QMainWindow):
             self.ui.dock_area.restoreState(docks_arrangement)
 
         settings.connect_sync(
+            "default/load_8bit",
             self.ui.checkbox_load_8bit.stateChanged,
             self.ui.checkbox_load_8bit.isChecked,
             self.ui.checkbox_load_8bit.setChecked,
-            "default/load_8bit",
         )
         settings.connect_sync(
+            "default/load_grayscale",
             self.ui.checkbox_load_grayscale.stateChanged,
             self.ui.checkbox_load_grayscale.isChecked,
             self.ui.checkbox_load_grayscale.setChecked,
-            "default/load_grayscale",
         )
         settings.connect_sync(
-            self.ui.spinbox_load_size.editingFinished,
-            self.ui.spinbox_load_size.value,
-            self.ui.spinbox_load_size.setValue,
-            "default/size_ratio",
-        )
-        settings.connect_sync(
-            self.ui.spinbox_load_subset.editingFinished,
-            self.ui.spinbox_load_subset.value,
-            self.ui.spinbox_load_subset.setValue,
-            "default/subset_ratio",
-        )
-        settings.connect_sync(
+            "default/max_ram",
             self.ui.spinbox_max_ram.editingFinished,
             self.ui.spinbox_max_ram.value,
             self.ui.spinbox_max_ram.setValue,
-            "default/max_ram",
         )
+        # settings.connect_sync(
+        #     self.ui.image_viewer.ui.histogram.gradient.sigGradientChanged,
+        #     # self.ui.spinbox_max_ram.value,
+        #     # self.ui.spinbox_max_ram.setValue,
+        #     "default/greyclip",
+        # )
         settings.connect_sync(
+            "web/address",
             self.ui.address_edit.editingFinished,
             self.ui.address_edit.text,
             self.ui.address_edit.setText,
-            "web/address",
         )
         settings.connect_sync(
+            "web/token",
             self.ui.token_edit.editingFinished,
             self.ui.token_edit.text,
             self.ui.token_edit.setText,
-            "web/token",
         )
         settings.connect_sync(
+            "data/sync",
             self.ui.checkbox_sync_file.stateChanged,
             self.ui.checkbox_sync_file.isChecked,
             self.ui.checkbox_sync_file.setChecked,
-            "data/sync",
         )
 
-    def sync_project(self) -> None:
+    def sync_project_preloading(self) -> None:
         settings.connect_sync_project(
+            "size_ratio",
+            self.ui.spinbox_load_size.editingFinished,
+            self.ui.spinbox_load_size.value,
+            self.ui.spinbox_load_size.setValue,
+        )
+        settings.connect_sync_project(
+            "subset_ratio",
+            self.ui.spinbox_load_subset.editingFinished,
+            self.ui.spinbox_load_subset.value,
+            self.ui.spinbox_load_subset.setValue,
+        )
+
+    def sync_project_postloading(self) -> None:
+        settings.connect_sync_project(
+            "flipped_x",
             self.ui.checkbox_flipx.stateChanged,
             self.ui.checkbox_flipx.isChecked,
             self.ui.checkbox_flipx.setChecked,
-            "flipped_x",
             lambda: self.ui.image_viewer.manipulate("flip_x"),
             True,
         )
         settings.connect_sync_project(
+            "flipped_y",
             self.ui.checkbox_flipy.stateChanged,
             self.ui.checkbox_flipy.isChecked,
             self.ui.checkbox_flipy.setChecked,
-            "flipped_y",
             lambda: self.ui.image_viewer.manipulate("flip_y"),
             True,
         )
         settings.connect_sync_project(
+            "transposed",
             self.ui.checkbox_transpose.stateChanged,
             self.ui.checkbox_transpose.isChecked,
             self.ui.checkbox_transpose.setChecked,
-            "transposed",
             lambda: self.ui.image_viewer.manipulate("transpose"),
             True,
         )
         settings.connect_sync_project(
+            "measure_tool_pixels",
             self.ui.spinbox_pixel.editingFinished,
             self.ui.spinbox_pixel.value,
             self.ui.spinbox_pixel.setValue,
-            "measure_tool_pixels",
         )
         settings.connect_sync_project(
+            "measure_tool_au",
             self.ui.spinbox_mm.editingFinished,
             self.ui.spinbox_mm.value,
             self.ui.spinbox_mm.setValue,
-            "measure_tool_au",
         )
         settings.connect_sync_project(
+            "isocurve_smoothing",
             self.ui.spinbox_iso_smoothing.editingFinished,
             self.ui.spinbox_iso_smoothing.value,
             self.ui.spinbox_iso_smoothing.setValue,
-            "isocurve_smoothing",
+        )
+        settings.connect_sync_project(
+            "mask",
+            self.ui.image_viewer.image_mask_changed,
+            self.ui.image_viewer.data.get_mask,
+        )
+        settings.connect_sync_project(
+            "cropped",
+            self.ui.image_viewer.image_crop_changed,
+            self.ui.image_viewer.data.get_crop,
         )
 
     def reset_options(self) -> None:
@@ -758,7 +776,8 @@ class MainWindow(QMainWindow):
                     path.parent / (path.name.split(".")[0] + ".blitz")
                 )
                 settings.set_project("path", path)
-                self.sync_project()
+                self.sync_project_preloading()
+                self.sync_project_postloading()
 
     def load_project(self, path: Path) -> None:
         log(f"Loading '{path.name}' configuration file...",
@@ -770,6 +789,9 @@ class MainWindow(QMainWindow):
         if saved_path.exists():
             mask = settings.get_project("mask")[1:]
             crop = settings.get_project("cropped")
+            mask = mask if mask else None
+            crop = crop if crop else None
+            self.sync_project_preloading()
             with LoadingManager(self, f"Loading {saved_path}") as lm:
                 self.ui.image_viewer.load_data(
                     saved_path,
@@ -787,7 +809,7 @@ class MainWindow(QMainWindow):
             self.last_file = saved_path.name
             self.update_statusbar()
             self.reset_options()
-            self.sync_project()
+            self.sync_project_postloading()
         else:
             log("Path to dataset in .blitz project file does not point to "
                 "a valid file or folder location. Deleting entry...",
@@ -845,5 +867,3 @@ class MainWindow(QMainWindow):
         settings.set("window/relative_size",
             self.width() / screen_geometry.width(),
         )
-        if self.ui.checkbox_sync_file.isChecked():
-            self.ui.image_viewer.data.save_options()

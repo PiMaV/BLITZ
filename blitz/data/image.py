@@ -189,11 +189,11 @@ class ImageData:
     def unravel(self) -> None:
         self._redop = None
 
-    def mask(self, roi: pg.ROI) -> None:
+    def mask(self, roi: pg.ROI) -> bool:
         if self._transposed or self._flipped_x or self._flipped_y:
             log("Masking not available while data is flipped or transposed",
                 color="red")
-            return
+            return False
         pos = roi.pos()
         size = roi.size()
         x_start = max(0, int(pos[0]))
@@ -211,6 +211,7 @@ class ImageData:
         self._mask = (
             slice(None, None), slice(x_start, x_stop), slice(y_start, y_stop),
         )
+        return True
 
     def mask_range(self, range_: tuple[int, int, int, int]) -> None:
         self._mask = (
@@ -227,9 +228,12 @@ class ImageData:
         else:
             self._image_mask = mask.image[0].astype(bool)
 
-    def reset_mask(self) -> None:
-        self._mask = None
-        self._image_mask = None
+    def reset_mask(self) -> bool:
+        if self._mask is not None:
+            self._mask = None
+            self._image_mask = None
+            return True
+        return False
 
     def transpose(self) -> None:
         self._transposed = not self._transposed
@@ -240,8 +244,15 @@ class ImageData:
     def flip_y(self) -> None:
         self._flipped_y = not self._flipped_y
 
-    def save_options(self) -> None:
-        if self._mask is not None:
-            settings.set_project("mask", self._mask)
-        if self._save_cropped is not None:
-            settings.set_project("cropped", self._save_cropped)
+    def get_mask(self) -> tuple[slice, slice, slice] | None:
+        return self._mask
+
+    def set_mask(self, mask: tuple[slice, slice, slice] | None):
+        self._mask = mask
+
+    def get_crop(self) -> tuple[int, int] | None:
+        return self._save_cropped
+
+    def set_crop(self, crop: tuple[int, int] | None):
+        self._save_cropped = crop
+        self._cropped = crop
