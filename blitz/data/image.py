@@ -26,6 +26,10 @@ class VideoMetaData(MetaData):
     frame_count: int
     reduced_frame_count: int
     codec: str
+    
+@dataclass(kw_only=True)
+class DicomMetaData(MetaData):
+    sequence_number: int
 
 
 class ImageData:
