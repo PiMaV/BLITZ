@@ -5,6 +5,7 @@ from typing import Optional
 from PyQt5.QtCore import QCoreApplication, QUrl
 from PyQt5.QtGui import QDesktopServices, QKeySequence
 from PyQt5.QtWidgets import QApplication, QFileDialog, QMainWindow, QShortcut
+from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 
 from .. import __version__, settings
 from ..data.image import ImageData
@@ -13,6 +14,7 @@ from ..tools import LoadingManager, get_available_ram, log
 from .rosee import ROSEEAdapter
 from .tof import TOFAdapter
 from .ui import UI_MainWindow
+
 
 URL_GITHUB = QUrl("https://github.com/CodeSchmiedeHGW/BLITZ")
 URL_INP = QUrl("https://www.inp-greifswald.de/")
@@ -264,12 +266,29 @@ class MainWindow(QMainWindow):
             self.ui.spinbox_max_ram.value,
             self.ui.spinbox_max_ram.setValue,
         )
-        # settings.connect_sync(
-        #     self.ui.image_viewer.ui.histogram.gradient.sigGradientChanged,
-        #     # self.ui.spinbox_max_ram.value,
-        #     # self.ui.spinbox_max_ram.setValue,
-        #     "default/greyclip",
-        # )
+
+        # very dirty workaround of getting the name of the user chosen
+        # gradient from the LUT
+        def loadPreset(name: str):
+            self.ui.image_viewer.ui.histogram.gradient.lastCM = name
+            self.ui.image_viewer.ui.histogram.gradient.restoreState(
+                Gradients[name]  # type: ignore
+            )
+        def lastColorMap():
+            return self.ui.image_viewer.ui.histogram.gradient.lastCM
+        self.ui.image_viewer.ui.histogram.gradient.lastColorMap = lastColorMap
+        self.ui.image_viewer.ui.histogram.gradient.loadPreset = loadPreset
+        self.ui.image_viewer.ui.histogram.gradient.loadPreset(
+            settings.get("default/colormap")
+        )
+
+        settings.connect_sync(
+            "default/colormap",
+            self.ui.image_viewer.ui.histogram
+                .gradient.sigGradientChangeFinished,
+            self.ui.image_viewer.ui.histogram.gradient.lastColorMap,
+            self.ui.image_viewer.ui.histogram.gradient.loadPreset,
+        )
         settings.connect_sync(
             "web/address",
             self.ui.address_edit.editingFinished,

@@ -19,7 +19,7 @@ _default_core_settings = {
     "default/multicore_files_threshold": 333,
     "default/load_8bit": False,
     "default/load_grayscale": True,
-    "default/max_ram": 2,
+    "default/max_ram": 2.,
     "default/colormap": "greyclip",
 
     "data/sync": False,
