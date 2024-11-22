@@ -3,15 +3,15 @@ import os
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
 from typing import Optional
-from natsort import natsorted
 
 import cv2
 import numpy as np
 import pydicom
+from natsort import natsorted
 
 from .. import settings
 from ..tools import log
-from .image import ImageData, MetaData, VideoMetaData, DicomMetaData
+from .image import DicomMetaData, ImageData, MetaData, VideoMetaData
 from .tools import (adjust_ratio_for_memory, resize_and_convert,
                     resize_and_convert_to_8_bit)
 
@@ -41,7 +41,7 @@ class DataLoader:
             return True
         except Exception:
             return False
-        
+
     def __init__(
         self,
         size_ratio: float = 1.0,
@@ -190,17 +190,15 @@ class DataLoader:
             )
         done = ImageData(matrices, metadata)
 
-        # Sort by sequence_number if the content is a DICOM file
-        if DataLoader._is_dicom(content[0]):
-            # Get the sorted indices based on sequence_number
-            sorted_indices = np.argsort([meta.sequence_number for meta in done.meta])
-            
-            # Create a new ImageData object with sorted images and metadata
+        if isinstance(done.meta[0], DicomMetaData):
+            sorted_indices = np.argsort(
+                [meta.sequence_number for meta in done.meta]
+            )
             done = ImageData(
                 done.image[sorted_indices],
                 [done.meta[i] for i in sorted_indices]
             )
-        
+
         self._log_arguments(done)
         return done
 
@@ -235,19 +233,19 @@ class DataLoader:
         return np.swapaxes(image, 0, 1), metadata
 
     def _load_dicom_file(self, path: Path) -> tuple[np.ndarray, MetaData]:
-            dicom_data = pydicom.dcmread(path)
-            image = dicom_data.pixel_array
-            image = np.swapaxes(image, 0, 1)
-            metadata = DicomMetaData(
-                file_name=path.name,
-                file_size_MB=os.path.getsize(path) / 2**20,
-                size=(image.shape[0], image.shape[1]),
-                dtype=image.dtype,
-                bit_depth=8 * image.dtype.itemsize,
-                color_model="grayscale",
-                sequence_number=int(dicom_data.InstanceNumber),
-            )
-            return image, metadata
+        dicom_data = pydicom.dcmread(path)
+        image = dicom_data.pixel_array
+        image = np.swapaxes(image, 0, 1)
+        metadata = DicomMetaData(
+            file_name=path.name,
+            file_size_MB=os.path.getsize(path) / 2**20,
+            size=(image.shape[0], image.shape[1]),
+            dtype=image.dtype,
+            bit_depth=8 * image.dtype.itemsize,
+            color_model="grayscale",
+            sequence_number=int(dicom_data.InstanceNumber),
+        )
+        return image, metadata
 
     def _load_video(self, path: Path) -> ImageData:
         cap = cv2.VideoCapture(str(path))
