@@ -6,6 +6,7 @@ import pyqtgraph as pg
 from PyQt5.QtCore import QPoint, pyqtSignal
 from PyQt5.QtGui import QDropEvent
 from pyqtgraph import RectROI
+from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 
 from .. import settings
 from ..data.load import DataLoader, ImageData
@@ -143,11 +144,11 @@ class ImageViewer(pg.ImageView):
         if (min_ := self.image.min()) < 0 < (max_ := self.image.max()):
             max_ = max(abs(min_), max_)
             min_ = - max_
-            self.ui.histogram.gradient.loadPreset('bipolar')
+            self.ui.histogram.gradient.restoreState(Gradients['bipolar'])
             self.setLevels(min=min_, max=max_)
             self.ui.histogram.setHistogramRange(min_, max_)
         else:
-            self.ui.histogram.gradient.loadPreset('greyclip')
+            self.ui.histogram.gradient.restoreState(Gradients['greyclip'])
             super().autoLevels()
 
     def load_data(self, path: Optional[Path] = None, **kwargs) -> None:

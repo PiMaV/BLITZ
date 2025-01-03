@@ -15,7 +15,6 @@ from .rosee import ROSEEAdapter
 from .tof import TOFAdapter
 from .ui import UI_MainWindow
 
-
 URL_GITHUB = QUrl("https://github.com/CodeSchmiedeHGW/BLITZ")
 URL_INP = QUrl("https://www.inp-greifswald.de/")
 
@@ -267,9 +266,10 @@ class MainWindow(QMainWindow):
             self.ui.spinbox_max_ram.setValue,
         )
 
-        # very dirty workaround of getting the name of the user chosen
+        # very dirty workaround of getting the name of the user-chosen
         # gradient from the LUT
         def loadPreset(name: str):
+            self.ui.checkbox_auto_colormap.setChecked(False)
             self.ui.image_viewer.ui.histogram.gradient.lastCM = name
             self.ui.image_viewer.ui.histogram.gradient.restoreState(
                 Gradients[name]  # type: ignore
@@ -278,16 +278,21 @@ class MainWindow(QMainWindow):
             return self.ui.image_viewer.ui.histogram.gradient.lastCM
         self.ui.image_viewer.ui.histogram.gradient.lastColorMap = lastColorMap
         self.ui.image_viewer.ui.histogram.gradient.loadPreset = loadPreset
-        self.ui.image_viewer.ui.histogram.gradient.loadPreset(
+        self.ui.image_viewer.ui.histogram.gradient.lastCM = (
             settings.get("default/colormap")
         )
+        if settings.get("default/colormap") != "greyclip":
+            self.ui.checkbox_auto_colormap.setChecked(False)
 
         settings.connect_sync(
             "default/colormap",
             self.ui.image_viewer.ui.histogram
                 .gradient.sigGradientChangeFinished,
             self.ui.image_viewer.ui.histogram.gradient.lastColorMap,
-            self.ui.image_viewer.ui.histogram.gradient.loadPreset,
+            lambda name:
+                self.ui.image_viewer.ui.histogram.gradient.restoreState(
+                    Gradients[name]
+            ),
         )
         settings.connect_sync(
             "web/address",

@@ -17,7 +17,7 @@
     "spinbox_load_size": "Adjust the relative size of each image.",
     "spinbox_load_subset": "Adjust the relative number of images loaded.",
     "spinbox_max_ram": "Set an upper bound for memory used by the application.",
-    "checkbox_sync_file": "When loading data, also loads the corresponding .blitz project file if it exists. Also saves .blitz project files automatically when loading new data. The file is created in the same folder as the dataset with the same name.",
+    "checkbox_sync_file": "When loading data, also loads the corresponding .blitz project file if it exists.\nAlso saves .blitz project files automatically when loading new data.\nThe file is created in the same folder as the dataset with the same name.",
 
     "button_connect": "Connect to the given server address. Keeps listening until manually disconnected.",
     "button_disconnect": "Disconnect from the server.",
@@ -43,7 +43,7 @@
     "label_reduce": "Temporal Dimensionality Reduction: Create summary images by aggregating pixel values (e.g. mean) across a time series of images.",
     "combobox_reduce": "Calculate a metric on the time axis, e.g. mean of all images loaded. This visualizes a single image.",
 
-    "checkbox_norm_range": "Select this to perform a normalization over the given time interval / image indices. Subtracts or divides each image by the mean of all images in the interval.",
+    "checkbox_norm_range": "Select this to perform a normalization over the given time interval / image indices.\nSubtracts or divides each image by the mean of all images in the interval.",
     "checkbox_norm_show_range": "Show a blue box in the timeline to select a time interval.",
 
     "checkbox_norm_bg": "Select this to subtract or divide each image by a given background image.",
