@@ -1,13 +1,14 @@
 # BLITZ
 
 ## TL;DR
-**BLITZ** is a matrix-based image viewer designed for handling massive datasets (25+ GB) quickly and efficiently, but also works well for single images. (i.e. it can load 21,000 images (~25GB) in 35 seconds on a gaming laptop).
+**BLITZ** is a high-performance, matrix-based image viewer built for efficiently managing massive datasets but equally suitable for single-image analysis. For example, it can load 21,000 images (~25GB) in just 35 seconds on a standard gaming laptop.
 
 ## Download
-[Download the latest release for Windows](https://github.com/CodeSchmiedeHGW/BLITZ/releases/latest)
+[Download the latest release for Windows](https://github.com/CodeSchmiedeHGW/BLITZ/releases/latest)  
+No installation needed—just a single, standalone *.exe file.
 
 ## Overview
-**BLITZ** (Bulk Loading and Interactive Time series Zonal analysis) is an open-source image viewer developed at [INP Greifswald](https://www.inp-greifswald.de). It is designed for rapid loading and processing of large image datasets, but is equally effective for single-image analysis.
+**BLITZ** (Bulk Loading and Interactive Time series Zonal analysis) is an open-source image viewer developed at [INP Greifswald](https://www.inp-greifswald.de). It specializes in the rapid loading, visualization, and analysis of large image datasets, while also being an excellent tool for detailed single-image inspection.
 
 **Key Features:**
 - **Fast Data Handling:** Handles very large datasets efficiently (i.e. 21,000 images (~25GB) in just 35 seconds on a standard gaming laptop).
