@@ -3,11 +3,11 @@ import json
 import pyqtgraph as pg
 from PyQt5.QtCore import QFile, Qt
 from PyQt5.QtGui import QFont, QIcon
-from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox,
-                             QDoubleSpinBox, QFrame, QGridLayout, QHBoxLayout,
-                             QLabel, QLayout, QLineEdit, QMenu, QMenuBar,
-                             QPushButton, QScrollArea, QSpinBox, QStatusBar,
-                             QStyle, QTabWidget, QVBoxLayout, QWidget, QSizePolicy)
+from PyQt5.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFrame,
+                             QGridLayout, QHBoxLayout, QLabel, QLayout,
+                             QLineEdit, QMenu, QMenuBar, QPushButton,
+                             QScrollArea, QSizePolicy, QSpinBox, QStatusBar,
+                             QStyle, QTabWidget, QVBoxLayout, QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import __version__, resources, settings
@@ -28,19 +28,6 @@ class UI_MainWindow(QWidget):
         super().__init__()
         form.setWindowTitle(TITLE)
         form.setWindowIcon(QIcon(":/icon/blitz.ico"))
-
-        screen_geometry = QApplication.primaryScreen().availableGeometry()
-        relative_size = settings.get("window/relative_size")
-        width = int(screen_geometry.width() * relative_size)
-        height = int(screen_geometry.height() * relative_size)
-        form.setGeometry(
-            (screen_geometry.width() - width) // 2,
-            (screen_geometry.height() - height) // 2,
-            width,
-            height,
-        )
-        if relative_size == 1.0:
-            form.showMaximized()
 
         self.dock_area = DockArea()
         self.setup_docks()
@@ -104,8 +91,6 @@ class UI_MainWindow(QWidget):
         self.dock_area.addDock(self.dock_option, 'top', self.dock_lookup)
         self.dock_area.addDock(self.dock_h_plot, 'top', self.dock_viewer)
         self.dock_area.addDock(self.dock_status, 'top', self.dock_v_plot)
-        if (docks_arrangement := settings.get("window/docks")):
-            self.dock_area.restoreState(docks_arrangement)
 
     def setup_logger(self) -> None:
         logger = LoggingTextEdit()
@@ -161,12 +146,6 @@ class UI_MainWindow(QWidget):
         file_menu.addSeparator()
         self.action_restart = file_menu.addAction("Restart")
         self.menubar.addMenu(file_menu)
-
-        project_menu = QMenu("Project", self)
-        project_menu.setToolTipsVisible(True)
-        self.action_project_save = project_menu.addAction("Save")
-        self.action_project_open = project_menu.addAction("Open")
-        self.menubar.addMenu(project_menu)
 
         about_menu = QMenu("About", self)
         about_menu.setToolTipsVisible(True)
@@ -237,6 +216,13 @@ class UI_MainWindow(QWidget):
             font: bold;
         }"""
 
+        style_heading_small = """QLabel {
+            background-color: rgb(60, 60, 100);
+            qproperty-alignment: AlignCenter;
+            font-size: 11pt;
+            font: bold;
+        }"""
+
         style_options = (
             "font-size: 9pt;"
         )
@@ -251,7 +237,7 @@ class UI_MainWindow(QWidget):
         load_hlay = QHBoxLayout()
         self.checkbox_load_8bit = QCheckBox("8 bit")
         load_hlay.addWidget(self.checkbox_load_8bit)
-        self.checkbox_load_grayscale = QCheckBox("Grayscale")
+        self.checkbox_load_grayscale = QCheckBox("grayscale")
         self.checkbox_load_grayscale.setChecked(True)
         load_hlay.addWidget(self.checkbox_load_grayscale)
         file_layout.addLayout(load_hlay)
@@ -259,18 +245,27 @@ class UI_MainWindow(QWidget):
         self.spinbox_load_size.setRange(0, 1)
         self.spinbox_load_size.setValue(1)
         self.spinbox_load_size.setSingleStep(0.1)
-        self.spinbox_load_size.setPrefix("Size-ratio: ")
+        self.spinbox_load_size.setPrefix("size ratio: ")
         file_layout.addWidget(self.spinbox_load_size)
         self.spinbox_load_subset = QDoubleSpinBox()
         self.spinbox_load_subset.setRange(0, 1)
         self.spinbox_load_subset.setValue(1)
         self.spinbox_load_subset.setSingleStep(0.1)
-        self.spinbox_load_subset.setPrefix("Subset-ratio: ")
+        self.spinbox_load_subset.setPrefix("subset ratio: ")
         file_layout.addWidget(self.spinbox_load_subset)
         self.spinbox_max_ram = QDoubleSpinBox()
         self.spinbox_max_ram.setSingleStep(0.1)
-        self.spinbox_max_ram.setPrefix("Max. RAM: ")
+        self.spinbox_max_ram.setPrefix("max. RAM: ")
+        self.spinbox_max_ram.setRange(.1, .8 * get_available_ram())
         file_layout.addWidget(self.spinbox_max_ram)
+        self.checkbox_sync_file = QCheckBox("load/save project file")
+        self.checkbox_sync_file.setChecked(False)
+        self.checkbox_sync_file.setStyleSheet("""
+            QCheckBox:checked {
+                color: rgb(250, 125, 125);
+            }
+        """)
+        file_layout.addWidget(self.checkbox_sync_file)
         load_btn_lay = QHBoxLayout()
         self.button_open_file = QPushButton("Open File")
         load_btn_lay.addWidget(self.button_open_file)
@@ -542,26 +537,26 @@ class UI_MainWindow(QWidget):
         label_rosee = QLabel("RoSEE")
         label_rosee.setStyleSheet(style_heading)
         rosee_layout.addWidget(label_rosee)
-        self.checkbox_rosee_local_extrema = QCheckBox("Use local extrema")
-        self.checkbox_rosee_local_extrema.setChecked(True)
-        rosee_layout.addWidget(self.checkbox_rosee_local_extrema)
-        self.spinbox_rosee_smoothing = QSpinBox()
-        self.spinbox_rosee_smoothing.setPrefix("Smoothing: ")
-        rosee_layout.addWidget(self.spinbox_rosee_smoothing)
-        self.checkbox_rosee_normalize = QCheckBox("Normalize values")
-        rosee_layout.addWidget(self.checkbox_rosee_normalize)
-        self.checkbox_rosee_show_indices = QCheckBox("Show Indices")
-        self.checkbox_rosee_show_lines = QCheckBox("Show Lines")
-        rosee_lines_hlay = QHBoxLayout()
-        rosee_lines_hlay.addWidget(self.checkbox_rosee_show_indices)
-        rosee_lines_hlay.addWidget(self.checkbox_rosee_show_lines)
-        rosee_layout.addLayout(rosee_lines_hlay)
+        self.checkbox_rosee_active = QCheckBox("Show RoSEE")
+        self.checkbox_rosee_active.setChecked(False)
+        rosee_layout.addWidget(self.checkbox_rosee_active)
         hline = QFrame()
         hline.setFrameShape(QFrame.Shape.HLine)
         hline.setFrameShadow(QFrame.Shadow.Sunken)
         rosee_layout.addWidget(hline)
+        self.checkbox_rosee_local_extrema = QCheckBox("Use local extrema")
+        self.checkbox_rosee_local_extrema.setChecked(False)
+        rosee_layout.addWidget(self.checkbox_rosee_local_extrema)
+        self.spinbox_rosee_smoothing = QSpinBox()
+        self.spinbox_rosee_smoothing.setPrefix("Smoothing: ")
+        rosee_layout.addWidget(self.spinbox_rosee_smoothing)
+        self.label_rosee_plots = QLabel("Plots")
+        self.label_rosee_plots.setStyleSheet(style_heading_small)
+        rosee_layout.addWidget(self.label_rosee_plots)
         self.checkbox_rosee_h = QCheckBox("horizontal")
         self.checkbox_rosee_v = QCheckBox("vertical")
+        self.checkbox_rosee_h.setChecked(True)
+        self.checkbox_rosee_v.setChecked(True)
         rosee_hlay = QHBoxLayout()
         rosee_hlay.addWidget(self.checkbox_rosee_h)
         rosee_hlay.addWidget(self.checkbox_rosee_v)
@@ -588,10 +583,28 @@ class UI_MainWindow(QWidget):
         rosee_index_hlay.addLayout(rosee_index_vlayh)
         rosee_index_hlay.addLayout(rosee_index_vlayv)
         rosee_layout.addLayout(rosee_index_hlay)
-        label_isocurves = QLabel("Isocurves")
-        label_isocurves.setStyleSheet(style_heading)
-        rosee_layout.addWidget(label_isocurves)
-        self.checkbox_show_isocurve = QCheckBox("Show Isocurves")
+        hline = QFrame()
+        hline.setFrameShape(QFrame.Shape.HLine)
+        hline.setFrameShadow(QFrame.Shadow.Sunken)
+        rosee_layout.addWidget(hline)
+        self.checkbox_rosee_normalize = QCheckBox("Normalize values")
+        rosee_layout.addWidget(self.checkbox_rosee_normalize)
+        self.checkbox_rosee_show_indices = QCheckBox("Show Indices")
+        self.checkbox_rosee_show_lines = QCheckBox("Show Lines")
+        rosee_lines_hlay = QHBoxLayout()
+        rosee_lines_hlay.addWidget(self.checkbox_rosee_show_indices)
+        rosee_lines_hlay.addWidget(self.checkbox_rosee_show_lines)
+        rosee_layout.addLayout(rosee_lines_hlay)
+        self.label_rosee_image = QLabel("Image")
+        self.label_rosee_image.setStyleSheet(style_heading_small)
+        rosee_layout.addWidget(self.label_rosee_image)
+        rosee_hlay2 = QHBoxLayout()
+        self.checkbox_rosee_in_image_h = QCheckBox("horizontal")
+        self.checkbox_rosee_in_image_v = QCheckBox("vertical")
+        rosee_hlay2.addWidget(self.checkbox_rosee_in_image_h)
+        rosee_hlay2.addWidget(self.checkbox_rosee_in_image_v)
+        rosee_layout.addLayout(rosee_hlay2)
+        self.checkbox_show_isocurve = QCheckBox("Isocurves")
         self.checkbox_show_isocurve.setChecked(False)
         self.spinbox_isocurves = QSpinBox()
         self.spinbox_isocurves.setMinimum(1)
@@ -603,6 +616,7 @@ class UI_MainWindow(QWidget):
         self.spinbox_iso_smoothing = QSpinBox()
         self.spinbox_iso_smoothing.setPrefix("Smoothing: ")
         self.spinbox_iso_smoothing.setMinimum(0)
+        self.spinbox_iso_smoothing.setValue(3)
         rosee_layout.addWidget(self.spinbox_iso_smoothing)
         rosee_layout.addStretch()
         self.create_option_tab(rosee_layout, "RoSEE")

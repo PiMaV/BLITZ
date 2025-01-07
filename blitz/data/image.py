@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Literal, Optional
+from typing import Literal, Optional
 
 import numpy as np
 import pyqtgraph as pg
@@ -28,6 +28,11 @@ class VideoMetaData(MetaData):
     codec: str
 
 
+@dataclass(kw_only=True)
+class DicomMetaData(MetaData):
+    sequence_number: int
+
+
 class ImageData:
 
     def __init__(
@@ -41,6 +46,7 @@ class ImageData:
         self._mask: tuple[slice, slice, slice] | None = None
         self._image_mask: np.ndarray | None = None
         self._cropped: tuple[int, int] | None = None
+        self._save_cropped: tuple[int, int] | None = None
         self._transposed = False
         self._flipped_x = False
         self._flipped_y = False
@@ -101,6 +107,7 @@ class ImageData:
         else:
             self._cropped = None
             self._image = self._image[left:right+1]
+        self._save_cropped = (left, right)
 
     def undo_crop(self) -> bool:
         if self._cropped is None:
@@ -187,11 +194,11 @@ class ImageData:
     def unravel(self) -> None:
         self._redop = None
 
-    def mask(self, roi: pg.ROI) -> None:
+    def mask(self, roi: pg.ROI) -> bool:
         if self._transposed or self._flipped_x or self._flipped_y:
             log("Masking not available while data is flipped or transposed",
                 color="red")
-            return
+            return False
         pos = roi.pos()
         size = roi.size()
         x_start = max(0, int(pos[0]))
@@ -209,6 +216,7 @@ class ImageData:
         self._mask = (
             slice(None, None), slice(x_start, x_stop), slice(y_start, y_stop),
         )
+        return True
 
     def mask_range(self, range_: tuple[int, int, int, int]) -> None:
         self._mask = (
@@ -225,9 +233,12 @@ class ImageData:
         else:
             self._image_mask = mask.image[0].astype(bool)
 
-    def reset_mask(self) -> None:
-        self._mask = None
-        self._image_mask = None
+    def reset_mask(self) -> bool:
+        if self._mask is not None:
+            self._mask = None
+            self._image_mask = None
+            return True
+        return False
 
     def transpose(self) -> None:
         self._transposed = not self._transposed
@@ -238,23 +249,15 @@ class ImageData:
     def flip_y(self) -> None:
         self._flipped_y = not self._flipped_y
 
-    def save_options(self) -> None:
-        settings.set("data/flipped_x", self._flipped_x)
-        settings.set("data/flipped_x", self._flipped_x)
-        settings.set("data/transposed", self._transposed)
-        if self._mask is not None:
-            settings.set("data/mask", self._mask)
-        if self._cropped is not None:
-            settings.set("data/cropped", self._cropped)
+    def get_mask(self) -> tuple[slice, slice, slice] | None:
+        return self._mask
 
-    def load_options(self) -> None:
-        if settings.get("data/flipped_x"):
-            self.flip_x()
-        if settings.get("data/flipped_x"):
-            self.flip_y()
-        if settings.get("data/transposed"):
-            self.transpose()
-        if mask := settings.get("data/mask"):
-            self._mask = mask
-        if cropped := settings.get("data/cropped"):
-            self._cropped = cropped
+    def set_mask(self, mask: tuple[slice, slice, slice] | None):
+        self._mask = mask
+
+    def get_crop(self) -> tuple[int, int] | None:
+        return self._save_cropped
+
+    def set_crop(self, crop: tuple[int, int] | None):
+        self._save_cropped = crop
+        self._cropped = crop

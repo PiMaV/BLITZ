@@ -6,6 +6,7 @@ import pyqtgraph as pg
 from PyQt5.QtCore import QPoint, pyqtSignal
 from PyQt5.QtGui import QDropEvent
 from pyqtgraph import RectROI
+from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 
 from .. import settings
 from ..data.load import DataLoader, ImageData
@@ -20,6 +21,8 @@ class ImageViewer(pg.ImageView):
     file_dropped = pyqtSignal(str)
     image_size_changed = pyqtSignal()
     image_changed = pyqtSignal()
+    image_mask_changed = pyqtSignal()
+    image_crop_changed = pyqtSignal()
 
     def __init__(self) -> None:
         view = pg.PlotItem()
@@ -64,12 +67,7 @@ class ImageViewer(pg.ImageView):
         self.setAcceptDrops(True)
         self._auto_colormap = True
         self._background_image: ImageData | None = None
-        if (path := settings.get("data/path")) != "":
-            self.load_data(Path(path))
-            self.data.load_options()
-            self.update_image()
-        else:
-            self.load_data()
+        self.load_data()
 
     @property
     def now(self) -> np.ndarray:
@@ -146,11 +144,11 @@ class ImageViewer(pg.ImageView):
         if (min_ := self.image.min()) < 0 < (max_ := self.image.max()):
             max_ = max(abs(min_), max_)
             min_ = - max_
-            self.ui.histogram.gradient.loadPreset('bipolar')
+            self.ui.histogram.gradient.restoreState(Gradients['bipolar'])
             self.setLevels(min=min_, max=max_)
             self.ui.histogram.setHistogramRange(min_, max_)
         else:
-            self.ui.histogram.gradient.loadPreset('greyclip')
+            self.ui.histogram.gradient.restoreState(Gradients['greyclip'])
             super().autoLevels()
 
     def load_data(self, path: Optional[Path] = None, **kwargs) -> None:
@@ -252,6 +250,7 @@ class ImageViewer(pg.ImageView):
             autoLevels=False,
         )
         self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
+        self.image_crop_changed.emit()
 
     def undo_crop(self) -> bool:
         success = self.data.undo_crop()
@@ -296,22 +295,24 @@ class ImageViewer(pg.ImageView):
     def apply_mask(self) -> None:
         if self.mask is None:
             return
-        self.data.mask(self.mask)
+        if self.data.mask(self.mask):
+            self.setImage(
+                self.data.image,
+                keep_timestep=True,
+                autoLevels=False,
+            )
+            self.image_size_changed.emit()
+            self.image_mask_changed.emit()
         self.toggle_mask()
-        self.setImage(
-            self.data.image,
-            keep_timestep=True,
-            autoLevels=False,
-        )
-        self.image_size_changed.emit()
 
     def reset_mask(self) -> None:
-        self.data.reset_mask()
-        self.setImage(
-            self.data.image,
-            autoLevels=False,
-        )
-        self.image_size_changed.emit()
+        if self.data.reset_mask():
+            self.setImage(
+                self.data.image,
+                autoLevels=False,
+            )
+            self.image_size_changed.emit()
+            self.image_mask_changed.emit()
 
     def toggle_mask(self) -> None:
         if self.mask is None:

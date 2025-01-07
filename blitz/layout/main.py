@@ -5,6 +5,7 @@ from typing import Optional
 from PyQt5.QtCore import QCoreApplication, QUrl
 from PyQt5.QtGui import QDesktopServices, QKeySequence
 from PyQt5.QtWidgets import QApplication, QFileDialog, QMainWindow, QShortcut
+from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 
 from .. import __version__, settings
 from ..data.image import ImageData
@@ -45,17 +46,15 @@ class MainWindow(QMainWindow):
         )
         self.setup_connections()
         self.reset_options()
-
-        if (lut := settings.get("viewer/LUT")):
-            try:
-                self.ui.image_viewer.load_lut_config(lut)
-            except:
-                log("Failed to load LUT config given in the .ini file",
-                    color="red")
+        self.setup_sync()
 
         self.ui.checkbox_roi.setChecked(False)
         self.ui.checkbox_roi.setChecked(True)
         log("Welcome to BLITZ", color="pink")
+
+    def closeEvent(self, event):
+        self.save_settings()
+        event.accept()
 
     def setup_connections(self) -> None:
         # MainWindow connections
@@ -67,8 +66,6 @@ class MainWindow(QMainWindow):
         self.ui.action_open_folder.triggered.connect(self.browse_folder)
         self.ui.action_load_tof.triggered.connect(self.browse_tof)
         self.ui.action_export.triggered.connect(self.export)
-        self.ui.action_project_save.triggered.connect(self.sync_settings)
-        self.ui.action_project_open.triggered.connect(self.load_settings)
         self.ui.action_restart.triggered.connect(restart)
         self.ui.action_link_inp.triggered.connect(
             lambda: QDesktopServices.openUrl(URL_INP)  # type: ignore
@@ -78,7 +75,7 @@ class MainWindow(QMainWindow):
         )
 
         # image_viewer connections
-        self.ui.image_viewer.file_dropped.connect(self.load_images_adapter)
+        self.ui.image_viewer.file_dropped.connect(self.load)
         self.ui.roi_plot.norm_range.sigRegionChanged.connect(
             self.update_norm_range_labels
         )
@@ -189,6 +186,10 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_mm.stateChanged.connect(self.update_roi_settings)
         self.ui.spinbox_pixel.valueChanged.connect(self.update_roi_settings)
         self.ui.spinbox_mm.valueChanged.connect(self.update_roi_settings)
+        self.ui.checkbox_rosee_active.stateChanged.connect(self.toggle_rosee)
+        self.ui.checkbox_rosee_active.stateChanged.connect(
+            self.update_isocurves
+        )
         self.ui.checkbox_rosee_h.stateChanged.connect(self.toggle_rosee)
         self.ui.checkbox_rosee_v.stateChanged.connect(self.toggle_rosee)
         self.ui.checkbox_rosee_local_extrema.stateChanged.connect(
@@ -199,6 +200,12 @@ class MainWindow(QMainWindow):
             self.toggle_rosee
         )
         self.ui.checkbox_rosee_show_indices.stateChanged.connect(
+            self.toggle_rosee
+        )
+        self.ui.checkbox_rosee_in_image_h.stateChanged.connect(
+            self.toggle_rosee
+        )
+        self.ui.checkbox_rosee_in_image_v.stateChanged.connect(
             self.toggle_rosee
         )
         self.ui.h_plot._extractionline.sigPositionChanged.connect(
@@ -223,14 +230,162 @@ class MainWindow(QMainWindow):
             self.update_isocurves
         )
 
+    def setup_sync(self) -> None:
+        screen_geometry = QApplication.primaryScreen().availableGeometry()
+        relative_size = settings.get("window/relative_size")
+        width = int(screen_geometry.width() * relative_size)
+        height = int(screen_geometry.height() * relative_size)
+        self.setGeometry(
+            (screen_geometry.width() - width) // 2,
+            (screen_geometry.height() - height) // 2,
+            width,
+            height,
+        )
+        if relative_size == 1.0:
+            self.showMaximized()
+
+        if (docks_arrangement := settings.get("window/docks")):
+            self.ui.dock_area.restoreState(docks_arrangement)
+
+        settings.connect_sync(
+            "default/load_8bit",
+            self.ui.checkbox_load_8bit.stateChanged,
+            self.ui.checkbox_load_8bit.isChecked,
+            self.ui.checkbox_load_8bit.setChecked,
+        )
+        settings.connect_sync(
+            "default/load_grayscale",
+            self.ui.checkbox_load_grayscale.stateChanged,
+            self.ui.checkbox_load_grayscale.isChecked,
+            self.ui.checkbox_load_grayscale.setChecked,
+        )
+        settings.connect_sync(
+            "default/max_ram",
+            self.ui.spinbox_max_ram.editingFinished,
+            self.ui.spinbox_max_ram.value,
+            self.ui.spinbox_max_ram.setValue,
+        )
+
+        # very dirty workaround of getting the name of the user-chosen
+        # gradient from the LUT
+        def loadPreset(name: str):
+            self.ui.checkbox_auto_colormap.setChecked(False)
+            self.ui.image_viewer.ui.histogram.gradient.lastCM = name
+            self.ui.image_viewer.ui.histogram.gradient.restoreState(
+                Gradients[name]  # type: ignore
+            )
+        def lastColorMap():
+            return self.ui.image_viewer.ui.histogram.gradient.lastCM
+        self.ui.image_viewer.ui.histogram.gradient.lastColorMap = lastColorMap
+        self.ui.image_viewer.ui.histogram.gradient.loadPreset = loadPreset
+        self.ui.image_viewer.ui.histogram.gradient.lastCM = (
+            settings.get("default/colormap")
+        )
+        if settings.get("default/colormap") != "greyclip":
+            self.ui.checkbox_auto_colormap.setChecked(False)
+
+        settings.connect_sync(
+            "default/colormap",
+            self.ui.image_viewer.ui.histogram
+                .gradient.sigGradientChangeFinished,
+            self.ui.image_viewer.ui.histogram.gradient.lastColorMap,
+            lambda name:
+                self.ui.image_viewer.ui.histogram.gradient.restoreState(
+                    Gradients[name]
+            ),
+        )
+        settings.connect_sync(
+            "web/address",
+            self.ui.address_edit.editingFinished,
+            self.ui.address_edit.text,
+            self.ui.address_edit.setText,
+        )
+        settings.connect_sync(
+            "web/token",
+            self.ui.token_edit.editingFinished,
+            self.ui.token_edit.text,
+            self.ui.token_edit.setText,
+        )
+        settings.connect_sync(
+            "data/sync",
+            self.ui.checkbox_sync_file.stateChanged,
+            self.ui.checkbox_sync_file.isChecked,
+            self.ui.checkbox_sync_file.setChecked,
+        )
+
+    def sync_project_preloading(self) -> None:
+        settings.connect_sync_project(
+            "size_ratio",
+            self.ui.spinbox_load_size.editingFinished,
+            self.ui.spinbox_load_size.value,
+            self.ui.spinbox_load_size.setValue,
+        )
+        settings.connect_sync_project(
+            "subset_ratio",
+            self.ui.spinbox_load_subset.editingFinished,
+            self.ui.spinbox_load_subset.value,
+            self.ui.spinbox_load_subset.setValue,
+        )
+
+    def sync_project_postloading(self) -> None:
+        settings.connect_sync_project(
+            "flipped_x",
+            self.ui.checkbox_flipx.stateChanged,
+            self.ui.checkbox_flipx.isChecked,
+            self.ui.checkbox_flipx.setChecked,
+            lambda: self.ui.image_viewer.manipulate("flip_x"),
+            True,
+        )
+        settings.connect_sync_project(
+            "flipped_y",
+            self.ui.checkbox_flipy.stateChanged,
+            self.ui.checkbox_flipy.isChecked,
+            self.ui.checkbox_flipy.setChecked,
+            lambda: self.ui.image_viewer.manipulate("flip_y"),
+            True,
+        )
+        settings.connect_sync_project(
+            "transposed",
+            self.ui.checkbox_transpose.stateChanged,
+            self.ui.checkbox_transpose.isChecked,
+            self.ui.checkbox_transpose.setChecked,
+            lambda: self.ui.image_viewer.manipulate("transpose"),
+            True,
+        )
+        settings.connect_sync_project(
+            "measure_tool_pixels",
+            self.ui.spinbox_pixel.editingFinished,
+            self.ui.spinbox_pixel.value,
+            self.ui.spinbox_pixel.setValue,
+        )
+        settings.connect_sync_project(
+            "measure_tool_au",
+            self.ui.spinbox_mm.editingFinished,
+            self.ui.spinbox_mm.value,
+            self.ui.spinbox_mm.setValue,
+        )
+        settings.connect_sync_project(
+            "isocurve_smoothing",
+            self.ui.spinbox_iso_smoothing.editingFinished,
+            self.ui.spinbox_iso_smoothing.value,
+            self.ui.spinbox_iso_smoothing.setValue,
+        )
+        settings.connect_sync_project(
+            "mask",
+            self.ui.image_viewer.image_mask_changed,
+            self.ui.image_viewer.data.get_mask,
+        )
+        settings.connect_sync_project(
+            "cropped",
+            self.ui.image_viewer.image_crop_changed,
+            self.ui.image_viewer.data.get_crop,
+        )
+
     def reset_options(self) -> None:
-        self.ui.spinbox_max_ram.setRange(.1, .8 * get_available_ram())
-        self.ui.spinbox_max_ram.setValue(settings.get("default/max_ram"))
-        self.ui.button_apply_mask.setChecked(False)
-        self.ui.checkbox_flipx.setChecked(settings.get("data/flipped_x"))
-        self.ui.checkbox_flipy.setChecked(settings.get("data/flipped_y"))
-        self.ui.checkbox_transpose.setChecked(settings.get("data/transposed"))
         self.ui.combobox_reduce.setCurrentIndex(0)
+        self.ui.checkbox_flipx.setChecked(False)
+        self.ui.checkbox_flipy.setChecked(False)
+        self.ui.checkbox_transpose.setChecked(False)
         if self.ui.image_viewer.data.is_single_image():
             self.ui.combobox_reduce.setEnabled(False)
         else:
@@ -291,10 +446,27 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_rosee_smoothing.setMaximum(
             min(self.ui.image_viewer.data.shape)
         )
-        self.ui.spinbox_iso_smoothing.setValue(
-            settings.get("default/isocurve_smoothing")
-        )
         self.ui.spinbox_isocurves.setValue(1)
+        self.ui.checkbox_rosee_active.setChecked(False)
+        self.ui.checkbox_rosee_h.setEnabled(False)
+        self.ui.checkbox_rosee_h.setChecked(True)
+        self.ui.checkbox_rosee_v.setEnabled(False)
+        self.ui.checkbox_rosee_v.setChecked(True)
+        self.ui.checkbox_rosee_normalize.setEnabled(False)
+        self.ui.spinbox_rosee_smoothing.setEnabled(False)
+        self.ui.spinbox_isocurves.setEnabled(False)
+        self.ui.checkbox_show_isocurve.setEnabled(False)
+        self.ui.checkbox_show_isocurve.setChecked(False)
+        self.ui.spinbox_iso_smoothing.setEnabled(False)
+        self.ui.checkbox_rosee_local_extrema.setEnabled(False)
+        self.ui.checkbox_rosee_show_lines.setEnabled(False)
+        self.ui.checkbox_rosee_show_indices.setEnabled(False)
+        self.ui.checkbox_rosee_in_image_h.setEnabled(False)
+        self.ui.checkbox_rosee_in_image_h.setChecked(False)
+        self.ui.checkbox_rosee_in_image_v.setEnabled(False)
+        self.ui.checkbox_rosee_in_image_v.setChecked(False)
+        self.ui.label_rosee_plots.setEnabled(False)
+        self.ui.label_rosee_image.setEnabled(False)
 
     def update_norm_range_labels(self) -> None:
         norm_range_ = self.ui.roi_plot.norm_range.getRegion()
@@ -340,9 +512,10 @@ class MainWindow(QMainWindow):
     def undo_crop(self) -> None:
         with LoadingManager(self, "Undo Cropping..."):
             success = self.ui.image_viewer.undo_crop()
-            if not success:
-                self.load_images(self.last_file_dir / self.last_file)
-        self.reset_options()
+            if success:
+                self.reset_options()
+            else:
+                self.load(self.last_file_dir / self.last_file)
 
     def apply_mask(self) -> None:
         with LoadingManager(self, "Masking..."):
@@ -363,39 +536,6 @@ class MainWindow(QMainWindow):
         )
         with LoadingManager(self, "Masking..."):
             self.ui.image_viewer.image_mask(Path(file_path))
-
-    # def _normalization_update(self) -> None:
-    #     name = None
-    #     if self.ui.checkbox_norm_subtract.isChecked():
-    #         name = "subtract"
-    #     if self.ui.checkbox_norm_divide.isChecked():
-    #         name = "divide"
-    #     if name is not None:
-    #         bounds = None
-    #         if self.ui.checkbox_norm_range.isChecked():
-    #             bounds = (
-    #                 self.ui.spinbox_norm_range_start.value(),
-    #                 self.ui.spinbox_norm_range_end.value(),
-    #             )
-    #         window_lag = None
-    #         if self.ui.checkbox_norm_lag.isChecked():
-    #             window_lag = (
-    #                 self.ui.spinbox_norm_window.value(),
-    #                 self.ui.spinbox_norm_lag.value(),
-    #             )
-    #         with LoadingManager(self, "Calculating...") as lm:
-    #             self.ui.image_viewer.norm(
-    #                 operation=name,
-    #                 use=self.ui.combobox_norm.currentText(),
-    #                 beta=self.ui.spinbox_norm_beta.value() / 100.0,
-    #                 gaussian_blur=self.ui.spinbox_norm_blur.value(),
-    #                 bounds=bounds,
-    #                 background=self.ui.checkbox_norm_bg.isChecked(),
-    #                 window_lag=window_lag,
-    #                 force_calculation=True,
-    #             )
-    #         log(f"Normalized in {lm.duration:.2f}s")
-    #         self.update_statusbar()
 
     def _normalization(self, name: str) -> None:
         if ((not self.ui.checkbox_norm_range.isChecked()
@@ -467,9 +607,42 @@ class MainWindow(QMainWindow):
         self.update_statusbar()
 
     def toggle_rosee(self) -> None:
+        enabled = self.ui.checkbox_rosee_active.isChecked()
+        if enabled:
+            self.ui.checkbox_rosee_h.setEnabled(True)
+            self.ui.checkbox_rosee_v.setEnabled(True)
+            self.ui.checkbox_rosee_normalize.setEnabled(True)
+            self.ui.spinbox_rosee_smoothing.setEnabled(True)
+            self.ui.spinbox_isocurves.setEnabled(True)
+            self.ui.checkbox_show_isocurve.setEnabled(True)
+            self.ui.spinbox_iso_smoothing.setEnabled(True)
+            self.ui.checkbox_rosee_local_extrema.setEnabled(True)
+            self.ui.checkbox_rosee_show_lines.setEnabled(True)
+            self.ui.checkbox_rosee_show_indices.setEnabled(True)
+            self.ui.checkbox_rosee_in_image_h.setEnabled(True)
+            self.ui.checkbox_rosee_in_image_v.setEnabled(True)
+            self.ui.label_rosee_plots.setEnabled(True)
+            self.ui.label_rosee_image.setEnabled(True)
+        else:
+            self.ui.checkbox_rosee_h.setEnabled(False)
+            self.ui.checkbox_rosee_v.setEnabled(False)
+            self.ui.checkbox_rosee_normalize.setEnabled(False)
+            self.ui.spinbox_rosee_smoothing.setEnabled(False)
+            self.ui.spinbox_isocurves.setEnabled(False)
+            self.ui.checkbox_show_isocurve.setEnabled(False)
+            self.ui.spinbox_iso_smoothing.setEnabled(False)
+            self.ui.checkbox_rosee_local_extrema.setEnabled(False)
+            self.ui.checkbox_rosee_show_lines.setEnabled(False)
+            self.ui.checkbox_rosee_show_indices.setEnabled(False)
+            self.ui.checkbox_rosee_in_image_h.setEnabled(False)
+            self.ui.checkbox_rosee_in_image_v.setEnabled(False)
+            self.ui.label_rosee_plots.setEnabled(False)
+            self.ui.label_rosee_image.setEnabled(False)
         self.rosee_adapter.toggle(
-            horizontal=self.ui.checkbox_rosee_h.isChecked(),
-            vertical=self.ui.checkbox_rosee_v.isChecked(),
+            h_plot=self.ui.checkbox_rosee_h.isChecked() and enabled,
+            v_plot=self.ui.checkbox_rosee_v.isChecked() and enabled,
+            h_image=self.ui.checkbox_rosee_in_image_h.isChecked() and enabled,
+            v_image=self.ui.checkbox_rosee_in_image_v.isChecked() and enabled,
         )
         self.rosee_adapter.update(
             use_local_extrema=self.ui.checkbox_rosee_local_extrema.isChecked(),
@@ -482,7 +655,8 @@ class MainWindow(QMainWindow):
 
     def update_isocurves(self) -> None:
         self.rosee_adapter.update_iso(
-            on=self.ui.checkbox_show_isocurve.isChecked(),
+            on=self.ui.checkbox_show_isocurve.isChecked()
+                and self.ui.checkbox_rosee_active.isChecked(),
             n=self.ui.spinbox_isocurves.value(),
             smoothing=self.ui.spinbox_iso_smoothing.value(),
         )
@@ -536,14 +710,14 @@ class MainWindow(QMainWindow):
             directory=str(self.last_file_dir),
         )
         if file_path:
-            self.load_images(Path(file_path))
+            self.load(Path(file_path))
 
     def browse_folder(self) -> None:
         folder_path = QFileDialog.getExistingDirectory(
             directory=str(self.last_file_dir),
         )
         if folder_path:
-            self.load_images(Path(folder_path))
+            self.load(Path(folder_path))
 
     def export(self) -> None:
         with LoadingManager(self, "Exporting..."):
@@ -607,38 +781,80 @@ class MainWindow(QMainWindow):
             self.ui.button_disconnect.setEnabled(False)
             self._web_connection.deleteLater()
 
-    def load_images_adapter(
-        self,
-        file_path: Optional[Path | str] = None,
-    ) -> None:
-        if isinstance(file_path, str):
-            file_path = Path(file_path)
-        if file_path is not None:
-            if file_path.suffix == ".ini":
-                settings.new_settings(file_path)
-                restart()
-            else:
-                self.load_images(file_path)
-        else:
-            self.load_images()
+    def load(self, path: Optional[Path | str] = None) -> None:
+        if path is None:
+            return self.ui.image_viewer.load_data()
 
-    def load_images(self, file_path: Optional[Path] = None) -> None:
-        text = f"Loading {'...' if file_path is None else file_path}"
-        with LoadingManager(self, text) as lm:
+        if isinstance(path, str):
+            path = Path(path)
+        project_file = path.parent / (path.name.split(".")[0] + ".blitz")
+
+        if path.suffix == ".blitz":
+            self.load_project(path)
+        elif self.ui.checkbox_sync_file.isChecked() and project_file.exists():
+            self.load_project(project_file)
+        else:
+            self.load_images(path)
+            if self.ui.checkbox_sync_file.isChecked():
+                settings.create_project(
+                    path.parent / (path.name.split(".")[0] + ".blitz")
+                )
+                settings.set_project("path", path)
+                self.sync_project_preloading()
+                self.sync_project_postloading()
+
+    def load_project(self, path: Path) -> None:
+        log(f"Loading '{path.name}' configuration file...",
+            color="green")
+        self.last_file_dir = path.parent
+        self.last_file = path.name
+        settings.create_project(path)
+        saved_path = Path(settings.get_project("path"))
+        if saved_path.exists():
+            mask = settings.get_project("mask")[1:]
+            crop = settings.get_project("cropped")
+            mask = mask if mask else None
+            crop = crop if crop else None
+            self.sync_project_preloading()
+            with LoadingManager(self, f"Loading {saved_path}") as lm:
+                self.ui.image_viewer.load_data(
+                    saved_path,
+                    size_ratio=self.ui.spinbox_load_size.value(),
+                    subset_ratio=self.ui.spinbox_load_subset.value(),
+                    max_ram=self.ui.spinbox_max_ram.value(),
+                    convert_to_8_bit=
+                        self.ui.checkbox_load_8bit.isChecked(),
+                    grayscale=self.ui.checkbox_load_grayscale.isChecked(),
+                    mask=mask,
+                    crop=crop,
+                )
+            log(f"Loaded in {lm.duration:.2f}s")
+            self.last_file_dir = saved_path.parent
+            self.last_file = saved_path.name
+            self.update_statusbar()
+            self.reset_options()
+            self.sync_project_postloading()
+        else:
+            log("Path to dataset in .blitz project file does not point to "
+                "a valid file or folder location. Deleting entry...",
+                color="red")
+            settings.set("path", "")
+
+    def load_images(self, path: Path) -> None:
+        with LoadingManager(self, f"Loading {path}") as lm:
             self.ui.image_viewer.load_data(
-                file_path,
+                path,
                 size_ratio=self.ui.spinbox_load_size.value(),
                 subset_ratio=self.ui.spinbox_load_subset.value(),
                 max_ram=self.ui.spinbox_max_ram.value(),
                 convert_to_8_bit=self.ui.checkbox_load_8bit.isChecked(),
                 grayscale=self.ui.checkbox_load_grayscale.isChecked(),
             )
-        if file_path is not None:
-            log(f"Loaded in {lm.duration:.2f}s")
-            self.last_file_dir = Path(file_path).parent
-            self.last_file = Path(file_path).name
-            self.update_statusbar()
-            self.reset_options()
+        log(f"Loaded in {lm.duration:.2f}s")
+        self.last_file_dir = path.parent
+        self.last_file = path.name
+        self.update_statusbar()
+        self.reset_options()
 
     def operation_changed(self) -> None:
         self.update_statusbar()
@@ -669,27 +885,9 @@ class MainWindow(QMainWindow):
             return
         self.ui.measure_roi.update_labels()
 
-    def sync_settings(self) -> None:
-        if (path := settings.get("data/path")) != "":
-            path = Path(path)
-            self.last_file_dir = path.parent
-            self.last_file = path.name
-        settings.export()
-        settings.set("viewer/LUT", self.ui.image_viewer.get_lut_config())
-        self.ui.image_viewer.data.save_options()
-        if self.last_file != "":
-            settings.set("data/path", str(self.last_file_dir / self.last_file))
+    def save_settings(self):
+        settings.set("window/docks", self.ui.dock_area.saveState())
         screen_geometry = QApplication.primaryScreen().availableGeometry()
-        settings.set(
-            "window/relative_size",
+        settings.set("window/relative_size",
             self.width() / screen_geometry.width(),
         )
-        settings.set(
-            "window/docks",
-            self.ui.dock_area.saveState(),
-        )
-        settings.set("data/max_ram", self.ui.spinbox_max_ram.value())
-
-    def load_settings(self) -> None:
-        if settings.select():
-            restart()

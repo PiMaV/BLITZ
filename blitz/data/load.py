@@ -6,10 +6,12 @@ from typing import Optional
 
 import cv2
 import numpy as np
+import pydicom
+from natsort import natsorted
 
 from .. import settings
 from ..tools import log
-from .image import ImageData, MetaData, VideoMetaData
+from .image import DicomMetaData, ImageData, MetaData, VideoMetaData
 from .tools import (adjust_ratio_for_memory, resize_and_convert,
                     resize_and_convert_to_8_bit)
 
@@ -32,6 +34,14 @@ class DataLoader:
     def _is_video(file: Path) -> bool:
         return file.suffix.lower() in VIDEO_EXTENSIONS
 
+    @staticmethod
+    def _is_dicom(path: Path) -> bool:
+        try:
+            pydicom.dcmread(path)
+            return True
+        except Exception:
+            return False
+
     def __init__(
         self,
         size_ratio: float = 1.0,
@@ -39,12 +49,18 @@ class DataLoader:
         max_ram: float = 1.0,
         convert_to_8_bit: bool = False,
         grayscale: bool = False,
+        mask: Optional[tuple[slice, slice]] = None,
+        crop: Optional[tuple[int, int]] = None
     ) -> None:
         self.max_ram = max_ram
         self.size_ratio = size_ratio
         self.subset_ratio = subset_ratio
         self.convert_to_8_bit = convert_to_8_bit
         self.grayscale = grayscale
+        self.mask = mask
+        if mask is not None:
+            self.mask = (mask[1], mask[0])
+        self.crop = crop
 
     def load(self, path: Optional[Path] = None) -> ImageData:
         if path is None:
@@ -80,6 +96,11 @@ class DataLoader:
             return done
         elif DataLoader._is_video(path):
             return self._load_video(path)
+        elif DataLoader._is_dicom(path):
+            image, metadata = self._load_dicom_file(path)
+            done = ImageData(image[np.newaxis, ...], [metadata])
+            self._log_arguments(done)
+            return done
         else:
             log("Error: Unsupported file type", color="red")
             return DataLoader.from_text(
@@ -88,7 +109,19 @@ class DataLoader:
             )
 
     def _load_folder(self, path: Path) -> ImageData:
-        content = [f for f in path.iterdir() if not f.is_dir()]
+        try:
+            content = [
+                f for f in sorted(
+                    path.iterdir(),
+                    key=lambda s: int(
+                        ''.join(c for c in str(s) if c.isdigit())
+                    )
+                )
+                if not f.is_dir()
+            ]
+        except ValueError:
+            content = [f for f in path.iterdir() if not f.is_dir()]
+        content = natsorted(content)
         suffixes = {s: len([f for f in content if f.suffix == s])
                     for s in set(f.suffix for f in content)}
         most_frequent_suffix = max(suffixes, key=suffixes.get)  # type: ignore
@@ -96,6 +129,8 @@ class DataLoader:
             log("Warning: folder contains multiple file types; "
                 f"Loading all {most_frequent_suffix!r} files")
             content = [f for f in content if f.suffix == most_frequent_suffix]
+        if self.crop is not None:
+            content = content[self.crop[0]:self.crop[1]+1]
 
         if DataLoader._is_image(content[0]):
             sample, _ = self._load_image(content[0])
@@ -107,6 +142,10 @@ class DataLoader:
             sample, _ = self._load_single_array(content[0])
             total_size_estimate = sample.nbytes * len(content)
             load_function = self._load_single_array
+        elif DataLoader._is_dicom(content[0]):
+            sample, _ = self._load_dicom_file(content[0])
+            total_size_estimate = sample.nbytes * len(content)
+            load_function = self._load_dicom_file
         else:
             log("Error: Unknown file extension in folder", color="red")
             return DataLoader.from_text(
@@ -150,6 +189,16 @@ class DataLoader:
                 color=(255, 0, 0),
             )
         done = ImageData(matrices, metadata)
+
+        if isinstance(done.meta[0], DicomMetaData):
+            sorted_indices = np.argsort(
+                [meta.sequence_number for meta in done.meta]
+            )
+            done = ImageData(
+                done.image[sorted_indices],
+                [done.meta[i] for i in sorted_indices]
+            )
+
         self._log_arguments(done)
         return done
 
@@ -171,6 +220,8 @@ class DataLoader:
             self.size_ratio,
             self.convert_to_8_bit,
         )
+        if self.mask is not None:
+            image = image[self.mask]
         metadata = MetaData(
             file_name=path.name,
             file_size_MB=os.path.getsize(path) / 2**20,
@@ -180,6 +231,21 @@ class DataLoader:
             color_model= "grayscale" if image.ndim == 2 else "rgb",
         )
         return np.swapaxes(image, 0, 1), metadata
+
+    def _load_dicom_file(self, path: Path) -> tuple[np.ndarray, MetaData]:
+        dicom_data = pydicom.dcmread(path)
+        image = dicom_data.pixel_array
+        image = np.swapaxes(image, 0, 1)
+        metadata = DicomMetaData(
+            file_name=path.name,
+            file_size_MB=os.path.getsize(path) / 2**20,
+            size=(image.shape[0], image.shape[1]),
+            dtype=image.dtype,
+            bit_depth=8 * image.dtype.itemsize,
+            color_model="grayscale",
+            sequence_number=int(dicom_data.InstanceNumber),
+        )
+        return image, metadata
 
     def _load_video(self, path: Path) -> ImageData:
         cap = cv2.VideoCapture(str(path))
@@ -212,19 +278,34 @@ class DataLoader:
         frames = []
         metadata = []
 
+        frame_number = 0
+        crop_start = self.crop[0] if self.crop is not None else 0
+        crop_range = (
+            self.crop[1]-self.crop[0]+1 if self.crop is not None else -1
+        )
+        while crop_start > 0:
+            ret, frame = video.read()
+            for _ in range(skip_frames):
+                video.grab()
+            crop_start -= 1
         while True:
+            if frame_number == crop_range:
+                break
             ret, frame = video.read()
             if not ret:
                 break
 
-            frame_number = len(frames)  # current frame number starting from 0
-            frames.append(resize_and_convert(
+            frame_number += 1  # current frame number starting from 0
+            image = resize_and_convert(
                 cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     if not self.grayscale else
                     cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY),
                 self.size_ratio,
                 self.convert_to_8_bit,
-            ))
+            )
+            if self.mask is not None:
+                image = image[self.mask]
+            frames.append(image)
 
             metadata.append(VideoMetaData(
                 file_name=str(frame_number),
@@ -291,7 +372,12 @@ class DataLoader:
                 matrix = function_(a)
                 matrices.append(matrix)
 
-        array = np.swapaxes(np.stack(matrices), 1, 2)
+        array = np.stack(matrices)
+        if self.mask is not None:
+            array = array[:, *self.mask]
+        if self.crop is not None:
+            array = array[self.crop[0]:self.crop[1]+1]
+        array = np.swapaxes(array, 1, 2)
         metadata = [MetaData(
             file_name=path.name + f"-{i}",
             file_size_MB=os.path.getsize(path)/2**20,
@@ -323,11 +409,14 @@ class DataLoader:
             array = np.sum(array * weights, axis=-1)
             gray = True
 
-        array = np.swapaxes(resize_and_convert_to_8_bit(
+        array = resize_and_convert_to_8_bit(
             array,
             self.size_ratio,
             self.convert_to_8_bit,
-        ), 0, 1)
+        )
+        if self.mask is not None:
+            array = array[self.mask]
+        array = np.swapaxes(array, 0, 1)
         metadata = MetaData(
             file_name=path.name,
             file_size_MB=os.path.getsize(path)/2**20,
