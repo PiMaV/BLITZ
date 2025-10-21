@@ -12,6 +12,7 @@ from natsort import natsorted
 from .. import settings
 from ..tools import log
 from .image import DicomMetaData, ImageData, MetaData, VideoMetaData
+import csv
 from .tools import (adjust_ratio_for_memory, resize_and_convert,
                     resize_and_convert_to_8_bit)
 
@@ -474,4 +475,23 @@ def tof_from_json(file_path: str) -> np.ndarray:
     # the first column is time and the second is tof_data
     data_array = np.column_stack((time, tof))
 
+    return data_array
+
+def tof_from_csv(file_path: str) -> np.ndarray:
+
+    filtered_data = []
+    with open(file_path, 'r') as file:
+        reader = csv.reader(file)
+        for row in reader:
+            if len(row) < 2:
+                continue
+            offset = float(row[0])
+            tof_data = float(row[1])
+            if offset >= 0:
+                filtered_data.append((offset, tof_data))
+
+    if not filtered_data:
+        return np.empty((0, 2))
+
+    data_array = np.array(filtered_data)
     return data_array

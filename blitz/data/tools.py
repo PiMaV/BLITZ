@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-import numba
+# import numba
 
 
 def resize_and_convert(
@@ -70,27 +70,41 @@ def ensure_4d(images: np.ndarray) -> np.ndarray:
     return images[..., np.newaxis]
 
 
-@numba.njit(
-    "f4[:,:,:,:](f4[:,:,:,:], i8, i8)",
-    fastmath=True,
-    parallel=True,
-    cache=True,
-)
+# @numba.njit(
+#     "f4[:,:,:,:](f4[:,:,:,:], i8, i8)",
+#     fastmath=True,
+#     parallel=True,
+#     cache=True,
+# )
+# def sliding_mean_normalization(
+#     images: np.ndarray,
+#     window: int,
+#     lag: int,
+# ) -> np.ndarray:
+#     n = images.shape[0]-(lag+window)
+#     q, p, c = images.shape[1:]
+#     result = np.zeros((n, q, p, c), dtype=np.float32)
+#     for t in numba.prange(n):
+#         mean = np.zeros(images.shape[1:])
+#         for s in range(lag, lag+window):
+#             mean = mean + images[t+s+1]
+#         result[t] = mean / window
+#     return result
+
 def sliding_mean_normalization(
     images: np.ndarray,
     window: int,
     lag: int,
 ) -> np.ndarray:
-    n = images.shape[0]-(lag+window)
+    n = images.shape[0] - (lag + window)
     q, p, c = images.shape[1:]
     result = np.zeros((n, q, p, c), dtype=np.float32)
-    for t in numba.prange(n):
-        mean = np.zeros(images.shape[1:])
-        for s in range(lag, lag+window):
-            mean = mean + images[t+s+1]
+    for t in range(n):
+        mean = np.zeros(images.shape[1:], dtype=np.float32)
+        for s in range(lag, lag + window):
+            mean = mean + images[t + s + 1]
         result[t] = mean / window
     return result
-
 
 def normalize(signal: np.ndarray, eps: float = 1e-10) -> np.ndarray:
     min_ = signal.min()

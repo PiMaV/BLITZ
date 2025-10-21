@@ -4,7 +4,7 @@ from typing import Literal, Optional
 import numpy as np
 import pyqtgraph as pg
 
-from .. import settings
+# from .. import settings
 from ..tools import log
 from . import ops
 from .tools import ensure_4d, sliding_mean_normalization
