@@ -4,7 +4,7 @@ import numpy as np
 import pyqtgraph as pg
 
 from ..data.image import MetaData, VideoMetaData
-from ..data.load import tof_from_json
+from ..data.load import tof_from_json, tof_from_csv
 from ..data.tools import smoothen
 from ..tools import log
 
@@ -62,7 +62,14 @@ class TOFAdapter:
         video_metadata: Optional[list[MetaData]] = None,
         smoothing_level: int = 3,
     ) -> None:
-        data = tof_from_json(path)
+        if path.lower().endswith('.json'):
+            data = tof_from_json(path)
+        elif path.lower().endswith('.csv'):
+            data = tof_from_csv(path)
+        else:
+            log(f"Error: Unsupported file type for {path}")
+            return
+
         if (video_metadata is not None and len(video_metadata) > 0
                 and isinstance(video_metadata[0], VideoMetaData)):
             data = self._sync_to_video(
