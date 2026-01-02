@@ -1,1 +1,2 @@
-from . import load, tools
+from . import load as load
+from . import tools as tools
