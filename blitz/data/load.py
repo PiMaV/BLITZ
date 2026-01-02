@@ -180,7 +180,7 @@ class DataLoader:
 
         try:
             matrices = np.stack(matrices)
-        except:
+        except Exception:
             log(
                 "Error loading files: shapes of images do not match",
                 color="red",
@@ -353,11 +353,13 @@ class DataLoader:
                     "Error loading files", color=(255, 0, 0)
                 )
         # now the first dimension is time
-        function_ = lambda x: resize_and_convert_to_8_bit(
-            x,
-            self.size_ratio,
-            self.convert_to_8_bit,
-        )
+        def function_(x):
+            return resize_and_convert_to_8_bit(
+                x,
+                self.size_ratio,
+                self.convert_to_8_bit,
+            )
+
         total_size_estimate = array[0].nbytes * array.shape[0]
         if (array.shape[0] > settings.get("default/multicore_files_threshold")
                 or total_size_estimate >
