@@ -7,7 +7,7 @@ from PyQt5.QtGui import QDesktopServices, QKeySequence
 from PyQt5.QtWidgets import QApplication, QFileDialog, QMainWindow, QShortcut
 from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 
-from .. import __version__, settings
+from .. import settings
 from ..data.image import ImageData
 from ..data.web import WebDataLoader
 from ..tools import LoadingManager, get_available_ram, log
@@ -734,7 +734,7 @@ class MainWindow(QMainWindow):
                 with open(file, "r", encoding="utf-8") as f:
                     lut_config = json.load(f)
                 self.ui.image_viewer.load_lut_config(lut_config)
-            except:
+            except Exception:
                 log("LUT could not be loaded. Make sure it is an "
                     "appropriately structured '.json' file.", color="red")
 
@@ -867,7 +867,7 @@ class MainWindow(QMainWindow):
             self.ui.checkbox_norm_divide.setEnabled(True)
         if text == "-":
             self.ui.button_autofit.setChecked(True)
-            with LoadingManager(self, f"Unpacking ..."):
+            with LoadingManager(self, "Unpacking ..."):
                 self.ui.image_viewer.unravel()
             self.update_statusbar()
         else:

@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFrame,
                              QStyle, QTabWidget, QVBoxLayout, QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
 
-from .. import __version__, resources, settings
+from .. import __version__, settings
 from ..data.ops import ReduceOperation
 from ..tools import LoggingTextEdit, get_available_ram, setup_logger
 from .viewer import ImageViewer
@@ -640,6 +640,6 @@ class UI_MainWindow(QWidget):
                         background-color: rgb(200, 200, 200);
                     }"""
                 )
-            except:
+            except Exception:
                 pass
             self.__getattribute__(widget).setToolTip(tip)

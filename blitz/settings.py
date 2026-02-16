@@ -93,7 +93,7 @@ class _Settings:
             if (self[setting] != default) or self[setting] != value_getter():
                 try:
                     value_setter(self[setting])
-                except Exception as e:
+                except Exception:
                     log(f"Failed to load setting {setting!r} from "
                         f"{self._path.name}", color="red")
 
@@ -106,10 +106,10 @@ class _Settings:
         )
 
     def __setitem__(self, setting: str, value: Any) -> None:
-        if (def_type := type(self._default[setting])) != type(value):
+        if (def_type := type(self._default[setting])) is not type(value):
             try:
                 value = def_type(value)
-            except:
+            except Exception:
                 raise ValueError(
                     f"Setting '{setting}' of type {def_type} was given as "
                     f"incorrect type {type(value)}"
