@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFrame,
 from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import __version__, settings
+from .. import resources  # noqa: F401  (import registers Qt resources)
 from ..data.ops import ReduceOperation
 from ..tools import LoggingTextEdit, get_available_ram, setup_logger
 from .viewer import ImageViewer
