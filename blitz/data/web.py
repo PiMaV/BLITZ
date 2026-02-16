@@ -1,4 +1,5 @@
 import os
+import tempfile
 from pathlib import Path
 
 import requests
@@ -89,14 +90,9 @@ class _WebDownloader(QObject):
             else:
                 break
         if response is not None and response.status_code == 200:
-            cache_file = Path("cache.npy")
-            c = 0
-            while cache_file.exists():
-                pref = cache_file.stem.split("_")[0]
-                cache_file = Path(f"{pref}_{c}{cache_file.suffix}")
-                c += 1
-            with open(cache_file, 'wb') as f:
+            with tempfile.NamedTemporaryFile(suffix=".npy", delete=False) as f:
                 f.write(response.content)
+                cache_file = Path(f.name)
             self.download_finished.emit(cache_file)
             return
         elif response is None:
