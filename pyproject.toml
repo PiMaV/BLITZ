@@ -32,8 +32,8 @@ blitz = "blitz_main:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pyinstaller>=6.16.0",
     "ruff>=0.4.0",
     "pytest>=8.0.0",
