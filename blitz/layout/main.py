@@ -158,9 +158,31 @@ class MainWindow(QMainWindow):
         )
         self.ui.button_crop.clicked.connect(self.crop)
         self.ui.button_crop_undo.clicked.connect(self.undo_crop)
+
+        # --- Updated Connections for New Time Panel ---
+
+        # View Mode
+        self.ui.view_mode_group.buttonClicked.connect(self.update_view_mode)
+
+        # Aggregation
         self.ui.combobox_reduce.currentIndexChanged.connect(
-            self.operation_changed
+            self.apply_aggregation
         )
+        self.ui.checkbox_agg_range.stateChanged.connect(self.apply_aggregation)
+        self.ui.spinbox_agg_range_start.editingFinished.connect(self.apply_aggregation)
+        self.ui.spinbox_agg_range_end.editingFinished.connect(self.apply_aggregation)
+
+        # Need to connect show range checkbox to ROI plot update?
+        # The original code had specific ranges in ROI plot.
+        # Let's assume toggle_norm_range is used for "Aggregation Range" visualization for now,
+        # or we might need a new region item.
+        # For simplicity, I'm skipping adding a 3rd range item to ROI plot unless specifically asked.
+
+
+        # Normalization Controls
+        self.ui.checkbox_norm_active.stateChanged.connect(self.apply_normalization)
+
+        # Ranges
         self.ui.spinbox_norm_range_start.editingFinished.connect(
             self.update_norm_range
         )
@@ -170,13 +192,42 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_norm_show_range.stateChanged.connect(
             self.ui.roi_plot.toggle_norm_range
         )
+
+        # Background
         self.ui.button_bg_input.clicked.connect(self.search_background_file)
-        self.ui.checkbox_norm_subtract.clicked.connect(
-            lambda: self._normalization("subtract")
-        )
-        self.ui.checkbox_norm_divide.clicked.connect(
-            lambda: self._normalization("divide")
-        )
+
+        # All inputs that trigger normalization update
+        norm_inputs = [
+            self.ui.checkbox_norm_range,
+            self.ui.combobox_norm_range_method,
+            self.ui.spinbox_norm_range_start,
+            self.ui.spinbox_norm_range_end,
+            self.ui.checkbox_norm_bg,
+            self.ui.checkbox_norm_lag,
+            self.ui.spinbox_norm_window,
+            self.ui.spinbox_norm_lag,
+            self.ui.spinbox_norm_factor,
+            self.ui.spinbox_norm_blur,
+            self.ui.checkbox_sub_range,
+            self.ui.checkbox_sub_bg,
+            self.ui.checkbox_sub_lag,
+            self.ui.checkbox_div_range,
+            self.ui.checkbox_div_bg,
+            self.ui.checkbox_div_lag
+        ]
+
+        for widget in norm_inputs:
+            if hasattr(widget, "stateChanged"):
+                widget.stateChanged.connect(self.apply_normalization)
+            elif hasattr(widget, "editingFinished"):
+                widget.editingFinished.connect(self.apply_normalization)
+            elif hasattr(widget, "currentIndexChanged"):
+                widget.currentIndexChanged.connect(self.apply_normalization)
+            elif hasattr(widget, "valueChanged"): # For spinboxes if live update desired, but editingFinished is safer
+                 widget.editingFinished.connect(self.apply_normalization)
+
+
+        # Tools
         self.ui.checkbox_measure_roi.stateChanged.connect(
             self.ui.measure_roi.toggle
         )
@@ -386,66 +437,67 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_flipx.setChecked(False)
         self.ui.checkbox_flipy.setChecked(False)
         self.ui.checkbox_transpose.setChecked(False)
-        if self.ui.image_viewer.data.is_single_image():
-            self.ui.combobox_reduce.setEnabled(False)
-        else:
-            self.ui.combobox_reduce.setEnabled(True)
-        self.ui.checkbox_norm_range.setChecked(True)
-        self.ui.checkbox_norm_range.setEnabled(True)
-        self.ui.checkbox_norm_bg.setEnabled(False)
-        self.ui.checkbox_norm_bg.setChecked(False)
-        self.ui.checkbox_norm_lag.setChecked(False)
-        self.ui.checkbox_norm_subtract.setChecked(False)
-        self.ui.checkbox_norm_divide.setChecked(False)
-        self.ui.spinbox_norm_beta.setValue(100)
-        self.ui.button_bg_input.setText("[Select]")
-        self.ui.image_viewer._background_image = None
-        self.ui.checkbox_measure_roi.setChecked(False)
+
+        # New defaults
+        self.ui.radio_view_single.setChecked(True)
+        self.ui.agg_options_widget.setVisible(False)
+        self.ui.checkbox_norm_active.setChecked(False)
+
+        # Reset ranges and spiboxes
+        n_images = self.ui.image_viewer.data.n_images if hasattr(self.ui.image_viewer, 'data') else 100
+
         self.ui.spinbox_crop_range_start.setValue(0)
+        self.ui.spinbox_crop_range_end.setValue(n_images-1)
+        self.ui.spinbox_crop_range_start.setMaximum(n_images-1)
+        self.ui.spinbox_crop_range_end.setMaximum(n_images-1)
+
+        self.ui.spinbox_norm_range_start.setValue(0)
+        self.ui.spinbox_norm_range_end.setValue(n_images-1)
+        self.ui.spinbox_norm_range_start.setMaximum(n_images-1)
+        self.ui.spinbox_norm_range_end.setMaximum(n_images-1)
+
+        # Agg ranges
+        self.ui.spinbox_agg_range_start.setValue(0)
+        self.ui.spinbox_agg_range_end.setValue(n_images-1)
+        self.ui.spinbox_agg_range_start.setMaximum(n_images-1)
+        self.ui.spinbox_agg_range_end.setMaximum(n_images-1)
+        self.ui.checkbox_agg_range.setChecked(False)
+
         self.ui.spinbox_norm_window.setValue(1)
         self.ui.spinbox_norm_lag.setValue(0)
-        self.ui.spinbox_norm_window.setMinimum(1)
-        self.ui.spinbox_norm_window.setMaximum(
-            self.ui.image_viewer.data.n_images-1
-        )
-        self.ui.spinbox_norm_lag.setMaximum(
-            self.ui.image_viewer.data.n_images-1
-        )
-        self.ui.spinbox_crop_range_start.setMaximum(
-            self.ui.image_viewer.data.n_images-1
-        )
-        self.ui.spinbox_crop_range_end.setMaximum(
-            self.ui.image_viewer.data.n_images-1
-        )
-        self.ui.spinbox_crop_range_end.setValue(
-            self.ui.image_viewer.data.n_images-1
-        )
-        self.ui.checkbox_crop_show_range.setChecked(False)
-        self.ui.spinbox_norm_range_start.setValue(0)
-        self.ui.spinbox_norm_range_start.setMaximum(
-            self.ui.image_viewer.data.n_images-1
-        )
-        self.ui.spinbox_norm_range_end.setMaximum(
-            self.ui.image_viewer.data.n_images-1
-        )
-        self.ui.spinbox_norm_range_end.setValue(
-            self.ui.image_viewer.data.n_images-1
-        )
-        self.ui.checkbox_norm_show_range.setChecked(False)
+        self.ui.spinbox_norm_window.setMaximum(n_images-1)
+        self.ui.spinbox_norm_lag.setMaximum(n_images-1)
+
+        self.ui.spinbox_norm_factor.setValue(1.0)
         self.ui.spinbox_norm_blur.setValue(0)
+
+        self.ui.button_bg_input.setText("[Select]")
+        self.ui.image_viewer.unload_background_file()
+
+        # Uncheck all pipeline boxes
+        for box in [
+            self.ui.checkbox_sub_range, self.ui.checkbox_sub_bg, self.ui.checkbox_sub_lag,
+            self.ui.checkbox_div_range, self.ui.checkbox_div_bg, self.ui.checkbox_div_lag
+        ]:
+            box.setChecked(False)
+
+
         self.ui.checkbox_roi_drop.setChecked(
             self.ui.image_viewer.is_roi_on_drop_update()
         )
-        self.ui.spinbox_width_v.setRange(
-            0, self.ui.image_viewer.data.shape[0] // 2
-        )
-        self.ui.spinbox_width_h.setRange(
-            0, self.ui.image_viewer.data.shape[1] // 2
-        )
+
+        if hasattr(self.ui.image_viewer, 'data'):
+            self.ui.spinbox_width_v.setRange(
+                0, self.ui.image_viewer.data.shape[0] // 2
+            )
+            self.ui.spinbox_width_h.setRange(
+                0, self.ui.image_viewer.data.shape[1] // 2
+            )
+            self.ui.spinbox_rosee_smoothing.setMaximum(
+                min(self.ui.image_viewer.data.shape)
+            )
+
         self.ui.spinbox_rosee_smoothing.setValue(0)
-        self.ui.spinbox_rosee_smoothing.setMaximum(
-            min(self.ui.image_viewer.data.shape)
-        )
         self.ui.spinbox_isocurves.setValue(1)
         self.ui.checkbox_rosee_active.setChecked(False)
         self.ui.checkbox_rosee_h.setEnabled(False)
@@ -474,6 +526,7 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_norm_range_start.setValue(left)
         self.ui.spinbox_norm_range_end.setValue(right)
         self.ui.roi_plot.norm_range.setRegion((left, right))
+        self.apply_normalization()
 
     def update_crop_range_labels(self) -> None:
         crop_range_ = self.ui.roi_plot.crop_range.getRegion()
@@ -487,6 +540,7 @@ class MainWindow(QMainWindow):
             (self.ui.spinbox_norm_range_start.value(),
              self.ui.spinbox_norm_range_end.value())
         )
+        self.apply_normalization()
 
     def toggle_hvplot_markings(self) -> None:
         self.ui.h_plot.toggle_mark_position()
@@ -537,74 +591,161 @@ class MainWindow(QMainWindow):
         with LoadingManager(self, "Masking..."):
             self.ui.image_viewer.image_mask(Path(file_path))
 
-    def _normalization(self, name: str) -> None:
-        if ((not self.ui.checkbox_norm_range.isChecked()
-                and not self.ui.checkbox_norm_bg.isChecked()
-                and not self.ui.checkbox_norm_lag.isChecked())
-                or self.ui.image_viewer.data.is_single_image()):
-            self.ui.checkbox_norm_subtract.setChecked(False)
-            self.ui.checkbox_norm_divide.setChecked(False)
-            return
-        if (self.ui.checkbox_norm_divide.isChecked()
-                or self.ui.checkbox_norm_subtract.isChecked()):
-            self.ui.checkbox_norm_range.setEnabled(False)
-            self.ui.spinbox_norm_range_start.setEnabled(False)
-            self.ui.spinbox_norm_range_end.setEnabled(False)
-            self.ui.checkbox_norm_show_range.setEnabled(False)
-            self.ui.combobox_norm.setEnabled(False)
-            self.ui.checkbox_norm_bg.setEnabled(False)
-            self.ui.checkbox_norm_lag.setEnabled(False)
-            self.ui.spinbox_norm_lag.setEnabled(False)
-            self.ui.spinbox_norm_window.setEnabled(False)
-            self.ui.button_bg_input.setEnabled(False)
-            self.ui.combobox_reduce.setEnabled(False)
-            self.ui.spinbox_norm_beta.setEnabled(False)
-            self.ui.spinbox_norm_blur.setEnabled(False)
+    def update_view_mode(self) -> None:
+        is_agg = self.ui.radio_view_agg.isChecked()
+        self.ui.agg_options_widget.setVisible(is_agg)
+
+        # Disable Normalization if Aggregation is active?
+        # User requirement said "Aggregation (Range inteterssant...)" and also "bakcgruond sub + mittelwert"
+        # So we should allow Normalization BEFORE Aggregation.
+        # But we need to ensure the viewer knows what to display.
+
+        if is_agg:
+            # Trigger aggregation logic
+            self.apply_aggregation()
         else:
-            self.ui.checkbox_norm_range.setEnabled(True)
-            self.ui.spinbox_norm_range_start.setEnabled(True)
-            self.ui.spinbox_norm_range_end.setEnabled(True)
-            self.ui.checkbox_norm_show_range.setEnabled(True)
-            self.ui.combobox_norm.setEnabled(True)
-            if self.ui.button_bg_input.text() == "[Remove]":
-                self.ui.checkbox_norm_bg.setEnabled(True)
-            self.ui.checkbox_norm_lag.setEnabled(True)
-            self.ui.spinbox_norm_lag.setEnabled(True)
-            self.ui.spinbox_norm_window.setEnabled(True)
-            self.ui.button_bg_input.setEnabled(True)
-            self.ui.combobox_reduce.setEnabled(True)
-            self.ui.spinbox_norm_beta.setEnabled(True)
-            self.ui.spinbox_norm_blur.setEnabled(True)
-        if name == "subtract" and self.ui.checkbox_norm_divide.isChecked():
-            self.ui.checkbox_norm_divide.setChecked(False)
-        elif name == "divide" and self.ui.checkbox_norm_subtract.isChecked():
-            self.ui.checkbox_norm_subtract.setChecked(False)
+            # Back to time series
+            with LoadingManager(self, "Switching to Time Series..."):
+                self.ui.image_viewer.unravel() # Resets aggregation
+            # Re-apply normalization if needed
+            self.apply_normalization()
+
+    def apply_aggregation(self) -> None:
+        if not self.ui.radio_view_agg.isChecked():
+            return
+
+        op = self.ui.combobox_reduce.currentText()
+        if op == "-":
+             return
+
+        # Handle Aggregation Range
+        bounds = None
+        if self.ui.checkbox_agg_range.isChecked():
+            bounds = (
+                self.ui.spinbox_agg_range_start.value(),
+                self.ui.spinbox_agg_range_end.value()
+            )
+
+        with LoadingManager(self, f"Aggregating {op}...") as lm:
+            # image_viewer.reduce calls data.reduce
+            # I need to pass bounds.
+            # However, image_viewer.reduce method signature is `reduce(self, operation: ReduceOperation | str)`.
+            # I should update ImageViewer.reduce or handle it here via data directly?
+            # Better to use image_viewer.reduce to keep it clean, but I haven't updated ImageViewer yet.
+            # I can call data.reduce directly, but ImageViewer.reduce sets the image.
+
+            # Since I can't easily update ImageViewer signature in plan (I didn't plan for it),
+            # I will manually call data.reduce and then update image.
+
+            # Wait, ImageViewer.reduce implementation:
+            # self.data.reduce(operation)
+            # self.setImage(...)
+
+            # I updated data.reduce to take bounds.
+            # So I should call:
+            self.ui.image_viewer.data.reduce(op, bounds=bounds)
+            self.ui.image_viewer.setImage(
+                self.ui.image_viewer.data.image,
+                autoRange=False,
+                autoLevels=False,
+            )
+
+        self.update_statusbar()
+        log(f"Aggregated {op} in {lm.duration:.2f}s")
+
+
+    def apply_normalization(self) -> None:
+        if not self.ui.checkbox_norm_active.isChecked():
+             self.ui.image_viewer.data.clear_normalization()
+             self.ui.image_viewer.update_image()
+             return
+
+        # Build pipeline
+        pipeline = []
+
+        # Helper to get params
         bounds = None
         if self.ui.checkbox_norm_range.isChecked():
             bounds = (
                 self.ui.spinbox_norm_range_start.value(),
                 self.ui.spinbox_norm_range_end.value(),
             )
+
         window_lag = None
         if self.ui.checkbox_norm_lag.isChecked():
             window_lag = (
                 self.ui.spinbox_norm_window.value(),
                 self.ui.spinbox_norm_lag.value(),
             )
-        normalized = False
-        with LoadingManager(self, "Calculating...") as lm:
-            normalized = self.ui.image_viewer.norm(
-                operation=name,
-                use=self.ui.combobox_norm.currentText(),
-                beta=self.ui.spinbox_norm_beta.value() / 100.0,
-                gaussian_blur=self.ui.spinbox_norm_blur.value(),
-                bounds=bounds,
-                background=self.ui.checkbox_norm_bg.isChecked(),
-                window_lag=window_lag,
-            )
-        if normalized:
-            log(f"Normalized in {lm.duration:.2f}s")
+
+        bg_ref = self.ui.image_viewer._background_image if self.ui.checkbox_norm_bg.isChecked() else None
+
+        factor = self.ui.spinbox_norm_factor.value()
+        blur = self.ui.spinbox_norm_blur.value()
+        range_method = self.ui.combobox_norm_range_method.currentText()
+
+        # Step 1: Subtraction
+        # Users might want to subtract Range, BG, and/or Sliding.
+        # We add them as separate steps to the pipeline for simplicity in backend.
+
+        if self.ui.checkbox_sub_range.isChecked() and bounds:
+            pipeline.append({
+                "operation": "subtract",
+                "use": range_method,
+                "factor": factor,
+                "gaussian_blur": blur,
+                "bounds": bounds
+            })
+        if self.ui.checkbox_sub_bg.isChecked() and bg_ref:
+            pipeline.append({
+                "operation": "subtract",
+                "factor": factor,
+                "gaussian_blur": blur,
+                "reference": bg_ref
+            })
+        if self.ui.checkbox_sub_lag.isChecked() and window_lag:
+            pipeline.append({
+                "operation": "subtract",
+                "factor": factor,
+                "gaussian_blur": blur,
+                "window_lag": window_lag
+            })
+
+        # Step 2: Division
+        if self.ui.checkbox_div_range.isChecked() and bounds:
+            pipeline.append({
+                "operation": "divide",
+                "use": range_method,
+                "factor": factor,
+                "gaussian_blur": blur,
+                "bounds": bounds
+            })
+        if self.ui.checkbox_div_bg.isChecked() and bg_ref:
+            pipeline.append({
+                "operation": "divide",
+                "factor": factor,
+                "gaussian_blur": blur,
+                "reference": bg_ref
+            })
+        if self.ui.checkbox_div_lag.isChecked() and window_lag:
+            pipeline.append({
+                "operation": "divide",
+                "factor": factor,
+                "gaussian_blur": blur,
+                "window_lag": window_lag
+            })
+
+        with LoadingManager(self, "Calculating Normalization...") as lm:
+            success = self.ui.image_viewer.data.set_normalization_pipeline(pipeline)
+            if success:
+                self.ui.image_viewer.update_image()
+            else:
+                 log("Normalization failed", color="red")
+
+        if pipeline:
+            log(f"Normalized with {len(pipeline)} steps in {lm.duration:.2f}s")
         self.update_statusbar()
+
 
     def toggle_rosee(self) -> None:
         enabled = self.ui.checkbox_rosee_active.isChecked()
