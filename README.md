@@ -34,37 +34,28 @@ No installation needed—just a single, standalone *.exe file.
 
 ## Development
 
-To compile and develop locally:
+To compile and develop locally, you'll need [uv](https://github.com/astral-sh/uv) installed.
 
 1. Clone the repository:
 
         $ git clone https://github.com/CodeSchmiedeHGW/BLITZ.git
         $ cd BLITZ
 
-2. Set up a virtual environment and install dependencies:
+2. Set up the environment and install dependencies:
 
-        $ pip install poetry
-        $ poetry install
-        $ poetry run python -m blitz
+        $ uv sync
 
-    Sometimes the installation with poetry might fail due to package restrictions with ``PyQt5``.
-    For a quick fix, comment out the following three lines in [pyproject.toml](pyproject.toml).
-    ```
-    # PyQt5 = "^5.15.11"
-    # pyqtgraph = "^0.13.7"
-    # QDarkStyle = "^3.2.3"
-    ```
-    Afterwards, just install these packages via ``pip`` inside the newly created virtual
-    environment:
+3. Run the application:
 
-        $ poetry shell
-        $ python -m pip install PyQt5==5.15.11
-        $ python -m pip install pyqtgraph==0.13.7
-        $ python -m pip install QDarkStyle==3.2.3
+        $ uv run blitz
 
-3. To create a binary executable:
+    Alternatively, you can run the main script directly:
 
-        $ pyinstaller --onefile --noconsole --icon=./resources/icon/blitz.ico blitz_main.py
+        $ uv run blitz_main.py
+
+4. To create a binary executable:
+
+        $ uv run pyinstaller --onefile --noconsole --icon=./resources/icon/blitz.ico blitz_main.py
 
 ## Additional Resources
 
