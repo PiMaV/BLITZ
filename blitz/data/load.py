@@ -110,18 +110,7 @@ class DataLoader:
             )
 
     def _load_folder(self, path: Path) -> ImageData:
-        try:
-            content = [
-                f for f in sorted(
-                    path.iterdir(),
-                    key=lambda s: int(
-                        ''.join(c for c in str(s) if c.isdigit())
-                    )
-                )
-                if not f.is_dir()
-            ]
-        except ValueError:
-            content = [f for f in path.iterdir() if not f.is_dir()]
+        content = [f for f in path.iterdir() if not f.is_dir()]
         content = natsorted(content)
         suffixes = {s: len([f for f in content if f.suffix == s])
                     for s in set(f.suffix for f in content)}
