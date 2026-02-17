@@ -313,9 +313,7 @@ class DataLoader:
 
             if current_idx >= len(frames):
                 new_size = int(len(frames) * 1.5)
-                new_frames = np.empty((new_size, *image.shape), dtype=image.dtype)
-                new_frames[:len(frames)] = frames
-                frames = new_frames
+                frames.resize((new_size, *image.shape), refcheck=False)
 
             frames[current_idx] = image
 

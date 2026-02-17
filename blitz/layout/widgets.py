@@ -565,7 +565,7 @@ class ExtractionPlot(pg.PlotWidget):
         width = self._extractionline.width
         shape = self._viewer.image.shape
         cache_key = (
-            p, width, shape[0], shape[1], shape[2], self._envelope_pct,
+            p, width, shape[0], shape[1], shape[2], self._envelope_pct, self._vert,
         )
         if (self._dataset_envelope_cache is not None
                 and self._dataset_envelope_cache_key == cache_key):

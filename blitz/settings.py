@@ -106,7 +106,7 @@ class _Settings:
         )
 
     def __setitem__(self, setting: str, value: Any) -> None:
-        if (def_type := type(self._default[setting])) is not type(value):
+        if (def_type := type(self._default[setting])) != type(value):
             try:
                 value = def_type(value)
             except Exception:
