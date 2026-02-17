@@ -7,7 +7,7 @@ from PyQt5.QtGui import QDesktopServices, QKeySequence
 from PyQt5.QtWidgets import QApplication, QFileDialog, QMainWindow, QShortcut
 from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 
-from .. import __version__, settings
+from .. import settings
 from ..data.image import ImageData
 from ..data.web import WebDataLoader
 from ..tools import LoadingManager, get_available_ram, log
@@ -186,6 +186,18 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_mm.stateChanged.connect(self.update_roi_settings)
         self.ui.spinbox_pixel.valueChanged.connect(self.update_roi_settings)
         self.ui.spinbox_mm.valueChanged.connect(self.update_roi_settings)
+        self.ui.checkbox_minmax_per_image.stateChanged.connect(
+            self._update_envelope_options
+        )
+        self.ui.checkbox_envelope_per_crosshair.stateChanged.connect(
+            self._update_envelope_options
+        )
+        self.ui.checkbox_envelope_per_dataset.stateChanged.connect(
+            self._update_envelope_options
+        )
+        self.ui.spinbox_envelope_pct.valueChanged.connect(
+            self._update_envelope_options
+        )
         self.ui.checkbox_rosee_active.stateChanged.connect(self.toggle_rosee)
         self.ui.checkbox_rosee_active.stateChanged.connect(
             self.update_isocurves
@@ -229,6 +241,26 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_iso_smoothing.editingFinished.connect(
             self.update_isocurves
         )
+        self._update_envelope_options()
+
+    def _update_envelope_options(self) -> None:
+        per_image = self.ui.checkbox_minmax_per_image.isChecked()
+        per_crosshair = self.ui.checkbox_envelope_per_crosshair.isChecked()
+        per_ds = self.ui.checkbox_envelope_per_dataset.isChecked()
+        pct = float(self.ui.spinbox_envelope_pct.value())
+        self.ui.h_plot.set_show_minmax_per_image(per_image)
+        self.ui.h_plot.set_show_envelope_per_crosshair(per_crosshair)
+        self.ui.h_plot.set_show_envelope_per_dataset(per_ds)
+        self.ui.h_plot.set_envelope_percentile(pct)
+        self.ui.v_plot.set_show_minmax_per_image(per_image)
+        self.ui.v_plot.set_show_envelope_per_crosshair(per_crosshair)
+        self.ui.v_plot.set_show_envelope_per_dataset(per_ds)
+        self.ui.v_plot.set_envelope_percentile(pct)
+        rosee_active = self.ui.checkbox_rosee_active.isChecked()
+        if not (rosee_active and self.ui.checkbox_rosee_h.isChecked()):
+            self.ui.h_plot.draw_line()
+        if not (rosee_active and self.ui.checkbox_rosee_v.isChecked()):
+            self.ui.v_plot.draw_line()
 
     def setup_sync(self) -> None:
         screen_geometry = QApplication.primaryScreen().availableGeometry()
@@ -734,7 +766,7 @@ class MainWindow(QMainWindow):
                 with open(file, "r", encoding="utf-8") as f:
                     lut_config = json.load(f)
                 self.ui.image_viewer.load_lut_config(lut_config)
-            except:
+            except Exception:
                 log("LUT could not be loaded. Make sure it is an "
                     "appropriately structured '.json' file.", color="red")
 
@@ -867,7 +899,7 @@ class MainWindow(QMainWindow):
             self.ui.checkbox_norm_divide.setEnabled(True)
         if text == "-":
             self.ui.button_autofit.setChecked(True)
-            with LoadingManager(self, f"Unpacking ..."):
+            with LoadingManager(self, "Unpacking ..."):
                 self.ui.image_viewer.unravel()
             self.update_statusbar()
         else:

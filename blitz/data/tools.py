@@ -15,7 +15,10 @@ def resize_and_convert(
         interpolation=cv2.INTER_AREA,
     )
     if convert_to_8_bit:
-        return (resized_image / resized_image.max() * 255).astype(np.uint8)
+        mx = resized_image.max()
+        if mx <= 0:
+            return np.zeros_like(resized_image, dtype=np.uint8)
+        return (resized_image / mx * 255).astype(np.uint8)
     return resized_image
 
 
@@ -27,9 +30,10 @@ def resize_and_convert_to_8_bit(
     new_shape = tuple(int(dim * size_ratio) for dim in array.shape[:2])
     resized_array = cv2.resize(array, new_shape[::-1])
     if convert_to_8_bit:
-        resized_array = (
-            resized_array / np.max(resized_array) * 255  # type: ignore
-        ).astype('uint8')
+        mx = np.max(resized_array)
+        if mx <= 0:
+            return np.zeros_like(resized_array, dtype=np.uint8)
+        resized_array = (resized_array / mx * 255).astype(np.uint8)
     return resized_array
 
 

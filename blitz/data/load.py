@@ -12,7 +12,6 @@ from natsort import natsorted
 from .. import settings
 from ..tools import log
 from .image import DicomMetaData, ImageData, MetaData, VideoMetaData
-import csv
 from .tools import (adjust_ratio_for_memory, resize_and_convert,
                     resize_and_convert_to_8_bit)
 
@@ -110,18 +109,7 @@ class DataLoader:
             )
 
     def _load_folder(self, path: Path) -> ImageData:
-        try:
-            content = [
-                f for f in sorted(
-                    path.iterdir(),
-                    key=lambda s: int(
-                        ''.join(c for c in str(s) if c.isdigit())
-                    )
-                )
-                if not f.is_dir()
-            ]
-        except ValueError:
-            content = [f for f in path.iterdir() if not f.is_dir()]
+        content = [f for f in path.iterdir() if not f.is_dir()]
         content = natsorted(content)
         suffixes = {s: len([f for f in content if f.suffix == s])
                     for s in set(f.suffix for f in content)}
@@ -180,7 +168,7 @@ class DataLoader:
 
         try:
             matrices = np.stack(matrices)
-        except:
+        except Exception:
             log(
                 "Error loading files: shapes of images do not match",
                 color="red",
@@ -276,7 +264,7 @@ class DataLoader:
         skip_frames = int(1 / ratio) - 1
 
         video = cv2.VideoCapture(str(path))
-        frames = []
+        frames = None
         metadata = []
 
         frame_number = 0
@@ -284,13 +272,25 @@ class DataLoader:
         crop_range = (
             self.crop[1]-self.crop[0]+1 if self.crop is not None else -1
         )
+
+        expected_frames = crop_range
+        if expected_frames == -1:
+            if frame_count > 0:
+                expected_frames = int(np.ceil(frame_count / (skip_frames + 1)))
+            else:
+                expected_frames = 100
+
         while crop_start > 0:
             ret, frame = video.read()
+            if not ret:
+                break
             for _ in range(skip_frames):
                 video.grab()
             crop_start -= 1
+        
+        current_idx = 0
         while True:
-            if frame_number == crop_range:
+            if crop_range != -1 and frame_number == crop_range:
                 break
             ret, frame = video.read()
             if not ret:
@@ -306,7 +306,18 @@ class DataLoader:
             )
             if self.mask is not None:
                 image = image[self.mask]
-            frames.append(image)
+
+            if frames is None:
+                allocate_size = expected_frames if expected_frames > 0 else 100
+                frames = np.empty((allocate_size, *image.shape), dtype=image.dtype)
+
+            if current_idx >= len(frames):
+                new_size = int(len(frames) * 1.5)
+                new_frames = np.empty((new_size, *image.shape), dtype=image.dtype)
+                new_frames[:len(frames)] = frames
+                frames = new_frames
+
+            frames[current_idx] = image
 
             metadata.append(VideoMetaData(
                 file_name=str(frame_number),
@@ -317,16 +328,23 @@ class DataLoader:
                 color_model="rgb" if len(frame.shape) == 3 else "grayscale",
                 fps=fps,
                 frame_count=frame_count,
-                reduced_frame_count=len(frames),
+                reduced_frame_count=current_idx + 1,
                 codec=fourcc_str,
             ))
-
+            current_idx += 1
             # skip the next `skip_frames` number of frames without decoding.
             for _ in range(skip_frames):
                 video.grab()
 
         video.release()
-        done = ImageData(np.swapaxes(np.stack(frames), 1, 2), metadata)
+        
+        if frames is None:
+            return DataLoader.from_text("No frames loaded", color=(255, 0, 0))
+
+        if current_idx < len(frames):
+            frames = frames[:current_idx]
+
+        done = ImageData(np.swapaxes(frames, 1, 2), metadata)
         self._log_arguments(done)
         return done
 
@@ -353,11 +371,13 @@ class DataLoader:
                     "Error loading files", color=(255, 0, 0)
                 )
         # now the first dimension is time
-        function_ = lambda x: resize_and_convert_to_8_bit(
-            x,
-            self.size_ratio,
-            self.convert_to_8_bit,
-        )
+        def function_(x):
+            return resize_and_convert_to_8_bit(
+                x,
+                self.size_ratio,
+                self.convert_to_8_bit,
+            )
+
         total_size_estimate = array[0].nbytes * array.shape[0]
         if (array.shape[0] > settings.get("default/multicore_files_threshold")
                 or total_size_estimate >
@@ -478,20 +498,18 @@ def tof_from_json(file_path: str) -> np.ndarray:
     return data_array
 
 def tof_from_csv(file_path: str) -> np.ndarray:
-
-    filtered_data = []
-    with open(file_path, 'r') as file:
-        reader = csv.reader(file)
-        for row in reader:
-            if len(row) < 2:
-                continue
-            offset = float(row[0])
-            tof_data = float(row[1])
-            if offset >= 0:
-                filtered_data.append((offset, tof_data))
-
-    if not filtered_data:
+    try:
+        # Load the first two columns, skipping invalid lines
+        data = np.genfromtxt(file_path, delimiter=',', usecols=(0, 1), invalid_raise=False)
+    except Exception:
         return np.empty((0, 2))
 
-    data_array = np.array(filtered_data)
-    return data_array
+    if data is None or data.size == 0:
+        return np.empty((0, 2))
+
+    # Ensure 2D array even if there's only one valid row
+    if data.ndim == 1:
+        data = data.reshape(1, -1)
+        
+    # Filter for offset (first column) >= 0
+    return data[data[:, 0] >= 0]

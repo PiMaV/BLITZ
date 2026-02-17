@@ -10,7 +10,8 @@ from PyQt5.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFrame,
                              QStyle, QTabWidget, QVBoxLayout, QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
 
-from .. import __version__, resources, settings
+from .. import __version__, settings
+from .. import resources  # noqa: F401  (import registers Qt resources)
 from ..data.ops import ReduceOperation
 from ..tools import LoggingTextEdit, get_available_ram, setup_logger
 from .viewer import ImageViewer
@@ -132,6 +133,10 @@ class UI_MainWindow(QWidget):
 
         self.v_plot.setYLink(self.image_viewer.getView())
         self.h_plot.setXLink(self.image_viewer.getView())
+        # Disable autoRange for unlinked axis to prevent cumulative zoom-out
+        # (pyqtgraph bug with linked views: unlinked axis keeps expanding on refresh)
+        self.h_plot.getViewBox().enableAutoRange(y=False)
+        self.v_plot.getViewBox().enableAutoRange(x=False)
 
     def setup_menu_and_status_bar(self) -> None:
         self.menubar = QMenuBar()
@@ -348,6 +353,29 @@ class UI_MainWindow(QWidget):
         self.spinbox_width_v.setPrefix("V: ")
         width_holay.addWidget(self.spinbox_width_v)
         view_layout.addLayout(width_holay)
+
+        extract_label = QLabel("Extraction plots")
+        extract_label.setStyleSheet(style_heading_small)
+        view_layout.addWidget(extract_label)
+        self.checkbox_minmax_per_image = QCheckBox("Min/Max per image")
+        self.checkbox_minmax_per_image.setChecked(False)
+        self.checkbox_envelope_per_crosshair = QCheckBox("Envelope per crosshair")
+        self.checkbox_envelope_per_crosshair.setChecked(True)
+        self.checkbox_envelope_per_dataset = QCheckBox("Envelope per position (dataset)")
+        self.checkbox_envelope_per_dataset.setChecked(False)
+        self.spinbox_envelope_pct = QSpinBox()
+        self.spinbox_envelope_pct.setPrefix("Envelope: ")
+        self.spinbox_envelope_pct.setSuffix("%")
+        self.spinbox_envelope_pct.setRange(0, 49)
+        self.spinbox_envelope_pct.setValue(0)
+        self.spinbox_envelope_pct.setSpecialValueText("Min/Max")
+        extract_layout = QVBoxLayout()
+        extract_layout.addWidget(self.checkbox_minmax_per_image)
+        extract_layout.addWidget(self.checkbox_envelope_per_crosshair)
+        extract_layout.addWidget(self.checkbox_envelope_per_dataset)
+        extract_layout.addWidget(self.spinbox_envelope_pct)
+        view_layout.addLayout(extract_layout)
+        view_layout.addSpacing(10)
 
         roi_label = QLabel("Timeline Plot")
         roi_label.setStyleSheet(style_heading)
@@ -640,6 +668,6 @@ class UI_MainWindow(QWidget):
                         background-color: rgb(200, 200, 200);
                     }"""
                 )
-            except:
+            except Exception:
                 pass
             self.__getattribute__(widget).setToolTip(tip)
