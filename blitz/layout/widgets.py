@@ -2,6 +2,14 @@ from typing import Optional
 
 import numpy as np
 import pyqtgraph as pg
+
+# Line colors: green (per image), teal (per crosshair), blue (per dataset)
+_PEN_MIN_PER_IMAGE = pg.mkPen((60, 140, 60), width=2)
+_PEN_MAX_PER_IMAGE = pg.mkPen((100, 200, 100), width=2)
+_PEN_MIN_PER_CROSSHAIR = pg.mkPen((60, 160, 160), width=2)
+_PEN_MAX_PER_CROSSHAIR = pg.mkPen((100, 200, 200), width=2)
+_PEN_MIN_PER_DATASET = pg.mkPen((60, 80, 160), width=2)
+_PEN_MAX_PER_DATASET = pg.mkPen((100, 130, 220), width=2)
 from PyQt5.QtCore import QPointF, QSize, Qt
 from PyQt5.QtGui import QKeyEvent, QMouseEvent, QWheelEvent
 from PyQt5.QtWidgets import QSizePolicy, QWidget, QLineEdit
@@ -393,10 +401,36 @@ class ExtractionPlot(pg.PlotWidget):
         self._extractionline.sigPositionChanged.connect(self.draw_line)
         self._viewer.timeLine.sigPositionChanged.connect(self.draw_line)
         self._viewer.image_changed.connect(self.draw_line)
+        self._viewer.image_changed.connect(self._invalidate_dataset_envelope_cache)
         self._viewer.image_size_changed.connect(self.center_line)
         self._coupled: ExtractionPlot | None = None
         self._mark_coupled_position: bool = True
+        self._show_minmax_per_image: bool = False
+        self._show_envelope_per_crosshair: bool = True
+        self._show_envelope_per_dataset: bool = False
+        self._envelope_pct: float = 0.0  # 0 = min/max, >0 = percentile
+        self._dataset_envelope_cache: tuple[np.ndarray, np.ndarray] | None = None
+        self._dataset_envelope_cache_key: tuple[int, ...] | None = None
         self.center_line()
+
+    def set_envelope_percentile(self, pct: float) -> None:
+        self._envelope_pct = pct
+        self._dataset_envelope_cache = None
+
+    def set_show_minmax_per_image(self, show: bool) -> None:
+        self._show_minmax_per_image = show
+
+    def set_show_envelope_per_crosshair(self, show: bool) -> None:
+        self._show_envelope_per_crosshair = show
+
+    def set_show_envelope_per_dataset(self, show: bool) -> None:
+        self._show_envelope_per_dataset = show
+        if not show:
+            self._dataset_envelope_cache = None
+
+    def _invalidate_dataset_envelope_cache(self) -> None:
+        self._dataset_envelope_cache = None
+        self._dataset_envelope_cache_key = None
 
     def couple(self, plot: "ExtractionPlot") -> None:
         self._extractionline.addMarker(
@@ -434,11 +468,151 @@ class ExtractionPlot(pg.PlotWidget):
             image = self._viewer.now[:, sp].mean(axis=1)
         return image
 
+    def _extract_slice_raw(self) -> np.ndarray | None:
+        """Return the raw 2D slice (no averaging) for envelope computation."""
+        return self._extract_slice_raw_for_frame(self._viewer.currentIndex)
+
+    def _extract_slice_raw_for_frame(
+        self, frame_index: int
+    ) -> np.ndarray | None:
+        """Return the raw 2D slice for a given frame."""
+        p = int(self._extractionline.value())  # type: ignore
+        if not (0 <= p < self._viewer.image.shape[1 if self._vert else 2]):
+            return None
+        sp = slice(
+            max(p - self._extractionline.width, 0),
+            min(p + self._extractionline.width + 1,
+                self._viewer.image.shape[1 if self._vert else 2])
+        )
+        frame = self._viewer.image[frame_index, ...]
+        if self._vert:
+            return frame[sp, :]  # (line_width, width)
+        return frame[:, sp]  # (height, line_width)
+
+    def _extract_slice_params(self) -> tuple[int, slice] | None:
+        p = int(self._extractionline.value())  # type: ignore
+        if not (0 <= p < self._viewer.image.shape[1 if self._vert else 2]):
+            return None
+        sp = slice(
+            max(p - self._extractionline.width, 0),
+            min(p + self._extractionline.width + 1,
+                self._viewer.image.shape[1 if self._vert else 2])
+        )
+        return p, sp
+
+    def _extract_data_for_frame(self, frame_index: int) -> np.ndarray | None:
+        params = self._extract_slice_params()
+        if params is None:
+            return None
+        _, sp = params
+        frame = self._viewer.image[frame_index, ...]
+        if self._vert:
+            return frame[sp, :].mean(axis=0).squeeze()
+        return frame[:, sp].mean(axis=1).squeeze()
+
+    def _compute_full_axis_envelope(
+        self,
+    ) -> tuple[np.ndarray | None, np.ndarray | None]:
+        """Min/max (or percentile) per position over FULL axis.
+        Horizontal: at each x, take all y values -> min(x), max(x).
+        Vertical: at each y, take all x values -> min(y), max(y).
+        """
+        frame = self._viewer.now
+        if self._vert:
+            # v_plot: profile along y -> min/max at each row -> reduce axis 0 (cols)
+            axis_reduce = (0, 2) if frame.ndim == 3 else 0
+            if self._envelope_pct <= 0:
+                min_curve = np.min(frame, axis=axis_reduce)
+                max_curve = np.max(frame, axis=axis_reduce)
+            else:
+                min_curve = np.percentile(frame, self._envelope_pct, axis=axis_reduce)
+                max_curve = np.percentile(frame, 100 - self._envelope_pct, axis=axis_reduce)
+        else:
+            # h_plot: profile along x -> min/max at each column -> reduce axis 1 (rows)
+            axis_reduce = (1, 2) if frame.ndim == 3 else 1
+            if self._envelope_pct <= 0:
+                min_curve = np.min(frame, axis=axis_reduce)
+                max_curve = np.max(frame, axis=axis_reduce)
+            else:
+                min_curve = np.percentile(frame, self._envelope_pct, axis=axis_reduce)
+                max_curve = np.percentile(frame, 100 - self._envelope_pct, axis=axis_reduce)
+        return min_curve, max_curve
+
+    def _compute_crosshair_envelope(
+        self, slice_raw: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Envelope per position across crosshair thickness.
+        pct=0: min/max. pct>0: percentile over line_width pixels.
+        """
+        line_width_axis = 0 if self._vert else 1
+        if slice_raw.ndim == 3:
+            axis = (line_width_axis, 2)
+        else:
+            axis = line_width_axis
+        if self._envelope_pct <= 0:
+            min_curve = np.min(slice_raw, axis=axis).squeeze()
+            max_curve = np.max(slice_raw, axis=axis).squeeze()
+        else:
+            min_curve = np.percentile(slice_raw, self._envelope_pct, axis=axis).squeeze()
+            max_curve = np.percentile(slice_raw, 100 - self._envelope_pct, axis=axis).squeeze()
+        return min_curve, max_curve
+
+    def _compute_dataset_envelope(self) -> tuple[np.ndarray, np.ndarray] | None:
+        params = self._extract_slice_params()
+        if params is None:
+            return None
+        p, sp = params
+        width = self._extractionline.width
+        shape = self._viewer.image.shape
+        cache_key = (
+            p, width, shape[0], shape[1], shape[2], self._envelope_pct,
+        )
+        if (self._dataset_envelope_cache is not None
+                and self._dataset_envelope_cache_key == cache_key):
+            return self._dataset_envelope_cache
+        n_frames = shape[0]
+        if self._envelope_pct <= 0:
+            slices_raw = []
+            for i in range(n_frames):
+                s = self._extract_slice_raw_for_frame(i)
+                if s is not None:
+                    slices_raw.append(s)
+            if not slices_raw:
+                return None
+            stack = np.stack(slices_raw)  # (n_frames, ...)
+            if self._vert:
+                axis = (0, 1)  # reduce frames and line_width, keep width
+            else:
+                axis = (0, 2)  # reduce frames and line_width, keep height
+            if stack.ndim == 4:
+                axis = axis + (3,)  # also reduce over RGB
+            min_curve = np.min(stack, axis=axis).squeeze()
+            max_curve = np.max(stack, axis=axis).squeeze()
+        else:
+            extractions = []
+            for i in range(n_frames):
+                ext = self._extract_data_for_frame(i)
+                if ext is not None:
+                    extractions.append(ext)
+            if not extractions:
+                return None
+            stack = np.stack(extractions)
+            p_lo = self._envelope_pct
+            p_hi = 100.0 - p_lo
+            min_curve = np.percentile(stack, p_lo, axis=0)
+            max_curve = np.percentile(stack, p_hi, axis=0)
+        self._dataset_envelope_cache = (min_curve, max_curve)
+        self._dataset_envelope_cache_key = cache_key
+        return self._dataset_envelope_cache
+
     def draw_line(self) -> None:
         self.clear()
         if (image := self.extract_data()) is not None:
             self.plot(image)
-            self.draw_indicator()
+            self.draw_indicator(image)
+            self._draw_envelope_lines(image)
+            ds_env = self._compute_dataset_envelope() if self._show_envelope_per_dataset else None
+            self._fit_unlinked_axis(image, ds_env)
 
     def plot(
         self,
@@ -470,22 +644,105 @@ class ExtractionPlot(pg.PlotWidget):
             else:
                 self.plotItem.plot(x, y, pen=pen, **kwargs)
 
-    def draw_indicator(self) -> None:
-        if self._coupled is not None and self._mark_coupled_position:
-            if self._vert:
-                x_values = np.arange(*self.plotItem.viewRange()[0])
-                self.plotItem.plot(
-                    x_values,
-                    len(x_values)*[self._coupled._extractionline.value()],
-                    pen=pg.mkPen("r", style=Qt.PenStyle.DashLine),
-                )
-            else:
-                x_values = np.arange(*self.plotItem.viewRange()[1])
-                self.plotItem.plot(
-                    len(x_values)*[self._coupled._extractionline.value()],
-                    x_values,
-                    pen=pg.mkPen("r", style=Qt.PenStyle.DashLine),
-                )
+    def _draw_envelope_lines(self, image: np.ndarray) -> None:
+        n = image.shape[0]
+        x_values = np.arange(n) + 0.5
+        if self._show_minmax_per_image:
+            min_curve, max_curve = self._compute_full_axis_envelope()
+            min_curve = np.atleast_1d(min_curve.squeeze())
+            max_curve = np.atleast_1d(max_curve.squeeze())
+            if min_curve.ndim == 2:
+                min_curve = min_curve.mean(axis=1)
+                max_curve = max_curve.mean(axis=1)
+            nx = min_curve.shape[0]
+            x_vals = np.arange(nx) + 0.5
+            self.plot_x_y(x_vals, min_curve, pen=_PEN_MIN_PER_IMAGE)
+            self.plot_x_y(x_vals, max_curve, pen=_PEN_MAX_PER_IMAGE)
+        if self._show_envelope_per_crosshair:
+            slice_raw = self._extract_slice_raw()
+            if slice_raw is not None:
+                min_curve, max_curve = self._compute_crosshair_envelope(slice_raw)
+                min_curve = np.atleast_1d(min_curve.squeeze())
+                max_curve = np.atleast_1d(max_curve.squeeze())
+                if min_curve.ndim == 2:
+                    min_curve = min_curve.mean(axis=1)
+                    max_curve = max_curve.mean(axis=1)
+                nx = min_curve.shape[0]
+                x_vals = np.arange(nx) + 0.5
+                self.plot_x_y(x_vals, min_curve, pen=_PEN_MIN_PER_CROSSHAIR)
+                self.plot_x_y(x_vals, max_curve, pen=_PEN_MAX_PER_CROSSHAIR)
+        if self._show_envelope_per_dataset:
+            result = self._compute_dataset_envelope()
+            if result is not None:
+                min_curve, max_curve = result
+                min_curve = np.atleast_1d(min_curve.squeeze())
+                max_curve = np.atleast_1d(max_curve.squeeze())
+                if min_curve.ndim == 2:
+                    min_curve = min_curve.mean(axis=1)
+                    max_curve = max_curve.mean(axis=1)
+                n = min_curve.shape[0]
+                x_values = np.arange(n) + 0.5
+                self.plot_x_y(x_values, min_curve, pen=_PEN_MIN_PER_DATASET)
+                self.plot_x_y(x_values, max_curve, pen=_PEN_MAX_PER_DATASET)
+
+    def _fit_unlinked_axis(
+        self,
+        image: np.ndarray,
+        dataset_envelope: tuple[np.ndarray, np.ndarray] | None = None,
+    ) -> None:
+        # Explicitly set range of unlinked axis to data bounds to prevent
+        # cumulative zoom-out (pyqtgraph bug with setXLink/setYLink + autoRange)
+        val_min = float(np.min(image))
+        val_max = float(np.max(image))
+        if dataset_envelope is not None:
+            val_min = min(val_min, float(np.min(dataset_envelope[0])))
+            val_max = max(val_max, float(np.max(dataset_envelope[1])))
+        if self._show_minmax_per_image:
+            fe = self._compute_full_axis_envelope()
+            if fe[0] is not None:
+                val_min = min(val_min, float(np.min(fe[0])))
+                val_max = max(val_max, float(np.max(fe[1])))
+        if self._show_envelope_per_crosshair:
+            slice_raw = self._extract_slice_raw()
+            if slice_raw is not None:
+                fe_min, fe_max = self._compute_crosshair_envelope(slice_raw)
+                val_min = min(val_min, float(np.min(fe_min)))
+                val_max = max(val_max, float(np.max(fe_max)))
+        if val_min == val_max:
+            val_min -= 0.5
+            val_max += 0.5
+        pad = 0.02 * (val_max - val_min) or 1.0
+        vb = self.plotItem.getViewBox()
+        if self._vert:
+            vb.setXRange(val_min - pad, val_max + pad, padding=0)
+        else:
+            vb.setYRange(val_min - pad, val_max + pad, padding=0)
+
+    def draw_indicator(self, image: np.ndarray) -> None:
+        if self._coupled is None or not self._mark_coupled_position:
+            return
+        # Use data bounds instead of viewRange() to avoid feedback loop
+        # where indicator spans current view -> autoRange expands -> next
+        # indicator spans larger view -> repeated zoom-out on unlinked axis
+        val_min = float(np.min(image))
+        val_max = float(np.max(image))
+        if val_min == val_max:
+            val_min -= 0.5
+            val_max += 0.5
+        coupled_val = self._coupled._extractionline.value()
+        pen = pg.mkPen("r", style=Qt.PenStyle.DashLine)
+        if self._vert:
+            self.plotItem.plot(
+                np.array([val_min, val_max]),
+                np.array([coupled_val, coupled_val]),
+                pen=pen,
+            )
+        else:
+            self.plotItem.plot(
+                np.array([coupled_val, coupled_val]),
+                np.array([val_min, val_max]),
+                pen=pen,
+            )
 
     def get_translated_pos(self, x: int, y: int) -> tuple[int, int]:
         return (x, y) if not self._vert else (y, x)

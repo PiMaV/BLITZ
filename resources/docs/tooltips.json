@@ -40,6 +40,11 @@
     "spinbox_crop_range_start": "Index of the first image in the cropped dataset.",
     "spinbox_crop_range_end": "Index of the last image in the cropped dataset.",
 
+    "checkbox_minmax_per_image": "Envelope: at each x (horizontal) or y (vertical), min and max over ALL values in the orthogonal direction.",
+    "checkbox_envelope_per_crosshair": "Envelope for current frame: min/max per position across crosshair thickness.",
+    "checkbox_envelope_per_dataset": "Envelope per position over all frames (uses same crosshair band as mean and per-frame envelope).",
+    "spinbox_envelope_pct": "Envelope mode: 0 = Min/Max (hard), 1-49 = percentile (e.g. 5 gives 5th and 95th percentile). Applies to all three envelope types.",
+
     "label_reduce": "Temporal Dimensionality Reduction: Create summary images by aggregating pixel values (e.g. mean) across a time series of images.",
     "combobox_reduce": "Calculate a metric on the time axis, e.g. mean of all images loaded. This visualizes a single image.",
 

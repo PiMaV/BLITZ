@@ -186,6 +186,18 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_mm.stateChanged.connect(self.update_roi_settings)
         self.ui.spinbox_pixel.valueChanged.connect(self.update_roi_settings)
         self.ui.spinbox_mm.valueChanged.connect(self.update_roi_settings)
+        self.ui.checkbox_minmax_per_image.stateChanged.connect(
+            self._update_envelope_options
+        )
+        self.ui.checkbox_envelope_per_crosshair.stateChanged.connect(
+            self._update_envelope_options
+        )
+        self.ui.checkbox_envelope_per_dataset.stateChanged.connect(
+            self._update_envelope_options
+        )
+        self.ui.spinbox_envelope_pct.valueChanged.connect(
+            self._update_envelope_options
+        )
         self.ui.checkbox_rosee_active.stateChanged.connect(self.toggle_rosee)
         self.ui.checkbox_rosee_active.stateChanged.connect(
             self.update_isocurves
@@ -229,6 +241,26 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_iso_smoothing.editingFinished.connect(
             self.update_isocurves
         )
+        self._update_envelope_options()
+
+    def _update_envelope_options(self) -> None:
+        per_image = self.ui.checkbox_minmax_per_image.isChecked()
+        per_crosshair = self.ui.checkbox_envelope_per_crosshair.isChecked()
+        per_ds = self.ui.checkbox_envelope_per_dataset.isChecked()
+        pct = float(self.ui.spinbox_envelope_pct.value())
+        self.ui.h_plot.set_show_minmax_per_image(per_image)
+        self.ui.h_plot.set_show_envelope_per_crosshair(per_crosshair)
+        self.ui.h_plot.set_show_envelope_per_dataset(per_ds)
+        self.ui.h_plot.set_envelope_percentile(pct)
+        self.ui.v_plot.set_show_minmax_per_image(per_image)
+        self.ui.v_plot.set_show_envelope_per_crosshair(per_crosshair)
+        self.ui.v_plot.set_show_envelope_per_dataset(per_ds)
+        self.ui.v_plot.set_envelope_percentile(pct)
+        rosee_active = self.ui.checkbox_rosee_active.isChecked()
+        if not (rosee_active and self.ui.checkbox_rosee_h.isChecked()):
+            self.ui.h_plot.draw_line()
+        if not (rosee_active and self.ui.checkbox_rosee_v.isChecked()):
+            self.ui.v_plot.draw_line()
 
     def setup_sync(self) -> None:
         screen_geometry = QApplication.primaryScreen().availableGeometry()
