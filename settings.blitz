@@ -3,7 +3,7 @@ docks=@Variant(\0\0\0\b\0\0\0\x2\0\0\0\b\0m\0\x61\0i\0n\0\0\0\x7f\0\0\0\xePyQt_P
 relative_size=1
 
 [default]
-load_grayscale=true
+load_grayscale=false
 max_ram=16
 colormap=plasma
 load_8bit=false
