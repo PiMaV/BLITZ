@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import numpy as np
 import pyqtgraph as pg
@@ -151,8 +151,20 @@ class ImageViewer(pg.ImageView):
             self.ui.histogram.gradient.restoreState(Gradients['greyclip'])
             super().autoLevels()
 
-    def load_data(self, path: Optional[Path] = None, **kwargs) -> None:
-        self.data = DataLoader(**kwargs).load(path)
+    def load_data(
+        self,
+        path: Optional[Path] = None,
+        progress_callback: Optional[Callable[[int], None]] = None,
+        **kwargs,
+    ) -> None:
+        load_keys = {"frame_range", "step", "multicore"}
+        load_kwargs = {k: kwargs.pop(k) for k in list(kwargs) if k in load_keys}
+
+        self.data = DataLoader(**kwargs).load(
+            path,
+            progress_callback=progress_callback,
+            **load_kwargs,
+        )
         self.setImage(self.data.image, autoLevels=True)
         self.autoRange()
         self.image_size_changed.emit()

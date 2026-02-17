@@ -9,8 +9,10 @@ from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 
 from .. import settings
 from ..data.image import ImageData
+from ..data.load import DataLoader
 from ..data.web import WebDataLoader
 from ..tools import LoadingManager, get_available_ram, log
+from .dialogs import VideoLoadOptionsDialog
 from .rosee import ROSEEAdapter
 from .tof import TOFAdapter
 from .ui import UI_MainWindow
@@ -873,14 +875,40 @@ class MainWindow(QMainWindow):
             settings.set("path", "")
 
     def load_images(self, path: Path) -> None:
+        params = {
+            "size_ratio": self.ui.spinbox_load_size.value(),
+            "subset_ratio": self.ui.spinbox_load_subset.value(),
+            "max_ram": self.ui.spinbox_max_ram.value(),
+            "convert_to_8_bit": self.ui.checkbox_load_8bit.isChecked(),
+            "grayscale": self.ui.checkbox_load_grayscale.isChecked(),
+        }
+
+        if DataLoader._is_video(path):
+            try:
+                meta = DataLoader.get_video_metadata(path)
+                # Estimate RAM usage for full load at current settings
+                bpp = 1 if params["grayscale"] else 3
+                est_bytes = (
+                    meta.size[0] * meta.size[1] * bpp * meta.frame_count
+                    * (params["size_ratio"] ** 2)
+                )
+
+                # Threshold: 500 MB
+                if est_bytes > 500 * 1024 * 1024:
+                    dlg = VideoLoadOptionsDialog(meta, parent=self)
+                    if dlg.exec():
+                        user_params = dlg.get_params()
+                        params.update(user_params)
+                    else:
+                        return
+            except Exception as e:
+                log(f"Error reading video metadata: {e}", color="red")
+
         with LoadingManager(self, f"Loading {path}") as lm:
             self.ui.image_viewer.load_data(
                 path,
-                size_ratio=self.ui.spinbox_load_size.value(),
-                subset_ratio=self.ui.spinbox_load_subset.value(),
-                max_ram=self.ui.spinbox_max_ram.value(),
-                convert_to_8_bit=self.ui.checkbox_load_8bit.isChecked(),
-                grayscale=self.ui.checkbox_load_grayscale.isChecked(),
+                progress_callback=lm.set_progress,
+                **params,
             )
         log(f"Loaded in {lm.duration:.2f}s")
         self.last_file_dir = path.parent
