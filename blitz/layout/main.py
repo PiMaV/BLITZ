@@ -887,9 +887,10 @@ class MainWindow(QMainWindow):
             try:
                 meta = DataLoader.get_video_metadata(path)
                 # Estimate RAM usage for full load at current settings
-                bpp = 1 if params["grayscale"] else 3
+                # ImageData keeps uint8 by default (1 byte)
+                channels = 1 if params["grayscale"] else 3
                 est_bytes = (
-                    meta.size[0] * meta.size[1] * bpp * meta.frame_count
+                    meta.size[0] * meta.size[1] * channels * meta.frame_count
                     * (params["size_ratio"] ** 2)
                 )
 

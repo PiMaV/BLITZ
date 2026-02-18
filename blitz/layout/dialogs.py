@@ -1,4 +1,3 @@
-import os
 from typing import Any
 
 from PyQt5.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox,
@@ -67,21 +66,6 @@ class VideoLoadOptionsDialog(QDialog):
         self.chk_grayscale.setChecked(False) # Default from settings?
         controls_layout.addRow("", self.chk_grayscale)
 
-        # Multicore
-        self.chk_multicore = QCheckBox("Enable Multicore Loading")
-        self.chk_multicore.setChecked(False)
-        self.spin_cores = QSpinBox()
-        self.spin_cores.setRange(1, os.cpu_count() or 4)
-        self.spin_cores.setValue(max(1, (os.cpu_count() or 4) - 1))
-        self.spin_cores.setEnabled(False)
-        self.chk_multicore.toggled.connect(self.spin_cores.setEnabled)
-
-        mc_layout = QHBoxLayout()
-        mc_layout.addWidget(self.chk_multicore)
-        mc_layout.addWidget(QLabel("Cores:"))
-        mc_layout.addWidget(self.spin_cores)
-        controls_layout.addRow("Multicore:", mc_layout)
-
         layout.addLayout(controls_layout)
 
         # Estimates
@@ -124,10 +108,12 @@ class VideoLoadOptionsDialog(QDialog):
         else:
             num_frames = 0
 
-        width = int(self.metadata.size[0] * resize)
-        height = int(self.metadata.size[1] * resize)
+        # metadata.size is (height, width)
+        height = int(self.metadata.size[0] * resize)
+        width = int(self.metadata.size[1] * resize)
         channels = 1 if grayscale else 3
-        dtype_size = 1 # uint8 is 1 byte
+        # ImageData keeps uint8 by default (1 byte)
+        dtype_size = 1
 
         total_bytes = width * height * channels * num_frames * dtype_size
         gb = total_bytes / (1024**3)
@@ -147,5 +133,4 @@ class VideoLoadOptionsDialog(QDialog):
             "step": self.spin_step.value(),
             "size_ratio": self.spin_resize.value() / 100.0,
             "grayscale": self.chk_grayscale.isChecked(),
-            "multicore": self.spin_cores.value() if self.chk_multicore.isChecked() else 0,
         }

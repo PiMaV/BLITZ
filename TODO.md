@@ -10,8 +10,10 @@
 - [ ] Tests erweitern: ReduceDict Edge-Cases ???
 - [ ] Cleanup: old branches löschen
 - [ ] neues time reiter testen?
+- [ ] Rosee prüfen: Isolines und normalizatione (hier sollte "autozoom" dann aktivieren)
 - [ ] Zoom per mausrad nur in einer Achse (in den extractin plots?)
 - [X] einfügen von min und max werten (pro Bild UND pro Dataset?) in den vert und horz plots
 
 ## Low
 - [ ] Docs aktualisieren
+- [ ] Video: Komprimierte Videodaten -> volle float32-Matrizen. Siehe docs/OPTIMIZATION.md Abschnitt "Video: Komprimierte Daten vs. volle Matrizen" fuer Strategien (mmap, Chunked, Range-Load).

@@ -20,82 +20,6 @@ VIDEO_EXTENSIONS = (".mp4", ".avi", ".mov")
 ARRAY_EXTENSIONS = (".npy", )
 
 
-def load_video_chunk(
-    path: Path,
-    start: int,
-    end: int,
-    step: int,
-    size_ratio: float,
-    grayscale: bool,
-    convert_to_8_bit: bool,
-) -> tuple[np.ndarray, list[VideoMetaData]]:
-    cap = cv2.VideoCapture(str(path))
-    if not cap.isOpened():
-        log.error(f"Failed to open video file: {path}")
-        cap.release()
-        return np.empty((0,)), []
-
-    seek_ok = cap.set(cv2.CAP_PROP_POS_FRAMES, start)
-    if not seek_ok:
-        log.error(f"Failed to seek to frame {start} in video file: {path}")
-        cap.release()
-        return np.empty((0,)), []
-    frames = []
-    metadata = []
-
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    codec = int(cap.get(cv2.CAP_PROP_FOURCC))
-    fourcc_str = "".join([chr((codec >> 8 * i) & 0xFF) for i in range(4)])
-
-    current = start
-    while current <= end:
-        ret, frame = cap.read()
-        if not ret:
-            break
-
-        # Process frame
-        if grayscale:
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        else:
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-        frame = resize_and_convert(frame, size_ratio, convert_to_8_bit)
-        frames.append(frame)
-
-        meta = VideoMetaData(
-            file_name=path.name,
-            file_size_MB=os.path.getsize(path) / 2**20,
-            size=(frame.shape[0], frame.shape[1]),
-            dtype=frame.dtype,
-            bit_depth=8*frame.dtype.itemsize,
-            color_model="rgb" if frame.ndim == 3 else "grayscale",
-            fps=fps,
-            frame_count=total_frames,
-            reduced_frame_count=0, # Will be fixed later? Or meaningless here
-            codec=fourcc_str,
-        )
-        metadata.append(meta)
-
-        current += 1
-        # Skip frames
-        for _ in range(step - 1):
-            if not cap.grab():
-                current += 1 # grab failed
-                break
-            current += 1
-
-    cap.release()
-    if not frames:
-        # Return an empty array with the same dimensionality as the stacked frames
-        if grayscale:
-            return np.empty((0, 0, 0)), []
-        else:
-            return np.empty((0, 0, 0, 0)), []
-
-    return np.stack(frames), metadata
-
-
 class DataLoader:
 
     @staticmethod
@@ -352,8 +276,8 @@ class DataLoader:
         step: Optional[int] = None,
         size_ratio: Optional[float] = None,
         grayscale: Optional[bool] = None,
-        multicore: int = 0,
         progress_callback: Optional[Callable[[int], None]] = None,
+        **_kwargs,
     ) -> ImageData:
         # Override defaults if provided
         _size_ratio = size_ratio if size_ratio is not None else self.size_ratio
@@ -393,7 +317,11 @@ class DataLoader:
 
         # If parameters were not overridden by user dialog, perform auto-adjust check
         if step is None and size_ratio is None:
-            memory_estimate = width * height * 3 * total_frames_target
+            # ImageData keeps uint8 by default; account for resize and grayscale
+            resized_h = int(height * _size_ratio)
+            resized_w = int(width * _size_ratio)
+            channels = 1 if _grayscale else 3
+            memory_estimate = resized_h * resized_w * channels * total_frames_target
             log(f"Estimated size to load: {memory_estimate / 2**20:.2f} MB")
             adjusted_ratio = adjust_ratio_for_memory(
                 memory_estimate,
@@ -409,17 +337,6 @@ class DataLoader:
 
         skip_frames = int(1 / _subset_ratio) - 1
         step_val = skip_frames + 1
-
-        if multicore > 1 and total_frames_target > multicore:
-            return self._load_video_multicore(
-                path,
-                (start_f, end_f),
-                step_val,
-                _size_ratio,
-                _grayscale,
-                multicore,
-                progress_callback
-            )
 
         video = cv2.VideoCapture(str(path))
         frames = None
@@ -501,70 +418,6 @@ class DataLoader:
             frames = frames[:current_idx]
 
         done = ImageData(np.swapaxes(frames, 1, 2), metadata)
-        self._log_arguments(done)
-        return done
-
-    def _load_video_multicore(
-        self,
-        path: Path,
-        frame_range: tuple[int, int],
-        step: int,
-        size_ratio: float,
-        grayscale: bool,
-        cores: int,
-        progress_callback: Optional[Callable[[int], None]]
-    ) -> ImageData:
-        start, end = frame_range
-        # Calculate full list of frames to load
-        frames_indices = list(range(start, end + 1, step))
-        if not frames_indices:
-             return DataLoader.from_text("No frames in range", color=(255, 0, 0))
-
-        # Split into chunks for workers
-        chunks = np.array_split(frames_indices, cores)
-        pool_tasks = []
-        for chunk in chunks:
-            if len(chunk) == 0:
-                continue
-            pool_tasks.append((
-                path,
-                int(chunk[0]),
-                int(chunk[-1]),
-                step,
-                size_ratio,
-                grayscale,
-                self.convert_to_8_bit
-            ))
-
-        total_frames = len(frames_indices)
-        frames_loaded = 0
-        with Pool(cores) as pool:
-            results = []
-            for frames, meta in pool.starmap(load_video_chunk, pool_tasks):
-                results.append((frames, meta))
-                if progress_callback and total_frames > 0:
-                    # Update progress based on the number of frames loaded so far,
-                    # to keep behavior consistent with single-core loading.
-                    frames_loaded += len(frames)
-                    progress_callback(int(frames_loaded / total_frames * 100))
-
-        all_frames = []
-        all_meta = []
-        for frames, meta in results:
-            if frames.size > 0:
-                all_frames.append(frames)
-                all_meta.extend(meta)
-
-        if not all_frames:
-             return DataLoader.from_text("No frames loaded", color=(255, 0, 0))
-
-        final_image = np.concatenate(all_frames)
-
-        # Correct reduced_frame_count in metadata after concatenation?
-        # currently reduced_frame_count is not really used correctly in loop logic above either (it sets it to local idx)
-        # We can leave it as is or fix it.
-
-        done = ImageData(np.swapaxes(final_image, 1, 2), all_meta)
         self._log_arguments(done)
         return done
 

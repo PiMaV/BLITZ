@@ -157,7 +157,7 @@ class ImageViewer(pg.ImageView):
         progress_callback: Optional[Callable[[int], None]] = None,
         **kwargs,
     ) -> None:
-        load_keys = {"frame_range", "step", "multicore"}
+        load_keys = {"frame_range", "step"}
         load_kwargs = {k: kwargs.pop(k) for k in list(kwargs) if k in load_keys}
 
         self.data = DataLoader(**kwargs).load(
