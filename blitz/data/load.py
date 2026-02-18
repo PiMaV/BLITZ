@@ -56,7 +56,7 @@ def load_video_chunk(
         frames.append(frame)
 
         meta = VideoMetaData(
-            file_name=str(current),
+            file_name=path.name,
             file_size_MB=os.path.getsize(path) / 2**20,
             size=(frame.shape[0], frame.shape[1]),
             dtype=frame.dtype,
