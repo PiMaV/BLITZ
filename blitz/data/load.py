@@ -466,7 +466,8 @@ class DataLoader:
 
             # Progress reporting
             if progress_callback and expected_frames > 0 and current_idx % 10 == 0:
-                progress_callback(int((current_idx / expected_frames) * 100))
+                progress = int((current_idx / expected_frames) * 100)
+                progress_callback(min(100, progress))
 
             # Skip frames
             skipped_successfully = True
