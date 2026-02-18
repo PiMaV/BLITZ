@@ -3,11 +3,12 @@ import json
 import pyqtgraph as pg
 from PyQt5.QtCore import QFile, Qt
 from PyQt5.QtGui import QFont, QIcon
-from PyQt5.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFrame,
-                             QGridLayout, QHBoxLayout, QLabel, QLayout,
-                             QLineEdit, QMenu, QMenuBar, QPushButton,
-                             QScrollArea, QSizePolicy, QSpinBox, QStatusBar,
-                             QStyle, QTabWidget, QVBoxLayout, QWidget)
+from PyQt5.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox,
+                             QFrame, QGridLayout, QGroupBox, QHBoxLayout,
+                             QLabel, QLayout, QLineEdit, QMenu, QMenuBar,
+                             QPushButton, QRadioButton, QScrollArea,
+                             QSizePolicy, QSlider, QSpinBox, QStatusBar, QStyle,
+                             QTabWidget, QVBoxLayout, QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import __version__, settings
@@ -418,114 +419,227 @@ class UI_MainWindow(QWidget):
         view_layout.addStretch()
         self.create_option_tab(view_layout, "View")
 
-        # --- Timeline Operation ---
+        # --- Time: Cropping, View Mode, Normalization ---
         timeop_layout = QVBoxLayout()
-        self.label_crop = QLabel("Timeline Cropping")
+
+        # --- Section 1: Global Cropping (zuerst: Bereich waehlen) ---
+        self.label_crop = QLabel("Global Cropping")
         self.label_crop.setStyleSheet(style_heading)
         timeop_layout.addWidget(self.label_crop)
         crop_range_label_to = QLabel("-")
         self.spinbox_crop_range_start = QSpinBox()
         self.spinbox_crop_range_start.setMinimum(0)
+        self.spinbox_crop_range_start.setMinimumWidth(72)  # 5 digits
         self.spinbox_crop_range_end = QSpinBox()
         self.spinbox_crop_range_end.setMinimum(1)
+        self.spinbox_crop_range_end.setMinimumWidth(72)  # 5 digits
         self.checkbox_crop_show_range = QCheckBox("")
         map_ = getattr(QStyle, "SP_DesktopIcon")
         self.checkbox_crop_show_range.setIcon(
             self.checkbox_crop_show_range.style().standardIcon(map_)
         )
-        self.button_crop = QPushButton("Crop")
-        self.button_crop_undo = QPushButton("Undo")
-        self.checkbox_crop_keep = QCheckBox("Keep in RAM")
-        range_crop_layout = QGridLayout()
-        range_crop_layout.addWidget(self.spinbox_crop_range_start, 0, 0, 1, 2)
-        range_crop_layout.addWidget(crop_range_label_to, 0, 2, 1, 1)
-        range_crop_layout.addWidget(self.spinbox_crop_range_end, 0, 3, 1, 2)
-        range_crop_layout.addWidget(self.checkbox_crop_show_range, 0, 5, 1, 2)
-        range_crop_layout.addWidget(self.button_crop, 1, 0, 1, 3)
-        range_crop_layout.addWidget(self.button_crop_undo, 1, 3, 1, 2)
-        range_crop_layout.addWidget(self.checkbox_crop_keep, 1, 5, 1, 2)
+        self.button_crop = QPushButton("Apply")
+        range_crop_layout = QHBoxLayout()
+        range_crop_layout.setSpacing(2)
+        range_crop_layout.addWidget(self.spinbox_crop_range_start)
+        range_crop_layout.addWidget(crop_range_label_to)
+        range_crop_layout.addWidget(self.spinbox_crop_range_end)
+        range_crop_layout.addWidget(self.checkbox_crop_show_range)
+        range_crop_layout.addStretch()
+        range_crop_layout.addWidget(self.button_crop)
         timeop_layout.addLayout(range_crop_layout)
 
-        self.label_reduce = QLabel("Image Aggregation")
-        self.label_reduce.setStyleSheet(style_heading)
-        timeop_layout.addWidget(self.label_reduce)
+        # --- Section 2: View Mode ---
+        view_mode_label = QLabel("View Mode")
+        view_mode_label.setStyleSheet(style_heading)
+        timeop_layout.addWidget(view_mode_label)
+
+        self.radio_time_series = QRadioButton("Single Frame (Time Series)")
+        self.radio_time_series.setChecked(True)
+        self.radio_aggregated = QRadioButton("Aggregated Image")
+        self.view_mode_group = QButtonGroup()
+        self.view_mode_group.addButton(self.radio_time_series)
+        self.view_mode_group.addButton(self.radio_aggregated)
+        timeop_layout.addWidget(self.radio_time_series)
+        timeop_layout.addWidget(self.radio_aggregated)
+
+        self.agg_options_widget = QWidget()
+        agg_options_layout = QVBoxLayout()
+        self.agg_options_widget.setLayout(agg_options_layout)
+        self.label_reduce = QLabel("Aggregation")
+        self.label_reduce.setStyleSheet(style_heading_small)
+        agg_options_layout.addWidget(self.label_reduce)
         self.combobox_reduce = QComboBox()
         self.combobox_reduce.addItem("-")
         for op in ReduceOperation:
             self.combobox_reduce.addItem(op.name)
-        timeop_layout.addWidget(self.combobox_reduce)
-        norm_label = QLabel("Normalization")
-        norm_label.setStyleSheet(style_heading)
-        timeop_layout.addWidget(norm_label)
-        self.checkbox_norm_range = QCheckBox("Range:")
-        self.checkbox_norm_range.setChecked(True)
-        norm_label_op = QLabel("use:")
+        agg_options_layout.addWidget(self.combobox_reduce)
+        self.checkbox_agg_sliding = QCheckBox("Sliding window")
+        agg_options_layout.addWidget(self.checkbox_agg_sliding)
+        self.agg_sliding_widget = QWidget()
+        agg_slid_layout = QHBoxLayout()
+        self.spinbox_agg_window = QSpinBox()
+        self.spinbox_agg_window.setPrefix("Window: ")
+        self.spinbox_agg_window.setMinimum(1)
+        self.spinbox_agg_window.setValue(4)
+        self.slider_agg_pos = QSlider(Qt.Horizontal)
+        self.slider_agg_pos.setMinimum(0)
+        self.slider_agg_pos.setMaximum(1)
+        self.label_agg_pos = QLabel("Pos: 0")
+        agg_slid_layout.addWidget(self.spinbox_agg_window)
+        agg_slid_layout.addWidget(self.slider_agg_pos)
+        agg_slid_layout.addWidget(self.label_agg_pos)
+        self.agg_sliding_widget.setLayout(agg_slid_layout)
+        agg_options_layout.addWidget(self.agg_sliding_widget)
+        timeop_layout.addWidget(self.agg_options_widget)
+        self.agg_sliding_widget.setVisible(False)
+        self.agg_options_widget.setVisible(False)
+
+        # --- Section 3: Normalization ---
+        norm_section_label = QLabel("Normalization")
+        norm_section_label.setStyleSheet(style_heading)
+        timeop_layout.addWidget(norm_section_label)
+
+        self.checkbox_norm_apply = QCheckBox("Apply")
+        self.checkbox_norm_apply.setChecked(False)
+        timeop_layout.addWidget(self.checkbox_norm_apply)
+
+        # Step 1: Subtract
+        step1_group = QGroupBox("1. Subtract background (e.g. dark frame)")
+        step1_layout = QVBoxLayout()
+        self.combobox_norm_subtract = QComboBox()
+        self.combobox_norm_subtract.addItem("Off", "none")
+        self.combobox_norm_subtract.addItem("Frames (mean of range)", "range")
+        self.combobox_norm_subtract.addItem("File (load image)", "file")
+        self.combobox_norm_subtract.addItem("Sliding window", "sliding")
+        step1_layout.addWidget(self.combobox_norm_subtract)
+
+        self.norm_subtract_range_widget = QWidget()
+        sub_rang_layout = QHBoxLayout()
         self.combobox_norm = QComboBox()
         for op in ReduceOperation:
             self.combobox_norm.addItem(op.name)
-        norm_range_label_to = QLabel("-")
         self.spinbox_norm_range_start = QSpinBox()
         self.spinbox_norm_range_start.setMinimum(0)
         self.spinbox_norm_range_end = QSpinBox()
         self.spinbox_norm_range_end.setMinimum(1)
-        self.checkbox_norm_show_range = QCheckBox("")
+        self.checkbox_norm_show_range = QCheckBox("Show")
         map_ = getattr(QStyle, "SP_DesktopIcon")
         self.checkbox_norm_show_range.setIcon(
             self.checkbox_norm_show_range.style().standardIcon(map_)
         )
-        range_layout = QGridLayout()
-        range_layout.addWidget(self.checkbox_norm_range, 0, 0,  1, 1)
-        range_layout.addWidget(self.spinbox_norm_range_start, 0, 1, 1, 1)
-        range_layout.addWidget(norm_range_label_to, 0, 2, 1, 1)
-        range_layout.addWidget(self.spinbox_norm_range_end, 0, 3, 1, 1)
-        range_layout.addWidget(self.checkbox_norm_show_range, 0, 4, 1, 1)
-        range_layout.addWidget(norm_label_op, 1, 1, 1, 3)
-        range_layout.addWidget(self.combobox_norm, 1, 2, 1, 3)
-        timeop_layout.addLayout(range_layout)
-        timeop_layout.addSpacing(10)
-        self.checkbox_norm_bg = QCheckBox("Background:")
-        self.checkbox_norm_bg.setEnabled(False)
-        self.button_bg_input = QPushButton("[Select]")
-        bg_layout = QHBoxLayout()
-        bg_layout.addWidget(self.checkbox_norm_bg)
-        bg_layout.addWidget(self.button_bg_input)
-        timeop_layout.addLayout(bg_layout)
-        self.checkbox_norm_lag = QCheckBox("Sliding:")
+        sub_rang_layout.addWidget(QLabel("Method:"))
+        sub_rang_layout.addWidget(self.combobox_norm)
+        sub_rang_layout.addWidget(self.spinbox_norm_range_start)
+        sub_rang_layout.addWidget(QLabel("-"))
+        sub_rang_layout.addWidget(self.spinbox_norm_range_end)
+        sub_rang_layout.addWidget(self.checkbox_norm_show_range)
+        self.norm_subtract_range_widget.setLayout(sub_rang_layout)
+        step1_layout.addWidget(self.norm_subtract_range_widget)
+
+        self.button_bg_input = QPushButton("Load background image")
+        self.norm_subtract_file_widget = QWidget()
+        self.norm_subtract_file_widget.setLayout(QHBoxLayout())
+        self.norm_subtract_file_widget.layout().addWidget(self.button_bg_input)
+        step1_layout.addWidget(self.norm_subtract_file_widget)
+
+        self.norm_subtract_sliding_widget = QWidget()
+        slid_layout = QHBoxLayout()
         self.spinbox_norm_window = QSpinBox()
         self.spinbox_norm_window.setPrefix("Window: ")
         self.spinbox_norm_window.setValue(1)
         self.spinbox_norm_window.setMinimum(1)
         self.spinbox_norm_lag = QSpinBox()
         self.spinbox_norm_lag.setPrefix("Lag: ")
-        lag_layout = QHBoxLayout()
-        lag_layout.addWidget(self.checkbox_norm_lag)
-        lag_layout.addWidget(self.spinbox_norm_window)
-        lag_layout.addWidget(self.spinbox_norm_lag)
-        timeop_layout.addLayout(lag_layout)
-        self.spinbox_norm_beta = QSpinBox()
-        self.spinbox_norm_beta.setPrefix("use ")
-        self.spinbox_norm_beta.setSuffix("%")
-        self.spinbox_norm_beta.setMinimum(0)
-        self.spinbox_norm_beta.setMaximum(100)
-        self.spinbox_norm_beta.setValue(100)
+        slid_layout.addWidget(self.spinbox_norm_window)
+        slid_layout.addWidget(self.spinbox_norm_lag)
+        self.norm_subtract_sliding_widget.setLayout(slid_layout)
+        step1_layout.addWidget(self.norm_subtract_sliding_widget)
+
+        self.norm_subtract_amount_widget = QWidget()
+        sub_amount_row = QHBoxLayout()
+        sub_amount_row.addWidget(QLabel("Amount:"))
+        self.slider_norm_subtract_amount = QSlider(Qt.Horizontal)
+        self.slider_norm_subtract_amount.setRange(0, 100)
+        self.slider_norm_subtract_amount.setValue(100)
+        self.label_norm_subtract_amount = QLabel("100%")
+        sub_amount_row.addWidget(self.slider_norm_subtract_amount)
+        sub_amount_row.addWidget(self.label_norm_subtract_amount)
+        self.norm_subtract_amount_widget.setLayout(sub_amount_row)
+        step1_layout.addWidget(self.norm_subtract_amount_widget)
+
+        step1_group.setLayout(step1_layout)
+        timeop_layout.addWidget(step1_group)
+
+        # Step 2: Divide
+        step2_group = QGroupBox("2. Divide by (e.g. flatfield)")
+        step2_layout = QVBoxLayout()
+        self.combobox_norm_divide = QComboBox()
+        self.combobox_norm_divide.addItem("Off", "none")
+        self.combobox_norm_divide.addItem("Frames (mean of range)", "range")
+        self.combobox_norm_divide.addItem("File (loaded image)", "file")
+        self.combobox_norm_divide.addItem("Sliding window", "sliding")
+        step2_layout.addWidget(self.combobox_norm_divide)
+
+        self.norm_divide_range_widget = QWidget()
+        div_rang_layout = QHBoxLayout()
+        self.combobox_norm_divide_method = QComboBox()
+        for op in ReduceOperation:
+            self.combobox_norm_divide_method.addItem(op.name)
+        self.spinbox_norm_divide_start = QSpinBox()
+        self.spinbox_norm_divide_start.setMinimum(0)
+        self.spinbox_norm_divide_end = QSpinBox()
+        self.spinbox_norm_divide_end.setMinimum(1)
+        div_rang_layout.addWidget(QLabel("Method:"))
+        div_rang_layout.addWidget(self.combobox_norm_divide_method)
+        div_rang_layout.addWidget(self.spinbox_norm_divide_start)
+        div_rang_layout.addWidget(QLabel("-"))
+        div_rang_layout.addWidget(self.spinbox_norm_divide_end)
+        self.norm_divide_range_widget.setLayout(div_rang_layout)
+        step2_layout.addWidget(self.norm_divide_range_widget)
+
+        self.norm_divide_file_widget = QWidget()
+        div_file_layout = QHBoxLayout()
+        self.button_bg_divide = QPushButton("Load background image")
+        div_file_layout.addWidget(self.button_bg_divide)
+        self.norm_divide_file_widget.setLayout(div_file_layout)
+        step2_layout.addWidget(self.norm_divide_file_widget)
+
+        self.norm_divide_sliding_widget = QWidget()
+        div_slid_layout = QHBoxLayout()
+        self.spinbox_norm_divide_window = QSpinBox()
+        self.spinbox_norm_divide_window.setPrefix("Window: ")
+        self.spinbox_norm_divide_window.setValue(1)
+        self.spinbox_norm_divide_window.setMinimum(1)
+        self.spinbox_norm_divide_lag = QSpinBox()
+        self.spinbox_norm_divide_lag.setPrefix("Lag: ")
+        div_slid_layout.addWidget(self.spinbox_norm_divide_window)
+        div_slid_layout.addWidget(self.spinbox_norm_divide_lag)
+        self.norm_divide_sliding_widget.setLayout(div_slid_layout)
+        step2_layout.addWidget(self.norm_divide_sliding_widget)
+
+        self.norm_divide_amount_widget = QWidget()
+        div_amount_row = QHBoxLayout()
+        div_amount_row.addWidget(QLabel("Amount:"))
+        self.slider_norm_divide_amount = QSlider(Qt.Horizontal)
+        self.slider_norm_divide_amount.setRange(0, 100)
+        self.slider_norm_divide_amount.setValue(100)
+        self.label_norm_divide_amount = QLabel("100%")
+        div_amount_row.addWidget(self.slider_norm_divide_amount)
+        div_amount_row.addWidget(self.label_norm_divide_amount)
+        self.norm_divide_amount_widget.setLayout(div_amount_row)
+        step2_layout.addWidget(self.norm_divide_amount_widget)
+
+        step2_group.setLayout(step2_layout)
+        timeop_layout.addWidget(step2_group)
+
+        # Blur (optional, global)
         self.spinbox_norm_blur = QSpinBox()
-        self.spinbox_norm_blur.setPrefix("Blur: ")
+        self.spinbox_norm_blur.setPrefix("Blur ref: ")
         self.spinbox_norm_blur.setMinimum(0)
         self.spinbox_norm_blur.setValue(0)
-        self.checkbox_norm_subtract = QCheckBox("Subtract")
-        self.checkbox_norm_divide= QCheckBox("Divide")
-        norm_layout1 = QHBoxLayout()
-        norm_layout1.addWidget(self.spinbox_norm_beta)
-        norm_layout1.addWidget(self.spinbox_norm_blur)
-        norm_layout2 = QHBoxLayout()
-        norm_layout2.addWidget(self.checkbox_norm_subtract)
-        norm_layout2.addWidget(self.checkbox_norm_divide)
-        hline = QFrame()
-        hline.setFrameShape(QFrame.Shape.HLine)
-        hline.setFrameShadow(QFrame.Shadow.Sunken)
-        timeop_layout.addWidget(hline)
-        timeop_layout.addLayout(norm_layout1)
-        timeop_layout.addLayout(norm_layout2)
+        timeop_layout.addWidget(self.spinbox_norm_blur)
+
         timeop_layout.addStretch()
         self.create_option_tab(timeop_layout, "Time")
 
@@ -672,8 +786,9 @@ class UI_MainWindow(QWidget):
 
         for widget, tip in tips.items():
             try:
-                self.__getattribute__(widget).setStyleSheet(
-                    self.__getattribute__(widget).styleSheet()
+                w = self.__getattribute__(widget)
+                w.setStyleSheet(
+                    w.styleSheet()
                     + """QToolTip {
                         border: 2px solid green;
                         padding: 2px;
@@ -684,6 +799,6 @@ class UI_MainWindow(QWidget):
                         background-color: rgb(200, 200, 200);
                     }"""
                 )
-            except Exception:
+                w.setToolTip(tip)
+            except AttributeError:
                 pass
-            self.__getattribute__(widget).setToolTip(tip)

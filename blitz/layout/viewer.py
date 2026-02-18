@@ -284,8 +284,12 @@ class ImageViewer(pg.ImageView):
             autoLevels=False,
         )
 
-    def reduce(self, operation: ReduceOperation | str) -> None:
-        self.data.reduce(operation)
+    def reduce(
+        self,
+        operation: ReduceOperation | str,
+        bounds: Optional[tuple[int, int]] = None,
+    ) -> None:
+        self.data.reduce(operation, bounds=bounds)
         self.setImage(
             self.data.image,
             autoRange=False,

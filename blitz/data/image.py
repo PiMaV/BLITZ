@@ -10,6 +10,25 @@ from . import ops
 from .tools import ensure_4d, sliding_mean_normalization
 
 
+def _apply_blur_2d(img: np.ndarray, gaussian_blur: int) -> np.ndarray:
+    """Apply Gaussian blur to a single-frame 4D image (T, H, W, C)."""
+    if gaussian_blur <= 0 or img.size == 0:
+        return img
+    blurred = pg.gaussianFilter(img[0, ..., 0], (gaussian_blur, gaussian_blur))
+    return blurred[np.newaxis, ..., np.newaxis].astype(img.dtype)
+
+
+def _apply_blur_4d(img: np.ndarray, gaussian_blur: int) -> np.ndarray:
+    """Apply Gaussian blur per frame to a 4D image (T, H, W, C)."""
+    if gaussian_blur <= 0 or img.size == 0:
+        return img
+    out = np.empty_like(img)
+    for i in range(img.shape[0]):
+        b = pg.gaussianFilter(img[i, ..., 0], (gaussian_blur, gaussian_blur))
+        out[i] = b[..., np.newaxis]
+    return out
+
+
 @dataclass(kw_only=True)
 class MetaData:
     file_name: str
@@ -53,8 +72,61 @@ class ImageData:
         self._flipped_x = False
         self._flipped_y = False
         self._redop: ops.ReduceOperation | str | None = None
-        self._norm: np.ndarray | None = None
-        self._norm_operation: Literal["subtract", "divide"] | None = None
+        self._norm_pipeline: list[dict] = []
+        self._norm_factor: float = 1.0
+        self._norm_blur: int = 0
+        self._agg_bounds: tuple[int, int] | None = None  # Non-destructive agg range
+
+    def _apply_normalization_pipeline(self, image: np.ndarray) -> np.ndarray:
+        """Apply the normalization pipeline to image. Returns float array."""
+        base = image  # References (range, file) computed from original data
+        for step in self._norm_pipeline:
+            op_ = step["operation"]
+            factor = step.get("factor", self._norm_factor)
+            blur = step.get("blur", self._norm_blur)
+            ref = self._compute_reference(step, base)
+            if ref is None:
+                continue
+            if blur > 0:
+                if ref.shape[0] == 1:
+                    ref = _apply_blur_2d(ref.astype(np.float64), blur)
+                else:
+                    ref = _apply_blur_4d(ref.astype(np.float64), blur)
+            ref = factor * ref.astype(np.float64)
+            if op_ == "subtract":
+                if ref.shape[0] == 1:
+                    image = image.astype(np.float64) - ref
+                else:
+                    image = image[:ref.shape[0]].astype(np.float64) - ref
+            else:  # divide
+                if ref.shape[0] == 1:
+                    image = image.astype(np.float64) / np.where(
+                        ref != 0, ref, np.nan
+                    )
+                else:
+                    sl = image[:ref.shape[0]].astype(np.float64)
+                    image = sl / np.where(ref != 0, ref, np.nan)
+        return image
+
+    def _compute_reference(
+        self, step: dict, image: np.ndarray
+    ) -> np.ndarray | None:
+        """Compute reference for a pipeline step."""
+        ref = None
+        if step.get("source") == "range" and step.get("bounds") is not None:
+            b0, b1 = step["bounds"]
+            use = step.get("use", "MEAN")
+            r = ops.get(use)(image[b0 : b1 + 1]).astype(np.float64)
+            ref = r
+        elif step.get("source") == "file" and step.get("reference") is not None:
+            ref_img = step["reference"]._image
+            if ref_img.shape[0] != 1 or ref_img.shape[1:] != image.shape[1:]:
+                return None
+            ref = ref_img.astype(np.float64)
+        elif step.get("source") == "sliding" and step.get("window_lag") is not None:
+            w, lag = step["window_lag"]
+            ref = sliding_mean_normalization(image.astype(np.float32), w, lag)
+        return ref
 
     @property
     def image(self) -> np.ndarray:
@@ -63,10 +135,14 @@ class ImageData:
             image: np.ndarray = self._image.astype(np.float32).copy()
         else:
             image: np.ndarray = self._image
-        if self._norm is not None:
-            image = self._norm
+        if self._norm_pipeline:
+            image = self._apply_normalization_pipeline(image)
         if self._redop is not None:
-            image = self._reduced.reduce(image, self._redop)
+            to_reduce = image
+            if self._agg_bounds is not None:
+                b0, b1 = self._agg_bounds
+                to_reduce = image[b0 : b1 + 1]
+            image = self._reduced.reduce(to_reduce, self._redop)
         if self._cropped is not None:
             image = image[self._cropped[0]:self._cropped[1]+1]
         if self._image_mask is not None:
@@ -101,8 +177,33 @@ class ImageData:
     def is_greyscale(self) -> bool:
         return self._image.shape[3] == 1
 
-    def reduce(self, operation: ops.ReduceOperation | str) -> None:
+    def reduce(
+        self,
+        operation: ops.ReduceOperation | str,
+        bounds: Optional[tuple[int, int]] = None,
+    ) -> None:
         self._redop = operation
+        old_bounds = self._agg_bounds
+        self._agg_bounds = bounds
+        if old_bounds != bounds:
+            self._reduced.clear()
+
+    def set_normalization_pipeline(
+        self,
+        pipeline: list[dict],
+        factor: float = 1.0,
+        blur: int = 0,
+    ) -> None:
+        """Set the normalization pipeline. Each step: operation, source, params."""
+        self._norm_pipeline = pipeline
+        self._norm_factor = factor
+        self._norm_blur = blur
+
+    def set_aggregation_bounds(self, bounds: tuple[int, int] | None) -> None:
+        """Set non-destructive aggregation range (for reduced view)."""
+        if self._agg_bounds != bounds:
+            self._reduced.clear()
+        self._agg_bounds = bounds
 
     def crop(self, left: int, right: int, keep: bool = False) -> None:
         if keep:
@@ -124,78 +225,46 @@ class ImageData:
         use: ops.ReduceOperation | str,
         beta: float = 1.0,
         gaussian_blur: int = 0,
-        bounds: Optional[tuple[int, int]] =None,
+        bounds: Optional[tuple[int, int]] = None,
         reference: Optional["ImageData"] = None,
         window_lag: Optional[tuple[int, int]] = None,
         force_calculation: bool = False,
     ) -> bool:
+        """Legacy API: builds a single-step pipeline and applies it."""
         if self._redop is not None:
             log("Normalization not possible on reduced data")
             return False
-        if self._norm_operation == operation and not force_calculation:
-            self._norm_operation = None
-            self._norm = None
-            return False
-        if self._norm_operation is not None:
-            self._norm = None
-        image = self._image
-        range_img = reference_img = window_lag_img = None
+        source = None
+        step_params: dict = {"operation": operation, "factor": beta, "blur": gaussian_blur}
         if bounds is not None:
-            range_img = beta * ops.get(use)(
-                image[bounds[0]:bounds[1]+1]
-            ).astype(np.double)
-            if gaussian_blur > 0:
-                range_img = pg.gaussianFilter(
-                    range_img[0, ..., 0],
-                    (gaussian_blur, gaussian_blur),
-                )[np.newaxis, ..., np.newaxis]
-        if reference is not None:
-            if (not reference.is_single_image()
-                    or reference._image.shape[1:] != image.shape[1:]):
+            source = "range"
+            step_params["source"] = source
+            step_params["bounds"] = bounds
+            step_params["use"] = use
+        elif reference is not None:
+            if not reference.is_single_image() or reference._image.shape[1:] != self._image.shape[1:]:
                 log("Error: Background image has incompatible shape")
                 return False
-            reference_img = beta * reference._image.astype(np.double)
-            if gaussian_blur > 0:
-                reference_img = pg.gaussianFilter(
-                    reference_img[0, ..., 0],
-                    (gaussian_blur, gaussian_blur),
-                )[np.newaxis, ..., np.newaxis]
-        if window_lag is not None:
-            window, lag = window_lag
-            window_lag_img = beta * (
-                sliding_mean_normalization(image, window, lag)
-            )
-            if gaussian_blur > 0:
-                window_lag_img = np.array([
-                    pg.gaussianFilter(
-                        window_lag_img[i, ..., 0],
-                        (gaussian_blur, gaussian_blur),
-                    )[..., np.newaxis]
-                    for i in range(window_lag_img.shape[0])
-                ])
-        if bounds is None and reference is None and window_lag is None:
+            source = "file"
+            step_params["source"] = source
+            step_params["reference"] = reference
+        elif window_lag is not None:
+            source = "sliding"
+            step_params["source"] = source
+            step_params["window_lag"] = window_lag
+        if source is None:
             return False
-        if operation == "subtract":
-            if range_img is not None:
-                image = image - range_img
-            if reference_img is not None:
-                image = image - reference_img
-            if window_lag_img is not None:
-                image = image[:window_lag_img.shape[0]] - window_lag_img
-            self._norm = image
-        if operation == "divide":
-            if range_img is not None:
-                image = image / range_img
-            if reference_img is not None:
-                image = image / reference_img
-            if window_lag_img is not None:
-                image = image[:window_lag_img.shape[0]] / window_lag_img
-            self._norm = image
-        self._norm_operation = operation  # type: ignore
+        had_pipeline = bool(self._norm_pipeline)
+        if had_pipeline and not force_calculation:
+            self.set_normalization_pipeline([], factor=beta, blur=gaussian_blur)
+            return False
+        self.set_normalization_pipeline([step_params], factor=beta, blur=gaussian_blur)
         return True
 
     def unravel(self) -> None:
         self._redop = None
+        self._agg_bounds = None
+        self._reduced.clear()
 
     def mask(self, roi: pg.ROI) -> bool:
         if self._transposed or self._flipped_x or self._flipped_y:

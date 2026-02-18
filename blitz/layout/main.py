@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from PyQt5.QtCore import QCoreApplication, QUrl
+from PyQt5.QtCore import QCoreApplication, Qt, QUrl
 from PyQt5.QtGui import QDesktopServices, QKeySequence
 from PyQt5.QtWidgets import QApplication, QFileDialog, QMainWindow, QShortcut
 from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
@@ -87,6 +87,9 @@ class MainWindow(QMainWindow):
         self.ui.roi_plot.crop_range.sigRegionChanged.connect(
             self.update_crop_range_labels
         )
+        self.ui.roi_plot.crop_range.sigRegionChanged.connect(
+            self._crop_region_to_frame
+        )
         self.ui.image_viewer.scene.sigMouseMoved.connect(
             self.update_statusbar_position
         )
@@ -161,7 +164,7 @@ class MainWindow(QMainWindow):
             )
         )
         self.ui.checkbox_crop_show_range.stateChanged.connect(
-            self.ui.roi_plot.toggle_crop_range
+            self._on_crop_show_range_changed
         )
         self.ui.spinbox_crop_range_start.editingFinished.connect(
             self.update_crop_range
@@ -169,10 +172,42 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_crop_range_end.editingFinished.connect(
             self.update_crop_range
         )
+        self.ui.spinbox_crop_range_start.valueChanged.connect(
+            self._crop_index_to_frame
+        )
+        self.ui.spinbox_crop_range_end.valueChanged.connect(
+            self._crop_index_to_frame
+        )
         self.ui.button_crop.clicked.connect(self.crop)
-        self.ui.button_crop_undo.clicked.connect(self.undo_crop)
-        self.ui.combobox_reduce.currentIndexChanged.connect(
-            self.operation_changed
+        self.ui.checkbox_norm_apply.stateChanged.connect(
+            self.apply_normalization
+        )
+        self.ui.combobox_norm_subtract.currentIndexChanged.connect(
+            self._update_norm_step_visibility
+        )
+        self.ui.combobox_norm_subtract.currentIndexChanged.connect(
+            self.apply_normalization
+        )
+        self.ui.combobox_norm_divide.currentIndexChanged.connect(
+            self._update_norm_step_visibility
+        )
+        self.ui.combobox_norm_divide.currentIndexChanged.connect(
+            self.apply_normalization
+        )
+        self.ui.slider_norm_subtract_amount.valueChanged.connect(
+            self._update_norm_amount_labels
+        )
+        self.ui.slider_norm_subtract_amount.valueChanged.connect(
+            self.apply_normalization
+        )
+        self.ui.slider_norm_divide_amount.valueChanged.connect(
+            self._update_norm_amount_labels
+        )
+        self.ui.slider_norm_divide_amount.valueChanged.connect(
+            self.apply_normalization
+        )
+        self.ui.spinbox_norm_blur.valueChanged.connect(
+            self.apply_normalization
         )
         self.ui.spinbox_norm_range_start.editingFinished.connect(
             self.update_norm_range
@@ -180,15 +215,57 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_norm_range_end.editingFinished.connect(
             self.update_norm_range
         )
+        self.ui.spinbox_norm_divide_start.editingFinished.connect(
+            self.update_norm_range
+        )
+        self.ui.spinbox_norm_divide_end.editingFinished.connect(
+            self.update_norm_range
+        )
+        self.ui.combobox_norm.currentIndexChanged.connect(
+            self.apply_normalization
+        )
+        self.ui.combobox_norm_divide_method.currentIndexChanged.connect(
+            self.apply_normalization
+        )
         self.ui.checkbox_norm_show_range.stateChanged.connect(
             self.ui.roi_plot.toggle_norm_range
         )
         self.ui.button_bg_input.clicked.connect(self.search_background_file)
-        self.ui.checkbox_norm_subtract.clicked.connect(
-            lambda: self._normalization("subtract")
+        self.ui.button_bg_divide.clicked.connect(self.search_background_file)
+        self.ui.spinbox_norm_window.valueChanged.connect(
+            self.apply_normalization
         )
-        self.ui.checkbox_norm_divide.clicked.connect(
-            lambda: self._normalization("divide")
+        self.ui.spinbox_norm_lag.valueChanged.connect(
+            self.apply_normalization
+        )
+        self.ui.spinbox_norm_divide_window.valueChanged.connect(
+            self.apply_normalization
+        )
+        self.ui.spinbox_norm_divide_lag.valueChanged.connect(
+            self.apply_normalization
+        )
+        self.ui.radio_time_series.toggled.connect(self.update_view_mode)
+        self.ui.radio_aggregated.toggled.connect(self.update_view_mode)
+        self.ui.combobox_reduce.currentIndexChanged.connect(
+            self.apply_aggregation
+        )
+        self.ui.checkbox_agg_sliding.stateChanged.connect(
+            self._update_agg_sliding_visibility
+        )
+        self.ui.checkbox_agg_sliding.stateChanged.connect(
+            self.apply_aggregation
+        )
+        self.ui.spinbox_agg_window.valueChanged.connect(
+            self._update_agg_slider_range
+        )
+        self.ui.spinbox_agg_window.valueChanged.connect(
+            self.apply_aggregation
+        )
+        self.ui.slider_agg_pos.valueChanged.connect(
+            self._update_agg_pos_label
+        )
+        self.ui.slider_agg_pos.valueChanged.connect(
+            self.apply_aggregation
         )
         self.ui.checkbox_measure_roi.stateChanged.connect(
             self.ui.measure_roi.toggle
@@ -426,36 +503,61 @@ class MainWindow(QMainWindow):
             self.ui.image_viewer.data.get_crop,
         )
 
+    def _update_norm_amount_labels(self) -> None:
+        """Update the Amount % labels from slider values."""
+        self.ui.label_norm_subtract_amount.setText(
+            f"{self.ui.slider_norm_subtract_amount.value()}%"
+        )
+        self.ui.label_norm_divide_amount.setText(
+            f"{self.ui.slider_norm_divide_amount.value()}%"
+        )
+
+    def _update_norm_step_visibility(self) -> None:
+        """Show/hide param widgets based on source selection per step."""
+        sub = self.ui.combobox_norm_subtract.currentData()
+        div = self.ui.combobox_norm_divide.currentData()
+        self.ui.norm_subtract_range_widget.setVisible(sub == "range")
+        self.ui.norm_subtract_file_widget.setVisible(sub == "file")
+        self.ui.norm_subtract_sliding_widget.setVisible(sub == "sliding")
+        self.ui.norm_subtract_amount_widget.setVisible(sub != "none")
+        self.ui.norm_divide_range_widget.setVisible(div == "range")
+        self.ui.norm_divide_file_widget.setVisible(div == "file")
+        self.ui.norm_divide_sliding_widget.setVisible(div == "sliding")
+        self.ui.norm_divide_amount_widget.setVisible(div != "none")
+        self.update_norm_range()
+
     def reset_options(self) -> None:
         self.ui.combobox_reduce.setCurrentIndex(0)
+        self.ui.radio_time_series.setChecked(True)
+        self.ui.agg_options_widget.setVisible(False)
         self.ui.checkbox_flipx.setChecked(False)
         self.ui.checkbox_flipy.setChecked(False)
         self.ui.checkbox_transpose.setChecked(False)
         if self.ui.image_viewer.data.is_single_image():
             self.ui.combobox_reduce.setEnabled(False)
+            self.ui.radio_aggregated.setEnabled(False)
         else:
             self.ui.combobox_reduce.setEnabled(True)
-        self.ui.checkbox_norm_range.setChecked(True)
-        self.ui.checkbox_norm_range.setEnabled(True)
-        self.ui.checkbox_norm_bg.setEnabled(False)
-        self.ui.checkbox_norm_bg.setChecked(False)
-        self.ui.checkbox_norm_lag.setChecked(False)
-        self.ui.checkbox_norm_subtract.setChecked(False)
-        self.ui.checkbox_norm_divide.setChecked(False)
-        self.ui.spinbox_norm_beta.setValue(100)
-        self.ui.button_bg_input.setText("[Select]")
+            self.ui.radio_aggregated.setEnabled(True)
+        self.ui.checkbox_norm_apply.setChecked(False)
+        self.ui.combobox_norm_subtract.setCurrentIndex(0)
+        self.ui.combobox_norm_divide.setCurrentIndex(0)
+        self.ui.slider_norm_subtract_amount.setValue(100)
+        self.ui.slider_norm_divide_amount.setValue(100)
+        self.ui.button_bg_input.setText("Load background image")
+        self.ui.button_bg_divide.setText("Load background image")
         self.ui.image_viewer._background_image = None
         self.ui.checkbox_measure_roi.setChecked(False)
         self.ui.spinbox_crop_range_start.setValue(0)
         self.ui.spinbox_norm_window.setValue(1)
         self.ui.spinbox_norm_lag.setValue(0)
         self.ui.spinbox_norm_window.setMinimum(1)
-        self.ui.spinbox_norm_window.setMaximum(
-            self.ui.image_viewer.data.n_images-1
-        )
-        self.ui.spinbox_norm_lag.setMaximum(
-            self.ui.image_viewer.data.n_images-1
-        )
+        n = max(1, self.ui.image_viewer.data.n_images - 1)
+        self.ui.spinbox_norm_window.setMaximum(n)
+        self.ui.spinbox_norm_lag.setMaximum(max(0, n))
+        self.ui.spinbox_norm_divide_window.setMinimum(1)
+        self.ui.spinbox_norm_divide_window.setMaximum(n)
+        self.ui.spinbox_norm_divide_lag.setMaximum(max(0, n))
         self.ui.spinbox_crop_range_start.setMaximum(
             self.ui.image_viewer.data.n_images-1
         )
@@ -476,8 +578,29 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_norm_range_end.setValue(
             self.ui.image_viewer.data.n_images-1
         )
+        self.ui.spinbox_norm_divide_start.setValue(0)
+        self.ui.spinbox_norm_divide_start.setMaximum(
+            self.ui.image_viewer.data.n_images - 1
+        )
+        self.ui.spinbox_norm_divide_end.setMaximum(
+            self.ui.image_viewer.data.n_images - 1
+        )
+        self.ui.spinbox_norm_divide_end.setValue(
+            self.ui.image_viewer.data.n_images - 1
+        )
         self.ui.checkbox_norm_show_range.setChecked(False)
         self.ui.spinbox_norm_blur.setValue(0)
+        self._update_norm_amount_labels()
+        self._update_norm_step_visibility()
+        self.ui.checkbox_agg_sliding.setChecked(False)
+        self.ui.agg_sliding_widget.setVisible(False)
+        self.ui.spinbox_agg_window.setValue(4)
+        self.ui.spinbox_agg_window.setMaximum(
+            self.ui.image_viewer.data.n_images
+        )
+        self._update_agg_slider_range()
+        self.ui.slider_agg_pos.setValue(0)
+        self._update_agg_pos_label()
         self.ui.checkbox_roi_drop.setChecked(
             self.ui.image_viewer.is_roi_on_drop_update()
         )
@@ -516,22 +639,40 @@ class MainWindow(QMainWindow):
     def update_norm_range_labels(self) -> None:
         norm_range_ = self.ui.roi_plot.norm_range.getRegion()
         left, right = map(round, norm_range_)  # type: ignore
-        self.ui.spinbox_norm_range_start.setValue(left)
-        self.ui.spinbox_norm_range_end.setValue(right)
+        sub = self.ui.combobox_norm_subtract.currentData()
+        div = self.ui.combobox_norm_divide.currentData()
+        if sub == "range":
+            self.ui.spinbox_norm_range_start.setValue(left)
+            self.ui.spinbox_norm_range_end.setValue(right)
+        elif div == "range":
+            self.ui.spinbox_norm_divide_start.setValue(left)
+            self.ui.spinbox_norm_divide_end.setValue(right)
         self.ui.roi_plot.norm_range.setRegion((left, right))
+
+    def update_norm_range(self) -> None:
+        sub = self.ui.combobox_norm_subtract.currentData()
+        div = self.ui.combobox_norm_divide.currentData()
+        if sub == "range":
+            self.ui.roi_plot.norm_range.setRegion(
+                (self.ui.spinbox_norm_range_start.value(),
+                 self.ui.spinbox_norm_range_end.value())
+            )
+        elif div == "range":
+            self.ui.roi_plot.norm_range.setRegion(
+                (self.ui.spinbox_norm_divide_start.value(),
+                 self.ui.spinbox_norm_divide_end.value())
+            )
 
     def update_crop_range_labels(self) -> None:
         crop_range_ = self.ui.roi_plot.crop_range.getRegion()
         left, right = map(round, crop_range_)  # type: ignore
+        self.ui.spinbox_crop_range_start.blockSignals(True)
         self.ui.spinbox_crop_range_start.setValue(left)
+        self.ui.spinbox_crop_range_start.blockSignals(False)
+        self.ui.spinbox_crop_range_end.blockSignals(True)
         self.ui.spinbox_crop_range_end.setValue(right)
+        self.ui.spinbox_crop_range_end.blockSignals(False)
         self.ui.roi_plot.crop_range.setRegion((left, right))
-
-    def update_norm_range(self) -> None:
-        self.ui.roi_plot.norm_range.setRegion(
-            (self.ui.spinbox_norm_range_start.value(),
-             self.ui.spinbox_norm_range_end.value())
-        )
 
     def toggle_hvplot_markings(self) -> None:
         self.ui.h_plot.toggle_mark_position()
@@ -539,28 +680,55 @@ class MainWindow(QMainWindow):
         self.ui.v_plot.toggle_mark_position()
         self.ui.v_plot.draw_line()
 
+    def _on_crop_show_range_changed(self, state: int) -> None:
+        """When range is activated, sync region from spinboxes before showing."""
+        if state == Qt.Checked:
+            self.ui.roi_plot.crop_range.setRegion(
+                (self.ui.spinbox_crop_range_start.value(),
+                 self.ui.spinbox_crop_range_end.value())
+            )
+        self.ui.roi_plot.toggle_crop_range()
+
     def update_crop_range(self) -> None:
         self.ui.roi_plot.crop_range.setRegion(
             (self.ui.spinbox_crop_range_start.value(),
              self.ui.spinbox_crop_range_end.value())
         )
 
+    def _crop_index_to_frame(self) -> None:
+        """Show the edited crop index live in the image view."""
+        s = self.sender()
+        val = s.value() if s and hasattr(s, "value") else 0
+        n = self.ui.image_viewer.image.shape[0]
+        idx = max(0, min(int(val), n - 1))
+        self.ui.image_viewer.setCurrentIndex(idx)
+
+    def _crop_region_to_frame(self) -> None:
+        """When crop region is dragged, show the moved edge's frame live."""
+        reg = self.ui.roi_plot.crop_range.getRegion()
+        vals = (int(round(reg[0])), int(round(reg[1])))
+        prev = getattr(self, "_last_crop_region", (None, None))
+        self._last_crop_region = vals
+        left_changed = prev[0] is not None and vals[0] != prev[0]
+        right_changed = prev[1] is not None and vals[1] != prev[1]
+        if not left_changed and not right_changed:
+            return  # programmatic setRegion (e.g. round); keep current frame
+        if right_changed and not left_changed:
+            idx = vals[1]
+        else:
+            idx = vals[0]
+        n = self.ui.image_viewer.image.shape[0]
+        idx = max(0, min(idx, n - 1))
+        self.ui.image_viewer.setCurrentIndex(idx)
+
     def crop(self) -> None:
         with LoadingManager(self, "Cropping..."):
             self.ui.image_viewer.crop(
                 left=self.ui.spinbox_crop_range_start.value(),
                 right=self.ui.spinbox_crop_range_end.value(),
-                keep=self.ui.checkbox_crop_keep.isChecked(),
+                keep=False,
             )
         self.reset_options()
-
-    def undo_crop(self) -> None:
-        with LoadingManager(self, "Undo Cropping..."):
-            success = self.ui.image_viewer.undo_crop()
-            if success:
-                self.reset_options()
-            else:
-                self.load(self.last_file_dir / self.last_file)
 
     def apply_mask(self) -> None:
         with LoadingManager(self, "Masking..."):
@@ -581,75 +749,6 @@ class MainWindow(QMainWindow):
         )
         with LoadingManager(self, "Masking..."):
             self.ui.image_viewer.image_mask(Path(file_path))
-
-    def _normalization(self, name: str) -> None:
-        if ((not self.ui.checkbox_norm_range.isChecked()
-                and not self.ui.checkbox_norm_bg.isChecked()
-                and not self.ui.checkbox_norm_lag.isChecked())
-                or self.ui.image_viewer.data.is_single_image()):
-            self.ui.checkbox_norm_subtract.setChecked(False)
-            self.ui.checkbox_norm_divide.setChecked(False)
-            return
-        if (self.ui.checkbox_norm_divide.isChecked()
-                or self.ui.checkbox_norm_subtract.isChecked()):
-            self.ui.checkbox_norm_range.setEnabled(False)
-            self.ui.spinbox_norm_range_start.setEnabled(False)
-            self.ui.spinbox_norm_range_end.setEnabled(False)
-            self.ui.checkbox_norm_show_range.setEnabled(False)
-            self.ui.combobox_norm.setEnabled(False)
-            self.ui.checkbox_norm_bg.setEnabled(False)
-            self.ui.checkbox_norm_lag.setEnabled(False)
-            self.ui.spinbox_norm_lag.setEnabled(False)
-            self.ui.spinbox_norm_window.setEnabled(False)
-            self.ui.button_bg_input.setEnabled(False)
-            self.ui.combobox_reduce.setEnabled(False)
-            self.ui.spinbox_norm_beta.setEnabled(False)
-            self.ui.spinbox_norm_blur.setEnabled(False)
-        else:
-            self.ui.checkbox_norm_range.setEnabled(True)
-            self.ui.spinbox_norm_range_start.setEnabled(True)
-            self.ui.spinbox_norm_range_end.setEnabled(True)
-            self.ui.checkbox_norm_show_range.setEnabled(True)
-            self.ui.combobox_norm.setEnabled(True)
-            if self.ui.button_bg_input.text() == "[Remove]":
-                self.ui.checkbox_norm_bg.setEnabled(True)
-            self.ui.checkbox_norm_lag.setEnabled(True)
-            self.ui.spinbox_norm_lag.setEnabled(True)
-            self.ui.spinbox_norm_window.setEnabled(True)
-            self.ui.button_bg_input.setEnabled(True)
-            self.ui.combobox_reduce.setEnabled(True)
-            self.ui.spinbox_norm_beta.setEnabled(True)
-            self.ui.spinbox_norm_blur.setEnabled(True)
-        if name == "subtract" and self.ui.checkbox_norm_divide.isChecked():
-            self.ui.checkbox_norm_divide.setChecked(False)
-        elif name == "divide" and self.ui.checkbox_norm_subtract.isChecked():
-            self.ui.checkbox_norm_subtract.setChecked(False)
-        bounds = None
-        if self.ui.checkbox_norm_range.isChecked():
-            bounds = (
-                self.ui.spinbox_norm_range_start.value(),
-                self.ui.spinbox_norm_range_end.value(),
-            )
-        window_lag = None
-        if self.ui.checkbox_norm_lag.isChecked():
-            window_lag = (
-                self.ui.spinbox_norm_window.value(),
-                self.ui.spinbox_norm_lag.value(),
-            )
-        normalized = False
-        with LoadingManager(self, "Calculating...") as lm:
-            normalized = self.ui.image_viewer.norm(
-                operation=name,
-                use=self.ui.combobox_norm.currentText(),
-                beta=self.ui.spinbox_norm_beta.value() / 100.0,
-                gaussian_blur=self.ui.spinbox_norm_blur.value(),
-                bounds=bounds,
-                background=self.ui.checkbox_norm_bg.isChecked(),
-                window_lag=window_lag,
-            )
-        if normalized:
-            log(f"Normalized in {lm.duration:.2f}s")
-        self.update_statusbar()
 
     def toggle_rosee(self) -> None:
         enabled = self.ui.checkbox_rosee_active.isChecked()
@@ -707,20 +806,20 @@ class MainWindow(QMainWindow):
         )
 
     def search_background_file(self) -> None:
-        if self.ui.button_bg_input.text() == "[Select]":
+        if "Remove" not in self.ui.button_bg_input.text():
             file, _ = QFileDialog.getOpenFileName(
                 caption="Choose Background File",
                 directory=str(self.last_file_dir),
             )
             if file and self.ui.image_viewer.load_background_file(Path(file)):
                 self.ui.button_bg_input.setText("[Remove]")
-                self.ui.checkbox_norm_bg.setEnabled(True)
-                self.ui.checkbox_norm_bg.setChecked(True)
+                self.ui.button_bg_divide.setText("[Remove]")
+                self.apply_normalization()
         else:
-            self.ui.checkbox_norm_bg.setEnabled(False)
-            self.ui.checkbox_norm_bg.setChecked(False)
             self.ui.image_viewer.unload_background_file()
-            self.ui.button_bg_input.setText("[Select]")
+            self.ui.button_bg_input.setText("Load background image")
+            self.ui.button_bg_divide.setText("Load background image")
+            self.apply_normalization()
 
     def on_strgC(self) -> None:
         cb = QApplication.clipboard()
@@ -1079,26 +1178,143 @@ class MainWindow(QMainWindow):
         self.update_statusbar()
         self.reset_options()
 
-    def operation_changed(self) -> None:
-        self.update_statusbar()
-        text = self.ui.combobox_reduce.currentText()
-        if text != "-":
-            self.ui.checkbox_norm_subtract.setEnabled(False)
-            self.ui.checkbox_norm_divide.setEnabled(False)
+    def apply_normalization(self) -> None:
+        """Build pipeline from UI (one source per step) and set on data."""
+        if self.ui.image_viewer.data.is_single_image():
+            return
+        if not self.ui.checkbox_norm_apply.isChecked():
+            self.ui.image_viewer.data.set_normalization_pipeline(
+                [], factor=1.0, blur=0
+            )
+            self.ui.image_viewer.update_image()
+            return
+        blur = self.ui.spinbox_norm_blur.value()
+        pipeline: list[dict] = []
+        bg = self.ui.image_viewer._background_image
+
+        sub = self.ui.combobox_norm_subtract.currentData()
+        sub_amount = self.ui.slider_norm_subtract_amount.value() / 100.0
+        if sub == "range":
+            pipeline.append({
+                "operation": "subtract",
+                "source": "range",
+                "bounds": (
+                    self.ui.spinbox_norm_range_start.value(),
+                    self.ui.spinbox_norm_range_end.value(),
+                ),
+                "use": self.ui.combobox_norm.currentText(),
+                "factor": sub_amount,
+            })
+        elif sub == "file" and bg is not None:
+            pipeline.append({
+                "operation": "subtract",
+                "source": "file",
+                "reference": bg,
+                "factor": sub_amount,
+            })
+        elif sub == "sliding":
+            pipeline.append({
+                "operation": "subtract",
+                "source": "sliding",
+                "window_lag": (
+                    self.ui.spinbox_norm_window.value(),
+                    self.ui.spinbox_norm_lag.value(),
+                ),
+                "factor": sub_amount,
+            })
+
+        div = self.ui.combobox_norm_divide.currentData()
+        div_amount = self.ui.slider_norm_divide_amount.value() / 100.0
+        if div == "range":
+            pipeline.append({
+                "operation": "divide",
+                "source": "range",
+                "bounds": (
+                    self.ui.spinbox_norm_divide_start.value(),
+                    self.ui.spinbox_norm_divide_end.value(),
+                ),
+                "use": self.ui.combobox_norm_divide_method.currentText(),
+                "factor": div_amount,
+            })
+        elif div == "file" and bg is not None:
+            pipeline.append({
+                "operation": "divide",
+                "source": "file",
+                "reference": bg,
+                "factor": div_amount,
+            })
+        elif div == "sliding":
+            pipeline.append({
+                "operation": "divide",
+                "source": "sliding",
+                "window_lag": (
+                    self.ui.spinbox_norm_divide_window.value(),
+                    self.ui.spinbox_norm_divide_lag.value(),
+                ),
+                "factor": div_amount,
+            })
+
+        with LoadingManager(self, "Applying normalization...") as lm:
+            self.ui.image_viewer.data.set_normalization_pipeline(
+                pipeline, factor=1.0, blur=blur
+            )
+            self.ui.image_viewer.update_image()
+        if pipeline:
+            log(f"Normalization applied in {lm.duration:.2f}s")
+
+    def update_view_mode(self) -> None:
+        """Switch between Single Frame (Time Series) and Aggregated Image."""
+        is_agg = self.ui.radio_aggregated.isChecked()
+        self.ui.agg_options_widget.setVisible(is_agg)
+        if is_agg:
+            self._update_agg_sliding_visibility()
+            self.apply_aggregation()
         else:
-            self.ui.checkbox_norm_subtract.setEnabled(True)
-            self.ui.checkbox_norm_divide.setEnabled(True)
-        if text == "-":
-            self.ui.button_autofit.setChecked(True)
-            with LoadingManager(self, "Unpacking ..."):
+            with LoadingManager(self, "Unpacking..."):
                 self.ui.image_viewer.unravel()
             self.update_statusbar()
-        else:
-            self.ui.button_autofit.setChecked(False)
-            with LoadingManager(self, f"Loading {text}...") as lm:
-                self.ui.image_viewer.reduce(text)
+
+    def _update_agg_sliding_visibility(self) -> None:
+        """Show/hide sliding aggregation controls."""
+        on = self.ui.checkbox_agg_sliding.isChecked()
+        self.ui.agg_sliding_widget.setVisible(on)
+        if on:
+            self._update_agg_slider_range()
+
+    def _update_agg_slider_range(self) -> None:
+        """Set slider max from n_frames - window_size."""
+        n = self.ui.image_viewer.data.n_images
+        w = self.ui.spinbox_agg_window.value()
+        mx = max(0, n - w)
+        self.ui.slider_agg_pos.setMaximum(mx)
+        if self.ui.slider_agg_pos.value() > mx:
+            self.ui.slider_agg_pos.setValue(mx)
+
+    def _update_agg_pos_label(self) -> None:
+        """Update the position label for sliding aggregation."""
+        p = self.ui.slider_agg_pos.value()
+        w = self.ui.spinbox_agg_window.value()
+        self.ui.label_agg_pos.setText(f"Pos: {p} ({p}-{p + w - 1})")
+
+    def apply_aggregation(self) -> None:
+        """Apply reduction (with optional bounds) when in Aggregated mode."""
+        if not self.ui.radio_aggregated.isChecked():
+            return
+        text = self.ui.combobox_reduce.currentText()
+        if text == "-":
+            with LoadingManager(self, "Unpacking..."):
+                self.ui.image_viewer.unravel()
             self.update_statusbar()
-            log(f"{text} in {lm.duration:.2f}s")
+            return
+        bounds = None
+        if self.ui.checkbox_agg_sliding.isChecked():
+            pos = self.ui.slider_agg_pos.value()
+            w = self.ui.spinbox_agg_window.value()
+            bounds = (pos, pos + w - 1)
+        with LoadingManager(self, f"Loading {text}...") as lm:
+            self.ui.image_viewer.reduce(text, bounds=bounds)
+        self.update_statusbar()
+        log(f"{text} in {lm.duration:.2f}s")
 
     def update_roi_settings(self) -> None:
         self.ui.measure_roi.show_in_mm = self.ui.checkbox_mm.isChecked()

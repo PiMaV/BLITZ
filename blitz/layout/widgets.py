@@ -31,6 +31,7 @@ class TimePlot(pg.PlotWidget):
         self.addItem(image_viewer.timeLine)
         self.timeline = image_viewer.timeLine
         self.timeline.setMovable(False)
+        self.timeline.setPen(pg.mkPen((0, 200, 255), width=4))
         self.addItem(image_viewer.frameTicks)
         self.addItem(image_viewer.normRgn)
         self.old_roi_plot = image_viewer.ui.roiPlot
@@ -45,11 +46,21 @@ class TimePlot(pg.PlotWidget):
         sizePolicy.setHeightForWidth(self.sizePolicy().hasHeightForWidth())
         self.setSizePolicy(sizePolicy)
         self.setMinimumSize(QSize(0, 40))
-        self.norm_range = pg.LinearRegionItem()
+        self.norm_range = pg.LinearRegionItem(
+            brush=pg.mkBrush(80, 120, 180, 80),
+            pen=pg.mkPen((80, 120, 180), width=3),
+        )
         self.norm_range.setZValue(0)
+        if hasattr(self.norm_range, "handleSize"):
+            self.norm_range.handleSize = 12
         self.addItem(self.norm_range)
         self.norm_range.hide()
-        self.crop_range = pg.LinearRegionItem()
+        self.crop_range = pg.LinearRegionItem(
+            brush=pg.mkBrush(80, 180, 80, 80),
+            pen=pg.mkPen((80, 180, 80), width=3),
+        )
+        if hasattr(self.crop_range, "handleSize"):
+            self.crop_range.handleSize = 12
         self.crop_range.setZValue(0)
         self.addItem(self.crop_range)
         self.crop_range.hide()
