@@ -87,7 +87,11 @@ def load_video_chunk(
 
     cap.release()
     if not frames:
-        return np.empty((0,)), []
+        # Return an empty array with the same dimensionality as the stacked frames
+        if grayscale:
+            return np.empty((0, 0, 0)), []
+        else:
+            return np.empty((0, 0, 0, 0)), []
 
     return np.stack(frames), metadata
 
