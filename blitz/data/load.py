@@ -30,8 +30,16 @@ def load_video_chunk(
     convert_to_8_bit: bool,
 ) -> tuple[np.ndarray, list[VideoMetaData]]:
     cap = cv2.VideoCapture(str(path))
-    cap.set(cv2.CAP_PROP_POS_FRAMES, start)
+    if not cap.isOpened():
+        log.error(f"Failed to open video file: {path}")
+        cap.release()
+        return np.empty((0,)), []
 
+    seek_ok = cap.set(cv2.CAP_PROP_POS_FRAMES, start)
+    if not seek_ok:
+        log.error(f"Failed to seek to frame {start} in video file: {path}")
+        cap.release()
+        return np.empty((0,)), []
     frames = []
     metadata = []
 
