@@ -31,8 +31,8 @@ class LoadingDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(message)
         layout = QVBoxLayout()
-        label = QLabel(message)
-        layout.addWidget(label)
+        self._label = QLabel(message)
+        layout.addWidget(self._label)
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
@@ -42,6 +42,10 @@ class LoadingDialog(QDialog):
 
     def set_progress(self, value: int) -> None:
         self.progress_bar.setValue(value)
+
+    def set_message(self, message: str) -> None:
+        self._label.setText(message)
+        self.setWindowTitle(message)
 
 
 class LoggingTextEdit(QTextEdit):
@@ -93,6 +97,11 @@ class LoadingManager:
     def set_progress(self, value: int) -> None:
         if hasattr(self, "_dialog"):
             self._dialog.set_progress(value)
+            QApplication.processEvents()
+
+    def set_message(self, message: str) -> None:
+        if hasattr(self, "_dialog"):
+            self._dialog.set_message(message)
             QApplication.processEvents()
 
     def __exit__(

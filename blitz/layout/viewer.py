@@ -155,6 +155,7 @@ class ImageViewer(pg.ImageView):
         self,
         path: Optional[Path] = None,
         progress_callback: Optional[Callable[[int], None]] = None,
+        message_callback: Optional[Callable[[str], None]] = None,
         **kwargs,
     ) -> None:
         load_keys = {"frame_range", "step"}
@@ -163,6 +164,7 @@ class ImageViewer(pg.ImageView):
         self.data = DataLoader(**kwargs).load(
             path,
             progress_callback=progress_callback,
+            message_callback=message_callback,
             **load_kwargs,
         )
         self.setImage(self.data.image, autoLevels=True)

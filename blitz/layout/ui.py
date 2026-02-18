@@ -263,6 +263,21 @@ class UI_MainWindow(QWidget):
         self.spinbox_max_ram.setPrefix("max. RAM: ")
         self.spinbox_max_ram.setRange(.1, .8 * get_available_ram())
         file_layout.addWidget(self.spinbox_max_ram)
+        self.checkbox_video_dialog_always = QCheckBox("Always show load options dialog")
+        self.checkbox_video_dialog_always.setChecked(False)
+        self.checkbox_video_dialog_always.setToolTip(
+            "When checked: dialog opens for every load (video/image/folder). Otherwise: only when first load or above threshold."
+        )
+        file_layout.addWidget(self.checkbox_video_dialog_always)
+        self.spinbox_video_dialog_mb = QSpinBox()
+        self.spinbox_video_dialog_mb.setRange(1, 10000)
+        self.spinbox_video_dialog_mb.setValue(500)
+        self.spinbox_video_dialog_mb.setPrefix("Load dialog above: ")
+        self.spinbox_video_dialog_mb.setSuffix(" MB")
+        self.spinbox_video_dialog_mb.setToolTip(
+            "When 'Always show' is off: loads below this estimated size use session defaults. Above this size, the options dialog opens."
+        )
+        file_layout.addWidget(self.spinbox_video_dialog_mb)
         self.checkbox_sync_file = QCheckBox("load/save project file")
         self.checkbox_sync_file.setChecked(False)
         self.checkbox_sync_file.setStyleSheet("""
@@ -312,8 +327,9 @@ class UI_MainWindow(QWidget):
         self.checkbox_transpose = QCheckBox("Transpose")
         viewchange_layout.addWidget(self.checkbox_transpose)
         view_layout.addLayout(viewchange_layout)
-        mask_label = QLabel("Mask")
+        mask_label = QLabel("Display Mask")
         mask_label.setStyleSheet(style_heading)
+        mask_label.setToolTip("Post-load mask: draw ROI or load binary image to exclude regions from display/analysis")
         view_layout.addWidget(mask_label)
         self.checkbox_mask = QCheckBox("Show")
         self.button_apply_mask = QPushButton("Apply")
