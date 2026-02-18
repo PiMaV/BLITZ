@@ -4,8 +4,8 @@ import pyqtgraph as pg
 from PyQt5.QtCore import QFile, Qt
 from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFrame,
-                             QGridLayout, QHBoxLayout, QLabel, QLayout,
-                             QLineEdit, QMenu, QMenuBar, QPushButton,
+                             QGridLayout, QGroupBox, QHBoxLayout, QLabel,
+                             QLayout, QLineEdit, QMenu, QMenuBar, QPushButton,
                              QScrollArea, QSizePolicy, QSpinBox, QStatusBar,
                              QStyle, QTabWidget, QVBoxLayout, QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
@@ -145,6 +145,7 @@ class UI_MainWindow(QWidget):
         file_menu.setToolTipsVisible(True)
         self.action_open_file = file_menu.addAction("Open File")
         self.action_open_folder = file_menu.addAction("Open Folder")
+        self.action_open_camera = file_menu.addAction("Open Camera")
         self.action_load_tof = file_menu.addAction("Load TOF")
         file_menu.addSeparator()
         self.action_export = file_menu.addAction("Export")
@@ -236,6 +237,19 @@ class UI_MainWindow(QWidget):
 
         # --- File ---
         file_layout = QVBoxLayout()
+
+        # --- Camera ---
+        self.group_camera = QGroupBox("Camera")
+        self.group_camera.setCheckable(False)
+        self.group_camera.hide()
+        cam_layout = QVBoxLayout()
+        self.button_camera_toggle = QPushButton("Stop")
+        self.button_camera_toggle.setCheckable(True)
+        self.button_camera_toggle.setChecked(True)
+        cam_layout.addWidget(self.button_camera_toggle)
+        self.group_camera.setLayout(cam_layout)
+        file_layout.addWidget(self.group_camera)
+
         load_label = QLabel("Loading")
         load_label.setStyleSheet(style_heading)
         file_layout.addWidget(load_label)
