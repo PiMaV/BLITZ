@@ -536,12 +536,17 @@ class DataLoader:
                 self.convert_to_8_bit
             ))
 
+        total_frames = len(frames_indices)
+        frames_loaded = 0
         with Pool(cores) as pool:
             results = []
-            for i, result in enumerate(pool.starmap(load_video_chunk, pool_tasks)):
-                 results.append(result)
-                 if progress_callback:
-                     progress_callback(int((i + 1) / len(pool_tasks) * 100))
+            for frames, meta in pool.starmap(load_video_chunk, pool_tasks):
+                results.append((frames, meta))
+                if progress_callback and total_frames > 0:
+                    # Update progress based on the number of frames loaded so far,
+                    # to keep behavior consistent with single-core loading.
+                    frames_loaded += len(frames)
+                    progress_callback(int(frames_loaded / total_frames * 100))
 
         all_frames = []
         all_meta = []
