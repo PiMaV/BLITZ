@@ -114,10 +114,10 @@ class VideoLoadOptionsDialog(QDialog):
 
         # Validate range
         if start > end:
+            # Normalize so that start <= end by swapping the values
             self.spin_start.setValue(end)
-            start = end
-            end = start
-
+            self.spin_end.setValue(start)
+            start, end = end, start
         # Calculate number of frames: len(range(start, end + 1, step))
         if end >= start:
             num_frames = (end - start) // step + 1
