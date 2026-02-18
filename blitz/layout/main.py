@@ -9,8 +9,10 @@ from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 
 from .. import settings
 from ..data.image import ImageData
+from ..data.load import DataLoader, get_image_metadata
 from ..data.web import WebDataLoader
 from ..tools import LoadingManager, get_available_ram, log
+from .dialogs import ImageLoadOptionsDialog, VideoLoadOptionsDialog
 from .rosee import ROSEEAdapter
 from .tof import TOFAdapter
 from .ui import UI_MainWindow
@@ -33,6 +35,9 @@ class MainWindow(QMainWindow):
 
         self.last_file_dir = Path.cwd()
         self.last_file: str = ""
+        self._video_session_defaults: dict = {}
+        self._image_session_defaults: dict = {}
+        self._image_load_dialog_shown: bool = False
 
         self.tof_adapter = TOFAdapter(self.ui.roi_plot)
         self.rosee_adapter = ROSEEAdapter(
@@ -98,6 +103,14 @@ class MainWindow(QMainWindow):
         self.ui.button_export_lut.pressed.connect(self.save_lut)
 
         # option connections
+        def _update_video_dialog_spinbox():
+            self.ui.spinbox_video_dialog_mb.setEnabled(
+                not self.ui.checkbox_video_dialog_always.isChecked()
+            )
+        self.ui.checkbox_video_dialog_always.stateChanged.connect(
+            _update_video_dialog_spinbox
+        )
+        _update_video_dialog_spinbox()
         self.ui.button_open_file.pressed.connect(self.browse_file)
         self.ui.button_open_folder.pressed.connect(self.browse_folder)
         self.ui.button_connect.pressed.connect(self.start_web_connection)
@@ -851,6 +864,8 @@ class MainWindow(QMainWindow):
             with LoadingManager(self, f"Loading {saved_path}") as lm:
                 self.ui.image_viewer.load_data(
                     saved_path,
+                    progress_callback=lm.set_progress,
+                    message_callback=lm.set_message,
                     size_ratio=self.ui.spinbox_load_size.value(),
                     subset_ratio=self.ui.spinbox_load_subset.value(),
                     max_ram=self.ui.spinbox_max_ram.value(),
@@ -873,14 +888,190 @@ class MainWindow(QMainWindow):
             settings.set("path", "")
 
     def load_images(self, path: Path) -> None:
+        params = {
+            "size_ratio": self.ui.spinbox_load_size.value(),
+            "subset_ratio": self.ui.spinbox_load_subset.value(),
+            "max_ram": self.ui.spinbox_max_ram.value(),
+            "convert_to_8_bit": self.ui.checkbox_load_8bit.isChecked(),
+            "grayscale": self.ui.checkbox_load_grayscale.isChecked(),
+        }
+
+        if DataLoader._is_video(path):
+            try:
+                meta = DataLoader.get_video_metadata(path)
+                # Estimate RAM usage for full load at current settings
+                # ImageData keeps uint8 by default (1 byte)
+                channels = 1 if params["grayscale"] else 3
+                est_bytes = (
+                    meta.size[0] * meta.size[1] * channels * meta.frame_count
+                    * (params["size_ratio"] ** 2)
+                )
+
+                show_dialog = (
+                    self.ui.checkbox_video_dialog_always.isChecked()
+                    or est_bytes > self.ui.spinbox_video_dialog_mb.value() * 1024 * 1024
+                )
+                if show_dialog:
+                    dlg = VideoLoadOptionsDialog(
+                        path, meta, parent=self,
+                        initial_params=self._video_session_defaults,
+                    )
+                    if dlg.exec():
+                        user_params = dlg.get_params()
+                        params.update(user_params)
+                        self._video_session_defaults = {
+                            "size_ratio": user_params["size_ratio"],
+                            "step": user_params["step"],
+                            "grayscale": user_params["grayscale"],
+                            "convert_to_8_bit": user_params.get("convert_to_8_bit", False),
+                        }
+                        if "mask_rel" in user_params:
+                            self._video_session_defaults["mask_rel"] = user_params["mask_rel"]
+                        else:
+                            self._video_session_defaults.pop("mask_rel", None)
+                        self.ui.spinbox_load_size.setValue(
+                            user_params["size_ratio"],
+                        )
+                        self.ui.spinbox_load_subset.setValue(
+                            1.0 / user_params["step"],
+                        )
+                        self.ui.checkbox_load_grayscale.setChecked(
+                            user_params["grayscale"],
+                        )
+                        self.ui.checkbox_load_8bit.setChecked(
+                            user_params.get("convert_to_8_bit", False),
+                        )
+                    else:
+                        return
+                else:
+                    # Dialog nicht gezeigt: Session-Defaults anwenden (gleiche Einstellungen wie letztes Video)
+                    if self._video_session_defaults:
+                        params["size_ratio"] = self._video_session_defaults.get(
+                            "size_ratio", params["size_ratio"]
+                        )
+                        params["step"] = self._video_session_defaults.get(
+                            "step", int(1.0 / params["subset_ratio"])
+                        )
+                        params["subset_ratio"] = 1.0 / params["step"]
+                        params["grayscale"] = self._video_session_defaults.get(
+                            "grayscale", params["grayscale"]
+                        )
+                        params["convert_to_8_bit"] = self._video_session_defaults.get(
+                            "convert_to_8_bit", params["convert_to_8_bit"]
+                        )
+                        self.ui.spinbox_load_size.setValue(params["size_ratio"])
+                        self.ui.spinbox_load_subset.setValue(params["subset_ratio"])
+                        self.ui.checkbox_load_grayscale.setChecked(params["grayscale"])
+                        self.ui.checkbox_load_8bit.setChecked(params["convert_to_8_bit"])
+                        if "mask_rel" in self._video_session_defaults:
+                            r = self._video_session_defaults["mask_rel"]
+                            sr = params["size_ratio"]
+                            h = int(meta.size[0] * sr)
+                            w = int(meta.size[1] * sr)
+                            x0 = max(0, int(r[0] * w))
+                            y0 = max(0, int(r[1] * h))
+                            x1 = min(w, int(r[2] * w))
+                            y1 = min(h, int(r[3] * h))
+                            if x1 > x0 and y1 > y0 and (x1 - x0 < w or y1 - y0 < h):
+                                params["mask"] = (slice(x0, x1), slice(y0, y1))
+            except Exception as e:
+                log(f"Error reading video metadata: {e}", color="red")
+
+        elif (
+            (path.is_file() and DataLoader._is_image(path))
+            or (path.is_dir() and get_image_metadata(path) is not None)
+        ):
+            try:
+                meta = get_image_metadata(path)
+                if meta is not None:
+                    h, w = meta["size"]
+                    n = meta["file_count"]
+                    channels = 1 if params["grayscale"] else 3
+                    est_bytes = (
+                        h * w * channels * n
+                        * (params["size_ratio"] ** 2)
+                    )
+                    show_dialog = (
+                        not self._image_load_dialog_shown
+                        or self.ui.checkbox_video_dialog_always.isChecked()
+                        or est_bytes
+                        > self.ui.spinbox_video_dialog_mb.value() * 1024 * 1024
+                    )
+                    if show_dialog:
+                        dlg = ImageLoadOptionsDialog(
+                            path, meta, parent=self,
+                            initial_params=self._image_session_defaults,
+                        )
+                        if dlg.exec():
+                            user_params = dlg.get_params()
+                            params.update(user_params)
+                            self._image_load_dialog_shown = True
+                            self._image_session_defaults = {
+                                "size_ratio": user_params["size_ratio"],
+                                "grayscale": user_params["grayscale"],
+                                "convert_to_8_bit": user_params.get("convert_to_8_bit", False),
+                            }
+                            if "subset_ratio" in user_params:
+                                self._image_session_defaults["subset_ratio"] = user_params["subset_ratio"]
+                            if "mask_rel" in user_params:
+                                self._image_session_defaults["mask_rel"] = user_params["mask_rel"]
+                            else:
+                                self._image_session_defaults.pop("mask_rel", None)
+                            self.ui.spinbox_load_size.setValue(
+                                user_params["size_ratio"],
+                            )
+                            self.ui.spinbox_load_subset.setValue(
+                                user_params.get("subset_ratio", params["subset_ratio"]),
+                            )
+                            self.ui.checkbox_load_grayscale.setChecked(
+                                user_params["grayscale"],
+                            )
+                            self.ui.checkbox_load_8bit.setChecked(
+                                user_params.get("convert_to_8_bit", False),
+                            )
+                        else:
+                            return
+                    else:
+                        if self._image_session_defaults:
+                            params["size_ratio"] = self._image_session_defaults.get(
+                                "size_ratio", params["size_ratio"]
+                            )
+                            params["grayscale"] = self._image_session_defaults.get(
+                                "grayscale", params["grayscale"]
+                            )
+                            params["subset_ratio"] = self._image_session_defaults.get(
+                                "subset_ratio", params["subset_ratio"]
+                            )
+                            params["convert_to_8_bit"] = self._image_session_defaults.get(
+                                "convert_to_8_bit", params["convert_to_8_bit"]
+                            )
+                            self.ui.spinbox_load_size.setValue(params["size_ratio"])
+                            self.ui.spinbox_load_subset.setValue(params["subset_ratio"])
+                            self.ui.checkbox_load_grayscale.setChecked(params["grayscale"])
+                            self.ui.checkbox_load_8bit.setChecked(params["convert_to_8_bit"])
+                            if "mask_rel" in self._image_session_defaults:
+                                r = self._image_session_defaults["mask_rel"]
+                                sr = params["size_ratio"]
+                                h_m, w_m = meta["size"]
+                                h = int(h_m * sr)
+                                w = int(w_m * sr)
+                                x0 = max(0, int(r[0] * w))
+                                y0 = max(0, int(r[1] * h))
+                                x1 = min(w, int(r[2] * w))
+                                y1 = min(h, int(r[3] * h))
+                                if x1 > x0 and y1 > y0 and (x1 - x0 < w or y1 - y0 < h):
+                                    params["mask"] = (slice(x0, x1), slice(y0, y1))
+            except Exception as e:
+                log(f"Error reading image metadata: {e}", color="red")
+
+        params.pop("mask_rel", None)
+
         with LoadingManager(self, f"Loading {path}") as lm:
             self.ui.image_viewer.load_data(
                 path,
-                size_ratio=self.ui.spinbox_load_size.value(),
-                subset_ratio=self.ui.spinbox_load_subset.value(),
-                max_ram=self.ui.spinbox_max_ram.value(),
-                convert_to_8_bit=self.ui.checkbox_load_8bit.isChecked(),
-                grayscale=self.ui.checkbox_load_grayscale.isChecked(),
+                progress_callback=lm.set_progress,
+                message_callback=lm.set_message,
+                **params,
             )
         log(f"Loaded in {lm.duration:.2f}s")
         self.last_file_dir = path.parent

@@ -40,7 +40,9 @@ class ImageData:
         image: np.ndarray,
         metadata: list[MetaData],
     ) -> None:
-        self._image = ensure_4d(image.astype(np.float32))
+        # Keep original dtype (uint8 for video/images) - saves 4x RAM vs float32.
+        # Normalize/reduce convert to float when needed.
+        self._image = ensure_4d(np.asarray(image))
         self._meta = metadata
         self._reduced = ops.ReduceDict()
         self._mask: tuple[slice, slice, slice] | None = None
@@ -57,7 +59,8 @@ class ImageData:
     @property
     def image(self) -> np.ndarray:
         if self._image_mask is not None:
-            image: np.ndarray = self._image.copy()
+            # Need float for np.nan; uint8 can't hold nan
+            image: np.ndarray = self._image.astype(np.float32).copy()
         else:
             image: np.ndarray = self._image
         if self._norm is not None:

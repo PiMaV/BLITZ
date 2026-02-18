@@ -5,8 +5,8 @@ from typing import Any, Optional, Self, Sequence
 import numpy as np
 import psutil
 from PyQt5.QtGui import QColor, QFont, QTextCharFormat
-from PyQt5.QtWidgets import (QApplication, QDialog, QLabel, QTextEdit,
-                             QVBoxLayout)
+from PyQt5.QtWidgets import (QApplication, QDialog, QLabel, QProgressBar,
+                             QTextEdit, QVBoxLayout)
 
 from . import settings
 
@@ -31,10 +31,21 @@ class LoadingDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(message)
         layout = QVBoxLayout()
-        label = QLabel(message)
-        layout.addWidget(label)
+        self._label = QLabel(message)
+        layout.addWidget(self._label)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        layout.addWidget(self.progress_bar)
         self.setLayout(layout)
         self.setModal(True)
+
+    def set_progress(self, value: int) -> None:
+        self.progress_bar.setValue(value)
+
+    def set_message(self, message: str) -> None:
+        self._label.setText(message)
+        self.setWindowTitle(message)
 
 
 class LoggingTextEdit(QTextEdit):
@@ -82,6 +93,16 @@ class LoadingManager:
         QApplication.processEvents()
         self._start_time = clock()
         return self
+
+    def set_progress(self, value: int) -> None:
+        if hasattr(self, "_dialog"):
+            self._dialog.set_progress(value)
+            QApplication.processEvents()
+
+    def set_message(self, message: str) -> None:
+        if hasattr(self, "_dialog"):
+            self._dialog.set_message(message)
+            QApplication.processEvents()
 
     def __exit__(
         self,

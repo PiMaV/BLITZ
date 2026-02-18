@@ -2,7 +2,7 @@ import json
 import os
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import cv2
 import numpy as np
@@ -14,6 +14,252 @@ from ..tools import log
 from .image import DicomMetaData, ImageData, MetaData, VideoMetaData
 from .tools import (adjust_ratio_for_memory, resize_and_convert,
                     resize_and_convert_to_8_bit)
+
+
+def get_video_preview(
+    path: Path,
+    n_frames: int = 10,
+    size_ratio: float = 0.2,
+    grayscale: bool = False,
+    mode: str = "max",
+    normalize: bool = True,
+) -> np.ndarray | None:
+    """Laedt eine schnelle Vorschau aus dem Video.
+
+    Args:
+        path: Videopfad
+        n_frames: Anzahl Frames (verteilt ueber das Video)
+        size_ratio: Skalierung (0.2 = 20% fuer schnelles Laden)
+        grayscale: Graustufen
+        mode: "max" = MAX ueber Frames, "single" = nur mittlerer Frame
+        normalize: Min-Max auf 0-255 strecken fuer bessere Sichtbarkeit
+
+    Returns:
+        uint8 array (H, W) oder (H, W, 3), oder None bei Fehler
+    """
+    cap = cv2.VideoCapture(str(path))
+    if not cap.isOpened():
+        return None
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if frame_count <= 0:
+        cap.release()
+        return None
+    frames_to_read = (
+        np.linspace(0, frame_count - 1, min(n_frames, frame_count), dtype=int)
+        if mode == "max" and frame_count > 1
+        else [frame_count // 2]
+    )
+    collected = []
+    for fi in frames_to_read:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(fi))
+        ret, frame = cap.read()
+        if not ret:
+            continue
+        if grayscale:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        else:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame = resize_and_convert(frame, size_ratio, convert_to_8_bit=False)
+        collected.append(frame)
+    cap.release()
+    if not collected:
+        return None
+    if mode == "max" and len(collected) > 1:
+        stack = np.stack(collected)
+        out = np.max(stack, axis=0).astype(np.uint8)
+    else:
+        out = collected[0].astype(np.uint8)
+    if normalize and out.size > 0:
+        p_lo, p_hi = np.percentile(out, (2, 98))
+        if p_hi > p_lo:
+            out = np.clip(
+                (out.astype(np.float32) - p_lo) / (p_hi - p_lo) * 255, 0, 255
+            ).astype(np.uint8)
+    return out
+
+
+def get_image_preview(
+    path: Path,
+    size_ratio: float = 0.3,
+    grayscale: bool = False,
+    mode: str = "max",
+    normalize: bool = True,
+    n_samples: int = 10,
+) -> np.ndarray | None:
+    """Load a fast preview from an image file or folder.
+
+    Args:
+        path: Image file or folder path
+        size_ratio: Scale factor for fast loading
+        grayscale: Convert to grayscale
+        mode: "max" = MAX across sampled images, "single" = first image only
+        normalize: Min-max stretch to 0-255 for visibility
+        n_samples: For folders: number of images to sample for MAX
+
+    Returns:
+        uint8 array (H, W) or (H, W, 3), or None on error
+    """
+    def _load_one(p: Path) -> np.ndarray | None:
+        img = cv2.imread(
+            str(p),
+            cv2.IMREAD_UNCHANGED if not grayscale else (
+                cv2.IMREAD_ANYDEPTH | cv2.IMREAD_GRAYSCALE
+            ),
+        )
+        if img is None:
+            return None
+        if img.ndim == 3:
+            if img.shape[2] == 3:
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            elif img.shape[2] == 4:
+                img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
+        h, w = img.shape[:2]
+        ratio = size_ratio
+        if h > 0 and w > 0 and (int(h * ratio) < 1 or int(w * ratio) < 1):
+            ratio = max(1.0 / h, 1.0 / w, size_ratio)
+        return resize_and_convert(img, ratio, convert_to_8_bit=False)
+
+    if path.is_file():
+        if not DataLoader._is_image(path):
+            return None
+        img = _load_one(path)
+        if img is None:
+            return None
+        out = img.astype(np.uint8)
+    else:
+        content = [f for f in path.iterdir() if not f.is_dir() and DataLoader._is_image(f)]
+        content = natsorted(content)
+        if not content:
+            return None
+        if mode == "single" or len(content) == 1:
+            img = _load_one(content[0])
+            if img is None:
+                return None
+            out = img.astype(np.uint8)
+        else:
+            indices = np.linspace(0, len(content) - 1, min(n_samples, len(content)), dtype=int)
+            collected = []
+            for i in indices:
+                img = _load_one(content[i])
+                if img is not None:
+                    collected.append(img)
+            if not collected:
+                return None
+            stack = np.stack(collected)
+            out = np.max(stack, axis=0).astype(np.uint8)
+
+    if normalize and out.size > 0:
+        p_lo, p_hi = np.percentile(out, (2, 98))
+        if p_hi > p_lo:
+            out = np.clip(
+                (out.astype(np.float32) - p_lo) / (p_hi - p_lo) * 255, 0, 255
+            ).astype(np.uint8)
+    return out
+
+
+def get_sample_format(path: Path) -> tuple[bool, bool]:
+    """Quick sample to detect if source is grayscale and uint8. Returns (is_grayscale, is_uint8)."""
+    if path.is_file():
+        if DataLoader._is_video(path):
+            cap = cv2.VideoCapture(str(path))
+            if not cap.isOpened():
+                return False, False
+            ret, frame = cap.read()
+            cap.release()
+            if not ret or frame is None:
+                return False, False
+            is_gray = frame.ndim == 2 or (frame.ndim == 3 and frame.shape[2] == 1)
+            return is_gray, frame.dtype == np.uint8
+        if DataLoader._is_image(path):
+            img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+            if img is None:
+                return False, False
+            is_gray = img.ndim == 2 or (img.ndim == 3 and img.shape[2] == 1)
+            return is_gray, img.dtype == np.uint8
+    else:
+        content = [f for f in path.iterdir() if not f.is_dir() and DataLoader._is_image(f)]
+        content = natsorted(content)
+        if not content:
+            return False, False
+        return get_sample_format(content[0])
+    return False, False
+
+
+def get_sample_format_display(path: Path) -> str:
+    """Quick sample to get human-readable format string. E.g. 'Grayscale, 8 bit' or 'RGB, 16 bit'."""
+    arr = None
+    if path.is_file():
+        if DataLoader._is_video(path):
+            cap = cv2.VideoCapture(str(path))
+            if not cap.isOpened():
+                return "Unknown"
+            ret, frame = cap.read()
+            cap.release()
+            if not ret or frame is None:
+                return "Unknown"
+            arr = frame
+        elif DataLoader._is_image(path):
+            arr = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+        else:
+            return "Unknown"
+    else:
+        content = [f for f in path.iterdir() if not f.is_dir() and DataLoader._is_image(f)]
+        content = natsorted(content)
+        if not content:
+            return "Unknown"
+        return get_sample_format_display(content[0])
+    if arr is None:
+        return "Unknown"
+    color = "Grayscale" if arr.ndim == 2 or (arr.ndim == 3 and arr.shape[2] == 1) else "RGB"
+    bits = arr.dtype.itemsize * 8
+    return f"{color}, {bits} bit"
+
+
+def get_sample_bytes_per_pixel(path: Path) -> int:
+    """Bytes per pixel of the source (1 for uint8, 2 for uint16, etc.). Used for RAM estimate."""
+    if path.is_file():
+        if DataLoader._is_video(path):
+            cap = cv2.VideoCapture(str(path))
+            if not cap.isOpened():
+                return 1
+            ret, frame = cap.read()
+            cap.release()
+            if not ret or frame is None:
+                return 1
+            return int(frame.dtype.itemsize)
+        if DataLoader._is_image(path):
+            img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+            if img is None:
+                return 1
+            return int(img.dtype.itemsize)
+        return 1
+    content = [f for f in path.iterdir() if not f.is_dir() and DataLoader._is_image(f)]
+    content = natsorted(content)
+    if not content:
+        return 1
+    return get_sample_bytes_per_pixel(content[0])
+
+
+def get_image_metadata(path: Path) -> dict | None:
+    """Get metadata for image file or folder. Returns dict with file_name, size (h,w), file_count."""
+    if path.is_file():
+        if not DataLoader._is_image(path):
+            return None
+        img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+        if img is None:
+            return None
+        h, w = img.shape[:2]
+        return {"file_name": path.name, "size": (h, w), "file_count": 1}
+    content = [f for f in path.iterdir() if not f.is_dir() and DataLoader._is_image(f)]
+    content = natsorted(content)
+    if not content:
+        return None
+    img = cv2.imread(str(content[0]), cv2.IMREAD_UNCHANGED)
+    if img is None:
+        return None
+    h, w = img.shape[:2]
+    return {"file_name": path.name, "size": (h, w), "file_count": len(content)}
+
 
 IMAGE_EXTENSIONS = (".jpg", ".png", ".jpeg", ".bmp", ".tiff", ".tif")
 VIDEO_EXTENSIONS = (".mp4", ".avi", ".mov")
@@ -42,6 +288,30 @@ class DataLoader:
         except Exception:
             return False
 
+    @staticmethod
+    def get_video_metadata(path: Path) -> VideoMetaData:
+        cap = cv2.VideoCapture(str(path))
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = int(cap.get(cv2.CAP_PROP_FPS))
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        codec = int(cap.get(cv2.CAP_PROP_FOURCC))
+        fourcc_str = "".join([chr((codec >> 8 * i) & 0xFF) for i in range(4)])
+        cap.release()
+
+        return VideoMetaData(
+            file_name=path.name,
+            file_size_MB=os.path.getsize(path) / 2**20,
+            size=(height, width),
+            dtype=np.uint8, # Placeholder
+            bit_depth=8, # Placeholder
+            color_model="rgb",
+            fps=fps,
+            frame_count=frame_count,
+            reduced_frame_count=0,
+            codec=fourcc_str,
+        )
+
     def __init__(
         self,
         size_ratio: float = 1.0,
@@ -62,14 +332,26 @@ class DataLoader:
             self.mask = (mask[1], mask[0])
         self.crop = crop
 
-    def load(self, path: Optional[Path] = None) -> ImageData:
+    def load(
+        self,
+        path: Optional[Path] = None,
+        progress_callback: Optional[Callable[[int], None]] = None,
+        message_callback: Optional[Callable[[str], None]] = None,
+        **kwargs,
+    ) -> ImageData:
         if path is None:
             return DataLoader.from_text("  Load data", 50, 100)
 
         if path.is_dir():
-            return self._load_folder(path)
+            return self._load_folder(
+                path,
+                progress_callback=progress_callback,
+                message_callback=message_callback,
+            )
         else:
-            return self._load_file(path)
+            if DataLoader._is_video(path):
+                return self._load_video(path, progress_callback=progress_callback, **kwargs)
+            return self._load_file(path, progress_callback=progress_callback)
 
     def _log_arguments(self, data: ImageData) -> None:
         args = [
@@ -86,7 +368,13 @@ class DataLoader:
         string += "  " + 20*"-"
         log(string, color="green")
 
-    def _load_file(self, path: Path) -> ImageData:
+    def _load_file(
+        self,
+        path: Path,
+        progress_callback: Optional[Callable[[int], None]] = None,
+    ) -> ImageData:
+        if progress_callback is not None:
+            progress_callback(100)
         if DataLoader._is_array(path):
             return self._load_array(path)
         elif DataLoader._is_image(path):
@@ -95,6 +383,8 @@ class DataLoader:
             self._log_arguments(done)
             return done
         elif DataLoader._is_video(path):
+            # This path is generally not reached if called via load() for video,
+            # but kept for compatibility.
             return self._load_video(path)
         elif DataLoader._is_dicom(path):
             image, metadata = self._load_dicom_file(path)
@@ -108,7 +398,14 @@ class DataLoader:
                 color=(255, 0, 0),
             )
 
-    def _load_folder(self, path: Path) -> ImageData:
+    def _load_folder(
+        self,
+        path: Path,
+        progress_callback: Optional[Callable[[int], None]] = None,
+        message_callback: Optional[Callable[[str], None]] = None,
+    ) -> ImageData:
+        if progress_callback is not None:
+            progress_callback(0)
         content = [f for f in path.iterdir() if not f.is_dir()]
         content = natsorted(content)
         suffixes = {s: len([f for f in content if f.suffix == s])
@@ -150,21 +447,31 @@ class DataLoader:
         content = content[::int(np.ceil(1 / ratio))]
         log(f"Loading {len(content)}/{full_dataset_size} files", color="green")
 
-        if (len(content) > settings.get("default/multicore_files_threshold")
-                or total_size_estimate >
-                    settings.get("default/multicore_size_threshold")):
+        n_content = len(content)
+        use_multicore = (
+            len(content) > settings.get("default/multicore_files_threshold")
+            or total_size_estimate
+            > settings.get("default/multicore_size_threshold")
+        )
+        if use_multicore:
+            if message_callback is not None:
+                message_callback("Loading in parallel (progress not available)...")
             with Pool(cpu_count()) as pool:
                 results = pool.starmap(
                     load_function,
                     [(f, ) for f in content],
                 )
             matrices, metadata = zip(*results)
+            if progress_callback is not None:
+                progress_callback(100)
         else:
             matrices, metadata = [], []
-            for f in content:
+            for i, f in enumerate(content):
                 matrix, meta = load_function(f)
                 matrices.append(matrix)
                 metadata.append(meta)
+                if progress_callback is not None and n_content > 0:
+                    progress_callback(int(100 * (i + 1) / n_content))
 
         try:
             matrices = np.stack(matrices)
@@ -236,7 +543,26 @@ class DataLoader:
         )
         return image, metadata
 
-    def _load_video(self, path: Path) -> ImageData:
+    def _load_video(
+        self,
+        path: Path,
+        frame_range: Optional[tuple[int, int]] = None,
+        step: Optional[int] = None,
+        size_ratio: Optional[float] = None,
+        grayscale: Optional[bool] = None,
+        progress_callback: Optional[Callable[[int], None]] = None,
+        **_kwargs,
+    ) -> ImageData:
+        # Override defaults if provided
+        _size_ratio = size_ratio if size_ratio is not None else self.size_ratio
+        _grayscale = grayscale if grayscale is not None else self.grayscale
+
+        # Determine subset ratio logic. If 'step' is provided, it overrides subset_ratio
+        if step is not None:
+            _subset_ratio = 1.0 / step
+        else:
+            _subset_ratio = self.subset_ratio
+
         cap = cv2.VideoCapture(str(path))
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -246,62 +572,71 @@ class DataLoader:
         fourcc_str = "".join([chr((codec >> 8 * i) & 0xFF) for i in range(4)])
         cap.release()
 
-        memory_estimate = width * height * 3 * frame_count
-        log(f"Estimated size to load: {memory_estimate / 2**20:.2f} MB")
-        adjusted_ratio = adjust_ratio_for_memory(
-            memory_estimate,
-            self.max_ram,
-        )
-
-        ratio = min(self.subset_ratio, adjusted_ratio)
-        if ratio == self.subset_ratio:
-            log("No adjustment to ratio required")
+        # If manual frame_range not provided, use self.crop
+        if frame_range is None:
+            if self.crop is not None:
+                start_f = self.crop[0]
+                end_f = self.crop[1]
+            else:
+                start_f = 0
+                end_f = frame_count - 1
         else:
-            self.subset_ratio = ratio
-            log(f"Adjusted ratio for subset extraction: {ratio:.4f}",
-                color="orange")
+            start_f = frame_range[0]
+            end_f = frame_range[1]
 
-        skip_frames = int(1 / ratio) - 1
+        # Ensure bounds
+        start_f = max(0, start_f)
+        end_f = min(frame_count - 1, end_f)
+        total_frames_target = max(0, end_f - start_f + 1)
+
+        # If parameters were not overridden by user dialog, perform auto-adjust check
+        if step is None and size_ratio is None:
+            # ImageData keeps uint8 by default; account for resize and grayscale
+            resized_h = int(height * _size_ratio)
+            resized_w = int(width * _size_ratio)
+            channels = 1 if _grayscale else 3
+            memory_estimate = resized_h * resized_w * channels * total_frames_target
+            log(f"Estimated size to load: {memory_estimate / 2**20:.2f} MB")
+            adjusted_ratio = adjust_ratio_for_memory(
+                memory_estimate,
+                self.max_ram,
+            )
+            ratio = min(_subset_ratio, adjusted_ratio)
+            if ratio == _subset_ratio:
+                log("No adjustment to ratio required")
+            else:
+                _subset_ratio = ratio
+                log(f"Adjusted ratio for subset extraction: {ratio:.4f}",
+                    color="orange")
+
+        skip_frames = int(1 / _subset_ratio) - 1
+        step_val = skip_frames + 1
 
         video = cv2.VideoCapture(str(path))
         frames = None
         metadata = []
 
-        frame_number = 0
-        crop_start = self.crop[0] if self.crop is not None else 0
-        crop_range = (
-            self.crop[1]-self.crop[0]+1 if self.crop is not None else -1
-        )
+        # Seek logic
+        # If start_f is large, seeking is better than reading
+        if start_f > 0:
+            video.set(cv2.CAP_PROP_POS_FRAMES, start_f)
 
-        expected_frames = crop_range
-        if expected_frames == -1:
-            if frame_count > 0:
-                expected_frames = int(np.ceil(frame_count / (skip_frames + 1)))
-            else:
-                expected_frames = 100
+        frame_number = start_f # Tracks the source video frame number
 
-        while crop_start > 0:
-            ret, frame = video.read()
-            if not ret:
-                break
-            for _ in range(skip_frames):
-                video.grab()
-            crop_start -= 1
+        # Expected frames based on step
+        expected_frames = int(np.ceil(total_frames_target / step_val))
         
         current_idx = 0
-        while True:
-            if crop_range != -1 and frame_number == crop_range:
-                break
+        while frame_number <= end_f:
             ret, frame = video.read()
             if not ret:
                 break
 
-            frame_number += 1  # current frame number starting from 0
             image = resize_and_convert(
                 cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    if not self.grayscale else
+                    if not _grayscale else
                     cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY),
-                self.size_ratio,
+                _size_ratio,
                 self.convert_to_8_bit,
             )
             if self.mask is not None:
@@ -330,9 +665,23 @@ class DataLoader:
                 codec=fourcc_str,
             ))
             current_idx += 1
-            # skip the next `skip_frames` number of frames without decoding.
+            frame_number += 1
+
+            # Progress reporting
+            if progress_callback and expected_frames > 0 and current_idx % 10 == 0:
+                progress = int((current_idx / expected_frames) * 100)
+                progress_callback(min(100, progress))
+
+            # Skip frames
+            skipped_successfully = True
             for _ in range(skip_frames):
-                video.grab()
+                if not video.grab():
+                    skipped_successfully = False
+                    break
+                frame_number += 1
+
+            if not skipped_successfully:
+                break
 
         video.release()
         
