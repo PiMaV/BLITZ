@@ -64,21 +64,21 @@ class ImageData:
         if src == "aggregate" and step.get("bounds") is not None:
             b0, b1 = step["bounds"]
             method = step.get("method", "MEAN")
-            ref = ops.get(method)(image[b0 : b1 + 1]).astype(np.float64)
+            ref = ops.get(method)(image[b0 : b1 + 1]).astype(np.float32)
             return ref
         if src == "file" and step.get("reference") is not None:
             ref_img = step["reference"]._image
             if ref_img.shape[0] != 1 or ref_img.shape[1:] != image.shape[1:]:
                 return None
-            return ref_img.astype(np.float64)
+            return ref_img.astype(np.float32)
         return None
 
     def _apply_ops_pipeline(self, image: np.ndarray) -> np.ndarray:
-        """Apply subtract and divide steps. Returns float array."""
+        """Apply subtract and divide steps. Returns float32 array."""
         pipeline = self._ops_pipeline
         if not pipeline:
-            return image.astype(np.float64) if image.dtype != np.float64 else image
-        image = image.astype(np.float64)
+            return image.astype(np.float32) if image.dtype != np.float32 else image
+        image = image.astype(np.float32)
         eps = 1e-10
         for op_name in ("subtract", "divide"):
             step = pipeline.get(op_name)
@@ -87,23 +87,25 @@ class ImageData:
             ref = self._compute_ref(step, image)
             if ref is None:
                 continue
-            amount = step.get("amount", 1.0)
+            amount = np.float32(step.get("amount", 1.0))
             if amount <= 0:
                 continue
             if op_name == "subtract":
                 ref_scaled = amount * ref
                 if ref.shape[0] == 1:
-                    image = image - ref_scaled
+                    image -= ref_scaled
                 else:
-                    image = image[: ref.shape[0]] - ref_scaled
+                    image = image[: ref.shape[0]]
+                    image -= ref_scaled
             else:  # divide: blend denominator towards 1 when amount<1
-                denom = amount * ref + (1.0 - amount)
-                denom = np.where(denom != 0, denom, np.nan)
+                denom = amount * ref + (np.float32(1.0) - amount)
+                denom = np.where(denom != 0, denom, np.float32(np.nan))
                 if ref.shape[0] == 1:
-                    image = image / denom
+                    image /= denom
                 else:
-                    image = image[: ref.shape[0]] / denom
-                image = np.nan_to_num(image, nan=0.0, posinf=0.0, neginf=0.0)
+                    image = image[: ref.shape[0]]
+                    image /= denom
+                np.nan_to_num(image, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
         return image
 
     def _invalidate_result(self) -> None:
