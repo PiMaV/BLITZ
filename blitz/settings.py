@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from PyQt5.QtCore import QMetaObject, QSettings, pyqtBoundSignal
+from PyQt6.QtCore import QMetaObject, QSettings, pyqtBoundSignal
 
 from .tools import log
 

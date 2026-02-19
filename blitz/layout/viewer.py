@@ -3,8 +3,8 @@ from typing import Any, Callable, Optional
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt5.QtCore import QPoint, pyqtSignal
-from PyQt5.QtGui import QDropEvent
+from PyQt6.QtCore import QPoint, pyqtSignal
+from PyQt6.QtGui import QDropEvent
 from pyqtgraph import RectROI
 from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 

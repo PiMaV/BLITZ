@@ -1,9 +1,9 @@
 import json
 
 import pyqtgraph as pg
-from PyQt5.QtCore import QFile, Qt, QTimer
-from PyQt5.QtGui import QFont, QIcon
-from PyQt5.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox,
+from PyQt6.QtCore import QFile, Qt, QTimer
+from PyQt6.QtGui import QAction, QFont, QIcon
+from PyQt6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox,
                              QFrame, QGridLayout, QGroupBox, QHBoxLayout,
                              QLabel, QLayout, QLineEdit, QMenu, QMenuBar,
                              QPushButton, QRadioButton, QScrollArea,
@@ -131,7 +131,7 @@ class UI_MainWindow(QWidget):
         # this decoy prevents an error being thrown in the ImageView
         timeline_decoy = pg.PlotWidget(self.image_viewer.ui.splitter)
         timeline_decoy.hide()
-        self.timeline_splitter = QSplitter(Qt.Horizontal)
+        self.timeline_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.timeline_splitter.addWidget(self.roi_plot)
         self.timeline_splitter.setStretchFactor(0, 1)
         timeline_container = QWidget()
@@ -217,8 +217,8 @@ class UI_MainWindow(QWidget):
         self.blocking_status.setStyleSheet(
             "background-color: rgb(45, 45, 55); color: rgb(120, 120, 130);"
         )
-        self.blocking_status.setFont(QFont("Segoe UI", 10, QFont.Bold))
-        lut_splitter = QSplitter(Qt.Horizontal)
+        self.blocking_status.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        lut_splitter = QSplitter(Qt.Orientation.Horizontal)
         lut_splitter.addWidget(lut_left)
         lut_splitter.addWidget(self.blocking_status)
         lut_splitter.setStretchFactor(0, 1)
@@ -480,7 +480,7 @@ class UI_MainWindow(QWidget):
         sub_lay.addLayout(sub_src_row)
         sub_amt_row = QHBoxLayout()
         sub_amt_row.addWidget(QLabel("Amount:"))
-        self.slider_ops_subtract = QSlider(Qt.Horizontal)
+        self.slider_ops_subtract = QSlider(Qt.Orientation.Horizontal)
         self.slider_ops_subtract.setRange(0, 100)
         self.slider_ops_subtract.setValue(100)
         self.label_ops_subtract = QLabel("100%")
@@ -501,7 +501,7 @@ class UI_MainWindow(QWidget):
         div_lay.addLayout(div_src_row)
         div_amt_row = QHBoxLayout()
         div_amt_row.addWidget(QLabel("Amount:"))
-        self.slider_ops_divide = QSlider(Qt.Horizontal)
+        self.slider_ops_divide = QSlider(Qt.Orientation.Horizontal)
         self.slider_ops_divide.setRange(0, 100)
         self.slider_ops_divide.setValue(0)
         self.label_ops_divide = QLabel("0%")
@@ -771,13 +771,13 @@ class UI_MainWindow(QWidget):
 
         # --- Bench ---
         bench_layout = QVBoxLayout()
-        bench_layout.setAlignment(Qt.AlignTop)
+        bench_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         bench_label = QLabel("Bench")
         bench_label.setStyleSheet(style_heading)
         bench_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         bench_layout.addWidget(bench_label)
         self.bench_sparklines = BenchSparklines()
-        bench_layout.addWidget(self.bench_sparklines, 0, Qt.AlignTop)
+        bench_layout.addWidget(self.bench_sparklines, 0, Qt.AlignmentFlag.AlignTop)
         self.label_bench_raw = QLabel("Raw matrix: —")
         bench_layout.addWidget(self.label_bench_raw)
         self.label_bench_result = QLabel("Result matrix: —")

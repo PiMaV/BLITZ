@@ -5,7 +5,7 @@ import types
 from pathlib import Path
 from unittest.mock import MagicMock
 
-# Mock PyQt5 more realistically
+# Mock PyQt6 more realistically
 class MockQObject:
     def __init__(self, *args, **kwargs):
         pass
@@ -20,17 +20,17 @@ def mock_module(name):
 
 def _install_mocks():
     """Install sys.modules mocks; returns dict of original values for cleanup."""
-    pyqt5_core = MagicMock()
-    pyqt5_core.QObject = MockQObject
-    pyqt5_core.pyqtSignal = mock_pyqtSignal
-    pyqt5_core.QThread = MagicMock
+    pyqt6_core = MagicMock()
+    pyqt6_core.QObject = MockQObject
+    pyqt6_core.pyqtSignal = mock_pyqtSignal
+    pyqt6_core.QThread = MagicMock
 
     orig = {}
     mods = [
-        ('PyQt5', MagicMock()),
-        ('PyQt5.QtCore', pyqt5_core),
-        ('PyQt5.QtWidgets', MagicMock()),
-        ('PyQt5.QtGui', MagicMock()),
+        ('PyQt6', MagicMock()),
+        ('PyQt6.QtCore', pyqt6_core),
+        ('PyQt6.QtWidgets', MagicMock()),
+        ('PyQt6.QtGui', MagicMock()),
         ('requests', MagicMock()),
         ('requests.exceptions', MagicMock()),
         ('socketio', MagicMock()),

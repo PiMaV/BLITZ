@@ -8,7 +8,7 @@ Fuer Standard vs. Full Build, Loader/Converter/Handler und die Dependency-Regel 
 
 ## Overview
 
-BLITZ is a Python-based image viewer and analysis tool built with **PyQt5** and **PyQtGraph**. It is designed to handle large datasets by loading them into memory (RAM) and offering efficient slicing, aggregation, and visualization.
+BLITZ is a Python-based image viewer and analysis tool built with **PyQt6** and **PyQtGraph**. It is designed to handle large datasets by loading them into memory (RAM) and offering efficient slicing, aggregation, and visualization.
 
 ## Directory Structure
 

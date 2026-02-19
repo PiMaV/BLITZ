@@ -4,7 +4,7 @@ from pathlib import Path
 
 import requests
 import socketio
-from PyQt5.QtCore import QObject, QThread, pyqtSignal
+from PyQt6.QtCore import QObject, QThread, pyqtSignal
 from requests.exceptions import ConnectTimeout
 from socketio.exceptions import ConnectionError, TimeoutError
 

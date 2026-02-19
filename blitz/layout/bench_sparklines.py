@@ -3,8 +3,8 @@ from collections import deque
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 
 def _tiny_plot(parent: QWidget, color: tuple[int, int, int]) -> tuple[pg.PlotWidget, pg.PlotDataItem]:
@@ -32,7 +32,7 @@ class BenchSparklines(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 2, 0, 2)
         layout.setSpacing(4)
-        layout.setAlignment(Qt.AlignTop)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         # Zeile 1: CPU
         row1 = QWidget()

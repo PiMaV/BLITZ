@@ -3,8 +3,8 @@ from typing import Any, Optional
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt5.QtCore import QThread, pyqtSignal
-from PyQt5.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                              QDoubleSpinBox, QFormLayout, QFrame, QHBoxLayout,
                              QLabel, QPushButton, QSpinBox, QVBoxLayout, QWidget)
 

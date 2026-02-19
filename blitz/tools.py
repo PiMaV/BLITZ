@@ -4,9 +4,9 @@ from typing import Any, Optional, Self, Sequence
 
 import numpy as np
 import psutil
-from PyQt5.QtCore import QTimer
-from PyQt5.QtGui import QColor, QFont, QTextCharFormat
-from PyQt5.QtWidgets import (QApplication, QDialog, QLabel, QProgressBar,
+from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QColor, QFont, QTextCharFormat
+from PyQt6.QtWidgets import (QApplication, QDialog, QLabel, QProgressBar,
                              QTextEdit, QVBoxLayout)
 
 from . import settings

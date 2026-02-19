@@ -2,9 +2,9 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from PyQt5.QtCore import QCoreApplication, Qt, QTimer, QUrl
-from PyQt5.QtGui import QDesktopServices, QKeySequence
-from PyQt5.QtWidgets import QApplication, QFileDialog, QMainWindow, QShortcut
+from PyQt6.QtCore import QCoreApplication, Qt, QTimer, QUrl
+from PyQt6.QtGui import QDesktopServices, QKeySequence, QShortcut
+from PyQt6.QtWidgets import QApplication, QFileDialog, QMainWindow
 from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 
 from .. import settings
