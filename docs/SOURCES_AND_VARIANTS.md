@@ -26,7 +26,7 @@ BLITZ wird in zwei Varianten ausgeliefert:
 - `csv`, `json`, `os`, `pathlib`, ... (stdlib)
 - `numpy`
 - `opencv-python-headless` (cv2)
-- `PyQt5`
+- `PyQt6`
 - `pyqtgraph`
 - `natsort`
 - `requests`

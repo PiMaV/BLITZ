@@ -2,14 +2,14 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from PyQt5.QtCore import QCoreApplication, Qt, QTimer, QUrl
-from PyQt5.QtGui import QDesktopServices, QKeySequence
-from PyQt5.QtWidgets import QApplication, QFileDialog, QMainWindow, QShortcut
+from PyQt6.QtCore import QCoreApplication, Qt, QTimer, QUrl
+from PyQt6.QtGui import QDesktopServices, QKeySequence, QShortcut
+from PyQt6.QtWidgets import QApplication, QFileDialog, QMainWindow
 from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 
 from .. import settings
 from ..data.image import ImageData
-from ..data.load import DataLoader, get_image_metadata
+from ..data.load import DataLoader, get_image_metadata, get_sample_format
 from ..data.web import WebDataLoader
 from ..tools import (LoadingManager, format_size_mb, get_available_ram,
                      get_cpu_percent, get_disk_io_mbs, get_used_ram, log)
@@ -1188,6 +1188,34 @@ class MainWindow(QMainWindow):
 
         if isinstance(path, str):
             path = Path(path)
+        # Sofortiges Feedback bei Drop/Open (Scan von Ordnern kann laenger dauern)
+        lbl = self.ui.blocking_status
+        lbl.setText("SCAN")
+        lbl.setStyleSheet("background-color: rgb(140, 100, 60); color: white;")
+        QApplication.processEvents()
+
+        try:
+            project_file = path.parent / (path.name.split(".")[0] + ".blitz")
+            if path.suffix == ".blitz":
+                self.load_project(path)
+            elif self.ui.checkbox_sync_file.isChecked() and project_file.exists():
+                self.load_project(project_file)
+            else:
+                self.load_images(path)
+                if self.ui.checkbox_sync_file.isChecked():
+                    settings.create_project(
+                        path.parent / (path.name.split(".")[0] + ".blitz")
+                    )
+                    settings.set_project("path", path)
+                    self.sync_project_preloading()
+                    self.sync_project_postloading()
+        finally:
+            # IDLE falls LoadingManager nicht aktiv (z.B. Dialog abgebrochen)
+            if lbl.text() == "SCAN":
+                lbl.setText("IDLE")
+                lbl.setStyleSheet(
+                    "background-color: rgb(45, 45, 55); color: rgb(120, 120, 130);"
+                )
         project_file = path.parent / (path.name.split(".")[0] + ".blitz")
 
         if path.suffix == ".blitz":
@@ -1249,6 +1277,18 @@ class MainWindow(QMainWindow):
             settings.set("path", "")
 
     def load_images(self, path: Path) -> None:
+        # Bei 8-bit / Grayscale Quelle: Checkboxen direkt setzen
+        if (
+            DataLoader._is_video(path)
+            or (path.is_file() and DataLoader._is_image(path))
+            or (path.is_dir() and get_image_metadata(path) is not None)
+        ):
+            is_gray, is_uint8 = get_sample_format(path)
+            if is_uint8:
+                self.ui.checkbox_load_8bit.setChecked(True)
+            if is_gray:
+                self.ui.checkbox_load_grayscale.setChecked(True)
+
         params = {
             "size_ratio": self.ui.spinbox_load_size.value(),
             "subset_ratio": self.ui.spinbox_load_subset.value(),

@@ -18,7 +18,7 @@ classifiers = [
 dependencies = [
     "numpy>=2.0.2,<3",
     "opencv-python-headless>=4.10.0.84,<5",
-    "PyQt5>=5.15.11,<6",
+    "PyQt6>=6.0.0,<7",
     "natsort>=8.4.0,<9",
     "requests>=2.32.3,<3",
     "python-socketio>=5.11.4,<6",
@@ -28,10 +28,13 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pyinstaller>=6.16.0,<7", "pytest (>=9.0.2,<10.0.0)"]
+dev = [
+    "pyinstaller>=6.16.0,<7",
+    "pytest>=9.0.2",
+]
 
 [tool.uv]
-constraint-dependencies = ["PyQt5-Qt5==5.15.2"]
+constraint-dependencies = []
 
 [tool.uv.build-backend]
 module-root = ""

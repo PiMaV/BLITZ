@@ -3,8 +3,8 @@ import sys
 
 import pyqtgraph as pg
 import qdarkstyle
-from PyQt5.QtCore import QCoreApplication
-from PyQt5.QtWidgets import QApplication
+from PyQt6.QtCore import QCoreApplication
+from PyQt6.QtWidgets import QApplication
 
 from . import settings
 from .layout.main import MainWindow
@@ -16,12 +16,12 @@ def run() -> int:
     exit_code = 0
     restart_exit_code = settings.get("app/restart_exit_code")
     app = QApplication(sys.argv)
-    app.setStyleSheet(qdarkstyle.load_stylesheet(qt_api='pyqt5'))
+    app.setStyleSheet(qdarkstyle.load_stylesheet(qt_api='pyqt6'))
     while True:
         app = QCoreApplication.instance()
         main_window = MainWindow()
         main_window.show()
-        exit_code = app.exec_()
+        exit_code = app.exec()
         if exit_code != restart_exit_code:
             break
         main_window.deleteLater()

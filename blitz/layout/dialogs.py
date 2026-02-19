@@ -3,8 +3,8 @@ from typing import Any, Optional
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt5.QtCore import QThread, pyqtSignal
-from PyQt5.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                              QDoubleSpinBox, QFormLayout, QFrame, QHBoxLayout,
                              QLabel, QPushButton, QSpinBox, QVBoxLayout, QWidget)
 
@@ -83,19 +83,16 @@ class VideoLoadOptionsDialog(QDialog):
         self._preview_options_changed = False
         self._setup_ui()
         self._initial_mask_rel = initial_params.get("mask_rel") if initial_params else None
+        is_gray, is_uint8 = get_sample_format(path)
         if initial_params:
             self.spin_resize.setValue(
                 int(initial_params.get("size_ratio", 1.0) * 100),
             )
             self.spin_step.setValue(initial_params.get("step", 1))
-            self.chk_grayscale.setChecked(
-                initial_params.get("grayscale", False),
-            )
-            self.chk_8bit.setChecked(
-                initial_params.get("convert_to_8_bit", False),
-            )
+            # Grayscale/8-bit: bei entsprechender Quelle immer setzen
+            self.chk_grayscale.setChecked(is_gray or initial_params.get("grayscale", False))
+            self.chk_8bit.setChecked(is_uint8 or initial_params.get("convert_to_8_bit", False))
         else:
-            is_gray, is_uint8 = get_sample_format(path)
             self.chk_grayscale.setChecked(is_gray)
             self.chk_8bit.setChecked(is_uint8)
         self._sample_bytes = get_sample_bytes_per_pixel(self._path)
@@ -179,7 +176,7 @@ class VideoLoadOptionsDialog(QDialog):
         preview_opts.addStretch()
         layout.addLayout(preview_opts)
         preview_frame = QFrame()
-        preview_frame.setFrameStyle(QFrame.StyledPanel)
+        preview_frame.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Sunken)
         preview_layout = QVBoxLayout(preview_frame)
         self.lbl_preview_status = QLabel("Loading preview...")
         preview_layout.addWidget(self.lbl_preview_status)
@@ -421,20 +418,17 @@ class ImageLoadOptionsDialog(QDialog):
         self._preview_options_changed = False
         self._setup_ui()
         self._initial_mask_rel = initial_params.get("mask_rel") if initial_params else None
+        is_gray, is_uint8 = get_sample_format(path)
         if initial_params:
             self.spin_resize.setValue(
                 int(initial_params.get("size_ratio", 1.0) * 100),
             )
-            self.chk_grayscale.setChecked(
-                initial_params.get("grayscale", False),
-            )
-            self.chk_8bit.setChecked(
-                initial_params.get("convert_to_8_bit", False),
-            )
+            # Grayscale/8-bit: bei entsprechender Quelle immer setzen
+            self.chk_grayscale.setChecked(is_gray or initial_params.get("grayscale", False))
+            self.chk_8bit.setChecked(is_uint8 or initial_params.get("convert_to_8_bit", False))
             if self._is_folder and "subset_ratio" in initial_params:
                 self.spin_subset.setValue(initial_params["subset_ratio"])
         else:
-            is_gray, is_uint8 = get_sample_format(path)
             self.chk_grayscale.setChecked(is_gray)
             self.chk_8bit.setChecked(is_uint8)
         self._sample_bytes = get_sample_bytes_per_pixel(path)
@@ -509,7 +503,7 @@ class ImageLoadOptionsDialog(QDialog):
         preview_opts.addStretch()
         layout.addLayout(preview_opts)
         preview_frame = QFrame()
-        preview_frame.setFrameStyle(QFrame.StyledPanel)
+        preview_frame.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Sunken)
         preview_layout = QVBoxLayout(preview_frame)
         self.lbl_preview_status = QLabel("Loading preview...")
         preview_layout.addWidget(self.lbl_preview_status)

@@ -3,10 +3,10 @@ from unittest.mock import MagicMock
 import os
 
 # Mock modules BEFORE importing the application code
-sys.modules['PyQt5'] = MagicMock()
-sys.modules['PyQt5.QtCore'] = MagicMock()
-sys.modules['PyQt5.QtWidgets'] = MagicMock()
-sys.modules['PyQt5.QtGui'] = MagicMock()
+sys.modules['PyQt6'] = MagicMock()
+sys.modules['PyQt6.QtCore'] = MagicMock()
+sys.modules['PyQt6.QtWidgets'] = MagicMock()
+sys.modules['PyQt6.QtGui'] = MagicMock()
 sys.modules['psutil'] = MagicMock()
 sys.modules['pyqtgraph'] = MagicMock()
 

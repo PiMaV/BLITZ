@@ -10,9 +10,9 @@ _PEN_MIN_PER_CROSSHAIR = pg.mkPen((60, 160, 160), width=2)
 _PEN_MAX_PER_CROSSHAIR = pg.mkPen((100, 200, 200), width=2)
 _PEN_MIN_PER_DATASET = pg.mkPen((60, 80, 160), width=2)
 _PEN_MAX_PER_DATASET = pg.mkPen((100, 130, 220), width=2)
-from PyQt5.QtCore import QPointF, QSize, Qt
-from PyQt5.QtGui import QKeyEvent, QMouseEvent, QShowEvent, QWheelEvent
-from PyQt5.QtWidgets import QSizePolicy, QWidget, QLineEdit
+from PyQt6.QtCore import QPointF, QSize, Qt
+from PyQt6.QtGui import QKeyEvent, QMouseEvent, QShowEvent, QWheelEvent
+from PyQt6.QtWidgets import QSizePolicy, QWidget, QLineEdit
 
 from .viewer import ImageViewer
 from .. import settings
@@ -103,7 +103,7 @@ class TimePlot(pg.PlotWidget):
                         or self.norm_range.childItems()[1].mouseHovering))
                 and not self._is_hovering_crop()):
             x = self.plotItem.vb.mapSceneToView(  # type: ignore
-                event.pos()
+                event.position()
             ).x()
             self.image_viewer.setCurrentIndex(round(x))
             event.accept()

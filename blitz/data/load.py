@@ -164,8 +164,28 @@ def get_image_preview(
     return out
 
 
+def _is_effectively_grayscale(arr: np.ndarray, max_samples: int = 10000) -> bool:
+    """Prueft, ob 3-Kanal-Bild (BGR) effektiv Graustufen ist (B==G==R)."""
+    if arr.ndim != 3 or arr.shape[2] != 3:
+        return arr.ndim == 2 or (arr.ndim == 3 and arr.shape[2] == 1)
+    h, w = arr.shape[:2]
+    n_pix = h * w
+    if n_pix <= max_samples:
+        return (
+            np.array_equal(arr[:, :, 0], arr[:, :, 1])
+            and np.array_equal(arr[:, :, 1], arr[:, :, 2])
+        )
+    step = max(1, int(np.sqrt(n_pix / max_samples)))
+    sampled = arr[::step, ::step, :]
+    return (
+        np.array_equal(sampled[:, :, 0], sampled[:, :, 1])
+        and np.array_equal(sampled[:, :, 1], sampled[:, :, 2])
+    )
+
+
 def get_sample_format(path: Path) -> tuple[bool, bool]:
-    """Quick sample to detect if source is grayscale and uint8. Returns (is_grayscale, is_uint8)."""
+    """Quick sample to detect if source is grayscale and uint8. Returns (is_grayscale, is_uint8).
+    Grayscale: echte 1-Kanal-Bilder oder RGB/BGR mit identischen Kanalwerten (z.B. JPG als Grau)."""
     if path.is_file():
         if DataLoader._is_video(path):
             cap = cv2.VideoCapture(str(path))
@@ -175,13 +195,13 @@ def get_sample_format(path: Path) -> tuple[bool, bool]:
             cap.release()
             if not ret or frame is None:
                 return False, False
-            is_gray = frame.ndim == 2 or (frame.ndim == 3 and frame.shape[2] == 1)
+            is_gray = _is_effectively_grayscale(frame)
             return is_gray, frame.dtype == np.uint8
         if DataLoader._is_image(path):
             img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
             if img is None:
                 return False, False
-            is_gray = img.ndim == 2 or (img.ndim == 3 and img.shape[2] == 1)
+            is_gray = _is_effectively_grayscale(img)
             return is_gray, img.dtype == np.uint8
     else:
         content = [f for f in path.iterdir() if not f.is_dir() and DataLoader._is_image(f)]
@@ -217,7 +237,12 @@ def get_sample_format_display(path: Path) -> str:
         return get_sample_format_display(content[0])
     if arr is None:
         return "Unknown"
-    color = "Grayscale" if arr.ndim == 2 or (arr.ndim == 3 and arr.shape[2] == 1) else "RGB"
+    if arr.ndim == 2 or (arr.ndim == 3 and arr.shape[2] == 1):
+        color = "Grayscale"
+    elif arr.ndim == 3 and arr.shape[2] == 3 and _is_effectively_grayscale(arr):
+        color = "RGB (effectively grayscale)"
+    else:
+        color = "RGB"
     bits = arr.dtype.itemsize * 8
     return f"{color}, {bits} bit"
 

@@ -3,8 +3,8 @@ from typing import Any, Callable, Optional
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt5.QtCore import QPoint, pyqtSignal
-from PyQt5.QtGui import QDropEvent
+from PyQt6.QtCore import QPoint, QPointF, pyqtSignal
+from PyQt6.QtGui import QDropEvent
 from pyqtgraph import RectROI
 from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 
@@ -439,7 +439,8 @@ class ImageViewer(pg.ImageView):
                 pos = self.ui.graphicsView.lastMousePos
             else:
                 pos = QPoint(0, 0)
-        img_coords = self.view.vb.mapSceneToView(pos)
+        pt = QPointF(pos) if hasattr(pos, "x") else QPointF(pos[0], pos[1])
+        img_coords = self.view.vb.mapSceneToView(pt)
         x, y = int(img_coords.x()), int(img_coords.y())
         if (0 <= x < self.image.shape[1] and 0 <= y < self.image.shape[2]):
             pixel_value = self.image[self.currentIndex, x, y]
