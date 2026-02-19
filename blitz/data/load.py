@@ -10,6 +10,14 @@ from natsort import natsorted
 
 from .. import settings
 from ..tools import log
+
+
+def _safe_load_one(load_func, path: Path):
+    """Call load_func(path); return result or None on failure. Used for corrupt-file skip."""
+    try:
+        return load_func(path)
+    except Exception:
+        return None
 from .image import ImageData, MetaData, VideoMetaData
 from .tools import (adjust_ratio_for_memory, resize_and_convert,
                     resize_and_convert_to_8_bit)
@@ -405,13 +413,31 @@ class DataLoader:
             content = content[self.crop[0]:self.crop[1]+1]
 
         if DataLoader._is_image(content[0]):
-            sample, _ = self._load_image(content[0])
+            sample_result = _safe_load_one(self._load_image, content[0])
+            if sample_result is None:
+                for f in content[1:]:
+                    sample_result = _safe_load_one(self._load_image, f)
+                    if sample_result is not None:
+                        break
+                if sample_result is None:
+                    log("All image files could not be loaded (corrupt?)", color="red")
+                    return DataLoader.from_text("All files corrupt", color=(255, 0, 0))
+            sample, _ = sample_result
             total_size_estimate = len(content) * self.size_ratio**2 * (
                 sample.size if self.convert_to_8_bit else sample.nbytes
             )
             load_function = self._load_image
         elif DataLoader._is_array(content[0]):
-            sample, _ = self._load_single_array(content[0])
+            sample_result = _safe_load_one(self._load_single_array, content[0])
+            if sample_result is None:
+                for f in content[1:]:
+                    sample_result = _safe_load_one(self._load_single_array, f)
+                    if sample_result is not None:
+                        break
+                if sample_result is None:
+                    log("All array files could not be loaded (corrupt?)", color="red")
+                    return DataLoader.from_text("All files corrupt", color=(255, 0, 0))
+            sample, _ = sample_result
             total_size_estimate = sample.nbytes * len(content)
             load_function = self._load_single_array
         else:
@@ -440,20 +466,37 @@ class DataLoader:
                 message_callback("Loading in parallel (progress not available)...")
             with Pool(cpu_count()) as pool:
                 results = pool.starmap(
-                    load_function,
-                    [(f, ) for f in content],
+                    _safe_load_one,
+                    [(load_function, f) for f in content],
                 )
+            failed = [content[i].name for i, r in enumerate(results) if r is None]
+            if failed:
+                log(f"Files {', '.join(failed)} could not be loaded (corrupt?)", color="orange")
+            results = [r for r in results if r is not None]
+            if not results:
+                log("No files could be loaded", color="red")
+                return DataLoader.from_text("All files corrupt", color=(255, 0, 0))
             matrices, metadata = zip(*results)
             if progress_callback is not None:
                 progress_callback(100)
         else:
             matrices, metadata = [], []
+            failed = []
             for i, f in enumerate(content):
-                matrix, meta = load_function(f)
-                matrices.append(matrix)
-                metadata.append(meta)
+                result = _safe_load_one(load_function, f)
+                if result is not None:
+                    matrix, meta = result
+                    matrices.append(matrix)
+                    metadata.append(meta)
+                else:
+                    failed.append(f.name)
                 if progress_callback is not None and n_content > 0:
                     progress_callback(int(100 * (i + 1) / n_content))
+            if failed:
+                log(f"Files {', '.join(failed)} could not be loaded (corrupt?)", color="orange")
+            if not matrices:
+                log("No files could be loaded", color="red")
+                return DataLoader.from_text("All files corrupt", color=(255, 0, 0))
 
         try:
             matrices = np.stack(matrices)

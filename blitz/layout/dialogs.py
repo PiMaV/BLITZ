@@ -10,11 +10,22 @@ from PyQt5.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
 
 from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 
+from ..data.converters.ascii import (
+    DELIMITERS,
+    estimate_ascii_datatype,
+    first_col_looks_like_row_number,
+    get_ascii_files,
+    get_ascii_preview,
+    parse_ascii_raw,
+)
 from ..data.load import (get_image_metadata, get_image_preview,
                          get_sample_bytes_per_pixel, get_sample_format,
                          get_sample_format_display, get_video_preview)
 from ..data.image import VideoMetaData
 from ..tools import get_available_ram
+
+RAW_PREVIEW_MAX_CHARS = 80
+RAW_PREVIEW_MAX_LINES = 5
 
 
 def _plasma_lut() -> np.ndarray:
@@ -69,6 +80,7 @@ class VideoLoadOptionsDialog(QDialog):
         self._preview: Optional[np.ndarray] = None
         self._roi: Optional[pg.RectROI] = None
         self._preview_loader: Optional[_PreviewLoader] = None
+        self._preview_options_changed = False
         self._setup_ui()
         self._initial_mask_rel = initial_params.get("mask_rel") if initial_params else None
         if initial_params:
@@ -160,12 +172,9 @@ class VideoLoadOptionsDialog(QDialog):
         self.chk_preview_norm.setChecked(True)
         self.chk_preview_norm.setToolTip("Min-max stretch for better visibility")
         preview_opts.addWidget(self.chk_preview_norm)
-        self.btn_preview_reload = QPushButton("Refresh")
-        self.btn_preview_reload.pressed.connect(self._start_preview_load)
         self.btn_roi_reset = QPushButton("Reset ROI")
         self.btn_roi_reset.setToolTip("Reset crop to full frame")
         self.btn_roi_reset.pressed.connect(self._reset_roi)
-        preview_opts.addWidget(self.btn_preview_reload)
         preview_opts.addWidget(self.btn_roi_reset)
         preview_opts.addStretch()
         layout.addLayout(preview_opts)
@@ -206,10 +215,18 @@ class VideoLoadOptionsDialog(QDialog):
         self.chk_grayscale.toggled.connect(self._update_estimates)
         self.chk_grayscale.toggled.connect(self._on_grayscale_changed)
         self.chk_8bit.toggled.connect(self._update_estimates)
+        self.cmb_preview_mode.currentTextChanged.connect(self._on_preview_option_changed)
+        self.chk_preview_norm.toggled.connect(self._on_preview_option_changed)
 
     def _on_grayscale_changed(self):
         if self._preview_loader is None:
             self._start_preview_load()
+
+    def _on_preview_option_changed(self):
+        if self._preview_loader is not None:
+            self._preview_options_changed = True
+            return
+        self._start_preview_load()
 
     def _start_preview_load(self):
         if self._preview_loader is not None:
@@ -220,7 +237,6 @@ class VideoLoadOptionsDialog(QDialog):
         mode = "max" if self.cmb_preview_mode.currentIndex() == 0 else "single"
         normalize = self.chk_preview_norm.isChecked()
         self.lbl_preview_status.setText("Loading preview...")
-        self.btn_preview_reload.setEnabled(False)
         self._preview_loader = _PreviewLoader(
             self._path, size_ratio, grayscale,
             n_frames=n_frames, mode=mode, normalize=normalize
@@ -230,7 +246,10 @@ class VideoLoadOptionsDialog(QDialog):
 
     def _on_preview_loaded(self, img: np.ndarray | None):
         self._preview_loader = None
-        self.btn_preview_reload.setEnabled(True)
+        if getattr(self, "_preview_options_changed", False):
+            self._preview_options_changed = False
+            self._start_preview_load()
+            return
         if img is None:
             self.lbl_preview_status.setText("Preview failed")
             return
@@ -399,6 +418,7 @@ class ImageLoadOptionsDialog(QDialog):
         self._preview: Optional[np.ndarray] = None
         self._roi: Optional[pg.RectROI] = None
         self._preview_loader: Optional[_ImagePreviewLoader] = None
+        self._preview_options_changed = False
         self._setup_ui()
         self._initial_mask_rel = initial_params.get("mask_rel") if initial_params else None
         if initial_params:
@@ -482,12 +502,9 @@ class ImageLoadOptionsDialog(QDialog):
         self.chk_preview_norm.setChecked(True)
         self.chk_preview_norm.setToolTip("Min-max stretch for better visibility")
         preview_opts.addWidget(self.chk_preview_norm)
-        self.btn_preview_reload = QPushButton("Refresh")
-        self.btn_preview_reload.pressed.connect(self._start_preview_load)
         self.btn_roi_reset = QPushButton("Reset ROI")
         self.btn_roi_reset.setToolTip("Reset crop to full frame")
         self.btn_roi_reset.pressed.connect(self._reset_roi)
-        preview_opts.addWidget(self.btn_preview_reload)
         preview_opts.addWidget(self.btn_roi_reset)
         preview_opts.addStretch()
         layout.addLayout(preview_opts)
@@ -522,12 +539,20 @@ class ImageLoadOptionsDialog(QDialog):
         self.chk_grayscale.toggled.connect(self._update_estimates)
         self.chk_grayscale.toggled.connect(self._on_grayscale_changed)
         self.chk_8bit.toggled.connect(self._update_estimates)
+        self.cmb_preview_mode.currentTextChanged.connect(self._on_preview_option_changed)
+        self.chk_preview_norm.toggled.connect(self._on_preview_option_changed)
         if self._is_folder:
             self.spin_subset.valueChanged.connect(self._update_estimates)
 
     def _on_grayscale_changed(self):
         if self._preview_loader is None:
             self._start_preview_load()
+
+    def _on_preview_option_changed(self):
+        if self._preview_loader is not None:
+            self._preview_options_changed = True
+            return
+        self._start_preview_load()
 
     def _start_preview_load(self):
         if self._preview_loader is not None:
@@ -537,7 +562,6 @@ class ImageLoadOptionsDialog(QDialog):
         mode = "max" if self.cmb_preview_mode.currentIndex() == 0 else "single"
         normalize = self.chk_preview_norm.isChecked()
         self.lbl_preview_status.setText("Loading preview...")
-        self.btn_preview_reload.setEnabled(False)
         self._preview_loader = _ImagePreviewLoader(
             self._path, size_ratio, grayscale, mode=mode, normalize=normalize
         )
@@ -546,7 +570,10 @@ class ImageLoadOptionsDialog(QDialog):
 
     def _on_preview_loaded(self, img: np.ndarray | None):
         self._preview_loader = None
-        self.btn_preview_reload.setEnabled(True)
+        if getattr(self, "_preview_options_changed", False):
+            self._preview_options_changed = False
+            self._start_preview_load()
+            return
         if img is None:
             self.lbl_preview_status.setText("Preview failed")
             return
@@ -669,4 +696,318 @@ class ImageLoadOptionsDialog(QDialog):
             if x1 > x0 and y1 > y0 and (x1 - x0 < w or y1 - y0 < h):
                 out["mask"] = (slice(x0, x1), slice(y0, y1))
                 out["mask_rel"] = (x0 / w, y0 / h, x1 / w, y1 / h)
+        return out
+
+
+class AsciiLoadOptionsDialog(QDialog):
+    """Load options for ASCII files (.asc, .dat). Structure mirrors ImageLoadOptionsDialog."""
+
+    def __init__(
+        self,
+        path: Path,
+        metadata: dict,
+        parent: Optional[QWidget] = None,
+        initial_params: Optional[dict] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("ASCII Loading Options")
+        self._path = path
+        self.metadata = metadata
+        self._is_folder = metadata["file_count"] > 1
+        self._preview: Optional[np.ndarray] = None
+        self._roi: Optional[pg.RectROI] = None
+        self._last_auto_detect_path: Optional[Path] = None
+        self._used_initial_params = bool(initial_params)
+        self._setup_ui()
+        self._initial_mask_rel = initial_params.get("mask_rel") if initial_params else None
+        if initial_params:
+            self.spin_resize.setValue(int(initial_params.get("size_ratio", 1.0) * 100))
+            self.chk_8bit.setChecked(initial_params.get("convert_to_8_bit", False))
+            self.chk_row_number.blockSignals(True)
+            self.chk_row_number.setChecked(
+                initial_params.get("first_col_is_row_number", True)
+            )
+            delim = initial_params.get("delimiter", "\t")
+            name = next((k for k, v in DELIMITERS.items() if v == delim), "Tab")
+            idx = self.cmb_delimiter.findText(name)
+            if idx >= 0:
+                self.cmb_delimiter.setCurrentIndex(idx)
+            if self._is_folder and "subset_ratio" in initial_params:
+                self.spin_subset.setValue(initial_params["subset_ratio"])
+            self.chk_row_number.blockSignals(False)
+        else:
+            self.chk_8bit.setChecked(
+                self.metadata.get("convert_to_8_bit_suggest", True)
+            )
+        self.cmb_preview_mode.currentTextChanged.connect(self._refresh_preview)
+        self.chk_preview_norm.toggled.connect(self._refresh_preview)
+        self._update_estimates()
+        self._refresh_preview()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+
+        info_layout = QFormLayout()
+        self.lbl_file = QLabel(self.metadata["file_name"])
+        h, w = self.metadata["size"]
+        self.lbl_dims = QLabel(f"{h} x {w}")
+        self.lbl_count = QLabel(str(self.metadata["file_count"]))
+        self.lbl_format = QLabel(self.metadata.get("format_display", "ASCII"))
+        info_layout.addRow("File:", self.lbl_file)
+        info_layout.addRow("Dimensions:", self.lbl_dims)
+        if self._is_folder:
+            info_layout.addRow("Files:", self.lbl_count)
+        info_layout.addRow("Source format:", self.lbl_format)
+        self.lbl_datatype = QLabel("")
+        self.lbl_datatype.setToolTip("Estimated from first file")
+        info_layout.addRow("Data type (est.):", self.lbl_datatype)
+        layout.addLayout(info_layout)
+
+        layout.addWidget(QLabel("<b>Loading Options</b>"))
+        controls_layout = QFormLayout()
+
+        self.chk_row_number = QCheckBox("First column = row number (ASC format)")
+        self.chk_row_number.setChecked(True)
+        self.chk_row_number.setToolTip("Uncheck for .dat without row index")
+        controls_layout.addRow("", self.chk_row_number)
+
+        self.cmb_delimiter = QComboBox()
+        self.cmb_delimiter.addItems(list(DELIMITERS.keys()))
+        self.cmb_delimiter.setCurrentText("Tab")
+        controls_layout.addRow("Delimiter:", self.cmb_delimiter)
+
+        self.spin_resize = QSpinBox()
+        self.spin_resize.setRange(1, 100)
+        self.spin_resize.setValue(100)
+        self.spin_resize.setSuffix(" %")
+        resize_row = QHBoxLayout()
+        resize_row.addWidget(self.spin_resize)
+        self.lbl_size_px = QLabel("")
+        resize_row.addWidget(self.lbl_size_px)
+        resize_row.addStretch()
+        controls_layout.addRow("Resize:", resize_row)
+
+        if self._is_folder:
+            self.spin_subset = QDoubleSpinBox()
+            self.spin_subset.setRange(0.01, 1.0)
+            self.spin_subset.setValue(1.0)
+            self.spin_subset.setSingleStep(0.1)
+            self.spin_subset.setPrefix("Subset: ")
+            self.spin_subset.setToolTip("Ratio of files to load (1.0 = all)")
+            subset_row = QHBoxLayout()
+            subset_row.addWidget(self.spin_subset)
+            self.lbl_num_frames = QLabel("")
+            subset_row.addWidget(self.lbl_num_frames)
+            subset_row.addStretch()
+            controls_layout.addRow("", subset_row)
+
+        self.chk_8bit = QCheckBox("Convert to 8 bit")
+        self.chk_8bit.setChecked(False)
+        controls_layout.addRow("", self.chk_8bit)
+        layout.addLayout(controls_layout)
+
+        layout.addWidget(QLabel("<b>Preview / Crop</b>"))
+        preview_opts = QHBoxLayout()
+        self.cmb_preview_mode = QComboBox()
+        self.cmb_preview_mode.addItems(["MAX (across samples)", "Single file"])
+        preview_opts.addWidget(QLabel("Mode:"))
+        preview_opts.addWidget(self.cmb_preview_mode)
+        self.chk_preview_norm = QCheckBox("Normalize")
+        self.chk_preview_norm.setChecked(True)
+        preview_opts.addWidget(self.chk_preview_norm)
+        self.btn_roi_reset = QPushButton("Reset ROI")
+        self.btn_roi_reset.pressed.connect(self._reset_roi)
+        preview_opts.addWidget(self.btn_roi_reset)
+        preview_opts.addStretch()
+        layout.addLayout(preview_opts)
+
+        preview_frame = QFrame()
+        preview_frame.setFrameStyle(QFrame.StyledPanel)
+        preview_layout = QVBoxLayout(preview_frame)
+        self.lbl_raw = QLabel("")
+        self.lbl_raw.setWordWrap(False)
+        self.lbl_raw.setStyleSheet("font-family: monospace; font-size: 10px;")
+        self.lbl_raw.setMaximumHeight(70)
+        preview_layout.addWidget(self.lbl_raw)
+        self._plot_widget = pg.PlotWidget(background=(80, 80, 80))
+        self._plot_widget.setMinimumSize(400, 300)
+        self._plot_widget.setAspectLocked(False)
+        self._plot_widget.hideAxis("left")
+        self._plot_widget.hideAxis("bottom")
+        self._img_item = pg.ImageItem()
+        self._plot_widget.addItem(self._img_item)
+        preview_layout.addWidget(self._plot_widget)
+        layout.addWidget(preview_frame)
+
+        self.lbl_ram_usage = QLabel("Estimated RAM: Calculating...")
+        self.lbl_ram_available = QLabel(f"Available RAM: {get_available_ram():.2f} GB")
+        layout.addWidget(self.lbl_ram_usage)
+        layout.addWidget(self.lbl_ram_available)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self.spin_resize.valueChanged.connect(self._update_estimates)
+        self.chk_row_number.stateChanged.connect(self._refresh_preview)
+        self.cmb_delimiter.currentTextChanged.connect(self._refresh_preview)
+        self.chk_8bit.stateChanged.connect(self._update_estimates)
+        if self._is_folder:
+            self.spin_subset.valueChanged.connect(self._update_estimates)
+
+    def _get_delimiter(self) -> str:
+        return DELIMITERS.get(self.cmb_delimiter.currentText(), "\t")
+
+    def _refresh_preview(self) -> None:
+        files = get_ascii_files(self._path)
+        if not files:
+            self.lbl_raw.setText("(no files)")
+            self.lbl_datatype.setText("—")
+            self._img_item.setImage(np.zeros((1, 1), dtype=np.uint8))
+            return
+
+        preview_path = files[0]
+        delimiter = self._get_delimiter()
+        first_col = self.chk_row_number.isChecked()
+
+        if preview_path != self._last_auto_detect_path:
+            self._last_auto_detect_path = preview_path
+            if not self._used_initial_params:
+                raw_arr = parse_ascii_raw(preview_path, delimiter)
+                if raw_arr is not None and raw_arr.shape[1] > 1:
+                    self.chk_row_number.blockSignals(True)
+                    self.chk_row_number.setChecked(first_col_looks_like_row_number(raw_arr))
+                    first_col = self.chk_row_number.isChecked()
+                    self.chk_row_number.blockSignals(False)
+
+        mode = "max" if self.cmb_preview_mode.currentIndex() == 0 else "single"
+        size_ratio = self.spin_resize.value() / 100.0
+        normalize = self.chk_preview_norm.isChecked()
+        est = estimate_ascii_datatype(self._path, delimiter, first_col)
+        stats = est
+        fmt = lambda x: f"{x:.4g}" if isinstance(x, (int, float)) and not (x != x) else str(x)
+        stats_txt = f"min {fmt(stats['min'])}, max {fmt(stats['max'])}, med {fmt(stats['median'])}, mean {fmt(stats['mean'])}"
+        self.lbl_datatype.setText(f"{est['dtype']} | {stats_txt}")
+        img = get_ascii_preview(
+            self._path, delimiter, first_col,
+            size_ratio=size_ratio, mode=mode, normalize=normalize,
+        )
+        if img is None:
+            self.lbl_raw.setText("(parse failed)")
+            self.lbl_datatype.setText("—")
+            self._img_item.setImage(np.zeros((1, 1), dtype=np.uint8))
+            return
+
+        self._preview = img
+
+        lines = []
+        with open(preview_path, encoding="utf-8", errors="replace") as f:
+            for i, line in enumerate(f):
+                if i >= RAW_PREVIEW_MAX_LINES:
+                    break
+                line = line.rstrip("\n\r")
+                if len(line) > RAW_PREVIEW_MAX_CHARS:
+                    line = line[:RAW_PREVIEW_MAX_CHARS] + "..."
+                lines.append(line)
+        self.lbl_raw.setText("\n".join(lines) if lines else "(empty)")
+
+        cols, rows = img.shape[1], img.shape[0]
+        display_img = np.swapaxes(img, 0, 1)
+        self._img_item.setImage(display_img)
+        self._img_item.setRect(pg.QtCore.QRectF(0, 0, cols, rows))
+        self._img_item.setLookupTable(_plasma_lut())
+        self._img_item.setLevels([0, 255])
+        vb = self._plot_widget.getViewBox()
+        vb.invertY(True)
+        vb.setAspectLocked(lock=True, ratio=cols / rows if rows > 0 else 1)
+
+        if self._roi is not None:
+            self._plot_widget.removeItem(self._roi)
+        if self._initial_mask_rel is not None:
+            r = self._initial_mask_rel
+            x0 = max(0, int(r[0] * cols))
+            y0 = max(0, int(r[1] * rows))
+            x1 = min(cols, int(r[2] * cols))
+            y1 = min(rows, int(r[3] * rows))
+            if x1 > x0 and y1 > y0 and (x1 - x0 < cols or y1 - y0 < rows):
+                self._roi = pg.RectROI((x0, y0), (x1 - x0, y1 - y0), pen=pg.mkPen("lime", width=2))
+            else:
+                self._roi = pg.RectROI((0, 0), (cols, rows), pen=pg.mkPen("lime", width=2))
+        else:
+            self._roi = pg.RectROI((0, 0), (cols, rows), pen=pg.mkPen("lime", width=2))
+        self._roi.handleSize = 10
+        self._roi.addScaleHandle([1, 1], [0, 0])
+        self._roi.addScaleHandle([0, 0], [1, 1])
+        self._roi.sigRegionChanged.connect(self._update_estimates)
+        self._plot_widget.addItem(self._roi)
+        self._initial_mask_rel = None
+
+        self._update_estimates()
+
+    def _reset_roi(self) -> None:
+        if self._preview is not None and self._roi is not None:
+            cols, rows = self._preview.shape[1], self._preview.shape[0]
+            self._roi.setPos((0, 0))
+            self._roi.setSize((cols, rows))
+            self._update_estimates()
+
+    def _update_estimates(self) -> None:
+        if self._preview is None:
+            return
+        files = get_ascii_files(self._path)
+        n_files = len(files)
+        subset = self.spin_subset.value() if self._is_folder else 1.0
+        n_load = max(1, int(n_files * subset)) if n_files > 0 else 1
+        size_ratio = self.spin_resize.value() / 100.0
+        orig_h, orig_w = self._preview.shape[0], self._preview.shape[1]
+        h, w = orig_h, orig_w
+        if self._roi is not None:
+            pos = self._roi.pos()
+            sz = self._roi.size()
+            x0 = max(0, int(pos.x()))
+            y0 = max(0, int(pos.y()))
+            x1 = min(orig_w, int(pos.x() + sz.x()))
+            y1 = min(orig_h, int(pos.y() + sz.y()))
+            if x1 > x0 and y1 > y0:
+                h, w = y1 - y0, x1 - x0
+        h_out = int(h * size_ratio)
+        w_out = int(w * size_ratio)
+        self.lbl_size_px.setText(f"-> {h_out} x {w_out} px")
+        if self._is_folder:
+            self.lbl_num_frames.setText(f"-> <b>{n_load}</b> files")
+        bytes_per = h_out * w_out * (1 if self.chk_8bit.isChecked() else 8)
+        total_gb = n_load * bytes_per / (1024**3)
+        color = "green"
+        if total_gb > get_available_ram() * 0.9:
+            color = "red"
+        elif total_gb > get_available_ram() * 0.7:
+            color = "orange"
+        crop_note = " (with crop)" if (h != orig_h or w != orig_w) else ""
+        self.lbl_ram_usage.setText(
+            f"Estimated RAM{crop_note}: <font color='{color}'><b>{total_gb:.2f} GB</b></font>"
+        )
+
+    def get_params(self) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "size_ratio": self.spin_resize.value() / 100.0,
+            "convert_to_8_bit": self.chk_8bit.isChecked(),
+            "delimiter": self._get_delimiter(),
+            "first_col_is_row_number": self.chk_row_number.isChecked(),
+        }
+        if self._is_folder:
+            out["subset_ratio"] = self.spin_subset.value()
+        if self._preview is not None and self._roi is not None:
+            pos = self._roi.pos()
+            sz = self._roi.size()
+            cols, rows = self._preview.shape[1], self._preview.shape[0]
+            x0 = max(0, int(pos.x()))
+            y0 = max(0, int(pos.y()))
+            x1 = min(cols, int(pos.x() + sz.x()))
+            y1 = min(rows, int(pos.y() + sz.y()))
+            if x1 > x0 and y1 > y0 and (x1 - x0 < cols or y1 - y0 < rows):
+                out["mask"] = (slice(y0, y1), slice(x0, x1))
+                out["mask_rel"] = (x0 / cols, y0 / rows, x1 / cols, y1 / rows)
         return out

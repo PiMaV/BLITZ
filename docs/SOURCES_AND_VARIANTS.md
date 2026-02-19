@@ -114,7 +114,10 @@ BLITZ wird in zwei Varianten ausgeliefert:
 ### Geplant fuer Standard
 
 - LiveView (Stream-Source)
-- CSV-Konverter (Converter)
+
+### Bereits implementiert (Standard)
+
+- **ASC/DAT-Konverter** (`blitz/data/converters/asc_dat.py`): Dialog mit Rohdaten-Vorschau (5 Zeilen, abgeschnitten), Bild-Vorschau (Plasma-Colormap), Optionen (Delimiter, erste Spalte = Zeilennummer).
 
 ---
 

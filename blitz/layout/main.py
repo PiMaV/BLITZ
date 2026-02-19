@@ -13,7 +13,8 @@ from ..data.load import DataLoader, get_image_metadata
 from ..data.web import WebDataLoader
 from ..tools import (LoadingManager, format_size_mb, get_available_ram,
                      get_cpu_percent, get_disk_io_mbs, get_used_ram, log)
-from .dialogs import ImageLoadOptionsDialog, VideoLoadOptionsDialog
+from ..data.converters import get_ascii_metadata, load_ascii
+from .dialogs import AsciiLoadOptionsDialog, ImageLoadOptionsDialog, VideoLoadOptionsDialog
 from .rosee import ROSEEAdapter
 from .tof import TOFAdapter
 from .ui import UI_MainWindow
@@ -38,6 +39,7 @@ class MainWindow(QMainWindow):
         self.last_file: str = ""
         self._video_session_defaults: dict = {}
         self._image_session_defaults: dict = {}
+        self._ascii_session_defaults: dict = {}
         self._image_load_dialog_shown: bool = False
 
         self.tof_adapter = TOFAdapter(self.ui.roi_plot)
@@ -1054,6 +1056,47 @@ class MainWindow(QMainWindow):
             self.ui.label_bench_mode.setText("View mode: Frame")
             self.ui.label_bench_result.setText("Result: —")
 
+    def _load_ascii(self, path: Path) -> None:
+        """Load ASCII (.asc, .dat) via options dialog. Path from Open File/Folder or drop."""
+        meta = get_ascii_metadata(path)
+        if meta is None:
+            log("Cannot read ASCII metadata", color="red")
+            return
+        dlg = AsciiLoadOptionsDialog(
+            path, meta, parent=self,
+            initial_params=self._ascii_session_defaults,
+        )
+        if not dlg.exec():
+            return
+        user_params = dlg.get_params()
+        params = {k: v for k, v in user_params.items() if k != "mask_rel"}
+        self._ascii_session_defaults = {
+            "size_ratio": user_params["size_ratio"],
+            "convert_to_8_bit": user_params["convert_to_8_bit"],
+            "delimiter": user_params["delimiter"],
+            "first_col_is_row_number": user_params["first_col_is_row_number"],
+        }
+        if "subset_ratio" in user_params:
+            self._ascii_session_defaults["subset_ratio"] = user_params["subset_ratio"]
+        if "mask_rel" in user_params:
+            self._ascii_session_defaults["mask_rel"] = user_params["mask_rel"]
+        else:
+            self._ascii_session_defaults.pop("mask_rel", None)
+
+        with LoadingManager(self, f"Loading {path}", blocking_label=self.ui.blocking_status) as lm:
+            img = load_ascii(
+                path,
+                progress_callback=lm.set_progress,
+                message_callback=lm.set_message,
+                **params,
+            )
+        log(f"Loaded in {lm.duration:.2f}s")
+        self.ui.image_viewer.set_image(img)
+        self.last_file_dir = path.parent
+        self.last_file = path.name
+        self.update_statusbar()
+        self.reset_options()
+
     def browse_tof(self) -> None:
         path, _ = QFileDialog.getOpenFileName()
         if not path:
@@ -1149,6 +1192,11 @@ class MainWindow(QMainWindow):
 
         if path.suffix == ".blitz":
             self.load_project(path)
+        elif (
+            path.suffix.lower() in (".asc", ".dat")
+            or (path.is_dir() and any(f.suffix.lower() in (".asc", ".dat") for f in path.iterdir() if f.is_file()))
+        ):
+            self._load_ascii(path)
         elif self.ui.checkbox_sync_file.isChecked() and project_file.exists():
             self.load_project(project_file)
         else:
