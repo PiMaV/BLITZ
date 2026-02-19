@@ -74,41 +74,43 @@ def ensure_4d(images: np.ndarray) -> np.ndarray:
     return images[..., np.newaxis]
 
 
-# @numba.njit(
-#     "f4[:,:,:,:](f4[:,:,:,:], i8, i8)",
-#     fastmath=True,
-#     parallel=True,
-#     cache=True,
-# )
-# def sliding_mean_normalization(
-#     images: np.ndarray,
-#     window: int,
-#     lag: int,
-# ) -> np.ndarray:
-#     n = images.shape[0]-(lag+window)
-#     q, p, c = images.shape[1:]
-#     result = np.zeros((n, q, p, c), dtype=np.float32)
-#     for t in numba.prange(n):
-#         mean = np.zeros(images.shape[1:])
-#         for s in range(lag, lag+window):
-#             mean = mean + images[t+s+1]
-#         result[t] = mean / window
-#     return result
-
 def sliding_mean_normalization(
     images: np.ndarray,
     window: int,
     lag: int,
 ) -> np.ndarray:
+    """Computes sliding mean using cumulative sum.
+
+    Optimized for CPU and Memory:
+    - Uses np.cumsum for O(1) sliding window (vs O(window)).
+    - Processes row-by-row (spatial height) to avoid allocating a full
+      float32 cumsum array, keeping peak memory usage low.
+    """
     n = images.shape[0] - (lag + window)
-    q, p, c = images.shape[1:]
-    result = np.zeros((n, q, p, c), dtype=np.float32)
-    for t in range(n):
-        mean = np.zeros(images.shape[1:], dtype=np.float32)
-        for s in range(lag, lag + window):
-            mean = mean + images[t + s + 1]
-        result[t] = mean / window
+    if n <= 0:
+        return np.empty((0, *images.shape[1:]), dtype=np.float32)
+
+    # Pre-allocate result
+    result = np.empty((n, *images.shape[1:]), dtype=np.float32)
+
+    h = images.shape[1]
+
+    # Process row by row to save memory (avoid full 4D cumsum allocation)
+    for i in range(h):
+        # Slice: (T, W, C)
+        sl = images[:, i, ...].astype(np.float32)
+
+        # Cumsum along time
+        cs = np.cumsum(sl, axis=0)
+
+        # Compute mean
+        upper = cs[lag + window : lag + window + n]
+        lower = cs[lag : lag + n]
+
+        result[:, i, ...] = (upper - lower) / window
+
     return result
+
 
 def normalize(signal: np.ndarray, eps: float = 1e-10) -> np.ndarray:
     min_ = signal.min()
