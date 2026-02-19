@@ -11,7 +11,7 @@ _PEN_MAX_PER_CROSSHAIR = pg.mkPen((100, 200, 200), width=2)
 _PEN_MIN_PER_DATASET = pg.mkPen((60, 80, 160), width=2)
 _PEN_MAX_PER_DATASET = pg.mkPen((100, 130, 220), width=2)
 from PyQt5.QtCore import QPointF, QSize, Qt
-from PyQt5.QtGui import QKeyEvent, QMouseEvent, QWheelEvent
+from PyQt5.QtGui import QKeyEvent, QMouseEvent, QShowEvent, QWheelEvent
 from PyQt5.QtWidgets import QSizePolicy, QWidget, QLineEdit
 
 from .viewer import ImageViewer
@@ -424,6 +424,7 @@ class ExtractionPlot(pg.PlotWidget):
         self._envelope_pct: float = 0.0  # 0 = min/max, >0 = percentile
         self._dataset_envelope_cache: tuple[np.ndarray, np.ndarray] | None = None
         self._dataset_envelope_cache_key: tuple[int, ...] | None = None
+        self._stale: bool = False
         self.center_line()
 
     def set_envelope_percentile(self, pct: float) -> None:
@@ -618,7 +619,16 @@ class ExtractionPlot(pg.PlotWidget):
         self._dataset_envelope_cache_key = cache_key
         return self._dataset_envelope_cache
 
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        if self._stale:
+            self._stale = False
+            self.draw_line()
+
     def draw_line(self) -> None:
+        if not self.isVisible():
+            self._stale = True
+            return
         self.clear()
         if (image := self.extract_data()) is not None:
             self.plot(image)

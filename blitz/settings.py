@@ -20,7 +20,7 @@ _default_core_settings = {
     "default/load_8bit": False,
     "default/load_grayscale": True,
     "default/max_ram": 2.,
-    "default/colormap": "greyclip",
+    "default/colormap": "plasma",
 
     "data/sync": False,
 

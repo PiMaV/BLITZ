@@ -49,7 +49,7 @@ class ImageViewer(pg.ImageView):
         self.ui.roiPlot.plotItem.showGrid(  # type: ignore
             x=True, y=True, alpha=0.6,
         )
-        self.ui.histogram.gradient.loadPreset('greyclip')
+        self.ui.histogram.gradient.loadPreset('plasma')
 
         self.mask: None | RectROI = None
         self.pixel_value: Optional[np.ndarray] = None
@@ -229,7 +229,7 @@ class ImageViewer(pg.ImageView):
             self.setLevels(min=min_, max=max_)
             self.ui.histogram.setHistogramRange(min_, max_)
         else:
-            self.ui.histogram.gradient.restoreState(Gradients['greyclip'])
+            self.ui.histogram.gradient.restoreState(Gradients['plasma'])
             super().autoLevels()
 
     def load_data(
@@ -307,36 +307,6 @@ class ImageViewer(pg.ImageView):
         )
         self.toggle_roi_update_frequency(on_drop_roi_update)
 
-    def norm(
-        self,
-        operation: str,
-        use: ReduceOperation | str,
-        beta: float = 1.0,
-        gaussian_blur: int = 0,
-        bounds: Optional[tuple[int, int]] = None,
-        background: bool = False,
-        window_lag: Optional[tuple[int, int]] = None,
-        force_calculation: bool = False,
-    ) -> bool:
-        normalized = self.data.normalize(
-            operation=operation,  # type: ignore
-            use=use,
-            beta=beta,
-            gaussian_blur=gaussian_blur,
-            bounds=bounds,
-            reference=self._background_image if background else None,
-            window_lag=window_lag,
-            force_calculation=force_calculation,
-        )
-        self.setImage(
-            self.data.image,
-            keep_timestep=True,
-            autoRange=False,
-            autoLevels=True,
-        )
-        self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
-        return normalized
-
     def crop(self, left: int, right: int, keep: bool = False) -> None:
         self.data.crop(left, right, keep=keep)
         self.setImage(
@@ -359,6 +329,7 @@ class ImageViewer(pg.ImageView):
 
     def unravel(self) -> None:
         self.data.unravel()
+        self.update_image()
         self.setImage(
             self.data.image,
             autoRange=False,

@@ -444,7 +444,12 @@ class ImageLoadOptionsDialog(QDialog):
         self.spin_resize.setRange(1, 100)
         self.spin_resize.setValue(100)
         self.spin_resize.setSuffix(" %")
-        controls_layout.addRow("Resize:", self.spin_resize)
+        resize_row = QHBoxLayout()
+        resize_row.addWidget(self.spin_resize)
+        self.lbl_size_px = QLabel("")
+        resize_row.addWidget(self.lbl_size_px)
+        resize_row.addStretch()
+        controls_layout.addRow("Resize:", resize_row)
         if self._is_folder:
             self.spin_subset = QDoubleSpinBox()
             self.spin_subset.setRange(0.01, 1.0)
@@ -452,7 +457,12 @@ class ImageLoadOptionsDialog(QDialog):
             self.spin_subset.setSingleStep(0.1)
             self.spin_subset.setPrefix("Subset: ")
             self.spin_subset.setToolTip("Ratio of images to load (1.0 = all)")
-            controls_layout.addRow("", self.spin_subset)
+            subset_row = QHBoxLayout()
+            subset_row.addWidget(self.spin_subset)
+            self.lbl_num_frames = QLabel("")
+            subset_row.addWidget(self.lbl_num_frames)
+            subset_row.addStretch()
+            controls_layout.addRow("", subset_row)
         self.chk_grayscale = QCheckBox("Load as Grayscale")
         self.chk_grayscale.setChecked(False)
         self.chk_8bit = QCheckBox("Convert to 8 bit")
@@ -615,15 +625,29 @@ class ImageLoadOptionsDialog(QDialog):
         dtype_size = 1 if self.chk_8bit.isChecked() else getattr(self, "_sample_bytes", 1)
         total_bytes = width * height * channels * num_images * dtype_size
         gb = total_bytes / (1024**3)
-        color = "green"
+        crop_note = " (with crop)" if (width, height) != (width_full, height_full) else ""
+        self.lbl_size_px.setText(f"-> {height} x {width} px")
+        if self._is_folder:
+            color_result = "green"
+            tooltip = ""
+            if num_images > 1000:
+                color_result = "red"
+                tooltip = "Kann man machen, aber starte evtl. erstmal mit weniger."
+            elif num_images > 500:
+                color_result = "orange"
+                tooltip = "Kann man machen, aber starte evtl. erstmal mit weniger."
+            self.lbl_num_frames.setText(
+                f"-> <font color='{color_result}'><b>{num_images}</b></font> images"
+            )
+            self.lbl_num_frames.setToolTip(tooltip)
+        color_ram = "green"
         available = get_available_ram()
         if gb > available * 0.9:
-            color = "red"
+            color_ram = "red"
         elif gb > available * 0.7:
-            color = "orange"
-        crop_note = " (with crop)" if (width, height) != (width_full, height_full) else ""
+            color_ram = "orange"
         self.lbl_ram_usage.setText(
-            f"Estimated RAM{crop_note}: <font color='{color}'><b>{gb:.2f} GB</b></font>"
+            f"Estimated RAM{crop_note}: <font color='{color_ram}'><b>{gb:.2f} GB</b></font>"
         )
 
     def get_params(self) -> dict[str, Any]:

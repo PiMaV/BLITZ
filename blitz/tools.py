@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (QApplication, QDialog, QLabel, QProgressBar,
 from . import settings
 
 PROGRESS_DIALOG_DELAY_MS = 1000
+BLOCKING_BAR_DELAY_MS = 500
 
 LOGGER: Any = None
 
@@ -81,14 +82,22 @@ class LoadingManager:
         parent,
         text: str = "Loading ...",
         delay_ms: int = PROGRESS_DIALOG_DELAY_MS,
+        status_label: Optional[QLabel] = None,
+        blocking_label: Optional[QLabel] = None,
+        blocking_delay_ms: Optional[int] = BLOCKING_BAR_DELAY_MS,
     ) -> None:
         self.text = text
         self.parent = parent
         self._delay_ms = delay_ms
+        self._status_label = status_label
+        self._blocking_label = blocking_label
+        self._blocking_delay_ms = blocking_delay_ms
         self._start_time = 0
         self._time_needed = 0
         self._dialog: Optional[LoadingDialog] = None
         self._timer: Optional[QTimer] = None
+        self._blocking_timer: Optional[QTimer] = None
+        self._blocking_shown = False
         self._dialog_shown = False
 
     @property
@@ -105,8 +114,31 @@ class LoadingManager:
             QApplication.processEvents()
             self._dialog_shown = True
 
+    def _show_blocking_bar(self) -> None:
+        if self._blocking_label is not None and not self._blocking_shown:
+            self._blocking_shown = True
+            self._blocking_label.setText("BUSY")
+            self._blocking_label.setStyleSheet(
+                "background-color: rgb(180, 80, 140); color: white;"
+            )
+            if self._blocking_label.parent():
+                self._blocking_label.parent().update()
+            for _ in range(3):
+                QApplication.processEvents()
+
     def __enter__(self) -> Self:
         self._start_time = clock()
+        if self._status_label is not None:
+            self._status_label.setText(self.text)
+            QApplication.processEvents()
+        if self._blocking_label is not None:
+            if self._blocking_delay_ms is None or self._blocking_delay_ms <= 0:
+                self._show_blocking_bar()
+            else:
+                self._blocking_timer = QTimer()
+                self._blocking_timer.setSingleShot(True)
+                self._blocking_timer.timeout.connect(self._show_blocking_bar)
+                self._blocking_timer.start(self._blocking_delay_ms)
         self._dialog = LoadingDialog(self.parent, self.text)
         self._timer = QTimer()
         self._timer.setSingleShot(True)
@@ -117,7 +149,7 @@ class LoadingManager:
     def set_progress(self, value: int) -> None:
         if self._dialog_shown and self._dialog is not None:
             self._dialog.set_progress(value)
-            QApplication.processEvents()
+        QApplication.processEvents()
 
     def set_message(self, message: str) -> None:
         if self._dialog_shown and self._dialog is not None:
@@ -130,6 +162,9 @@ class LoadingManager:
         excinst: Optional[BaseException],
         exctb: Optional[TracebackType],
     ) -> bool:
+        if self._blocking_timer is not None:
+            self._blocking_timer.stop()
+            self._blocking_timer = None
         if self._timer is not None:
             self._timer.stop()
             self._timer = None
@@ -138,6 +173,13 @@ class LoadingManager:
                 self._dialog.accept()
             del self._dialog
             self._dialog = None
+        if self._status_label is not None:
+            self._status_label.setText("")
+        if self._blocking_label is not None and self._blocking_shown:
+            self._blocking_label.setText("IDLE")
+            self._blocking_label.setStyleSheet(
+                "background-color: rgb(45, 45, 55); color: rgb(120, 120, 130);"
+            )
         self._time_needed = clock() - self._start_time
         return False
 
@@ -145,6 +187,41 @@ class LoadingManager:
 def get_available_ram() -> float:
     available_ram = psutil.virtual_memory().available / (1024**3)
     return available_ram
+
+
+def get_used_ram() -> float:
+    """Used RAM in GB."""
+    return psutil.virtual_memory().used / (1024**3)
+
+
+def get_cpu_percent() -> float:
+    """CPU usage in percent (0-100). Non-blocking."""
+    return psutil.cpu_percent(interval=None)
+
+
+def get_cpu_percore() -> list[float]:
+    """CPU usage per core (0-100). Non-blocking."""
+    return psutil.cpu_percent(interval=None, percpu=True)
+
+
+def get_disk_io_mbs() -> tuple[float, float]:
+    """Disk I/O in MB/s (read, write). Cached; call each tick for rate."""
+    now = psutil.disk_io_counters()
+    if now is None:
+        return 0.0, 0.0
+    prev = getattr(get_disk_io_mbs, "_prev", None)
+    if prev is None:
+        get_disk_io_mbs._prev = (now.read_bytes, now.write_bytes)
+        return 0.0, 0.0
+    read_mbs = (now.read_bytes - prev[0]) / (1024**2)
+    write_mbs = (now.write_bytes - prev[1]) / (1024**2)
+    get_disk_io_mbs._prev = (now.read_bytes, now.write_bytes)
+    return max(0.0, read_mbs), max(0.0, write_mbs)
+
+
+def format_size_mb(nbytes: int | float) -> str:
+    """Format bytes as XX.X MB."""
+    return f"{nbytes / (1024**2):.1f} MB"
 
 
 def fit_text(text: str, max_length: int) -> str:

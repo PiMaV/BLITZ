@@ -2,8 +2,8 @@
 
 ## High
 
-### Naechste Mission: Normalization
-Normalization als eigener Tab im oberen Panel (Options-Dock) umsetzen. Bisherige Integration im Time-Tab ersetzen/vereinheitlichen. Siehe `docs/TIMELINE_AGGREGATION.md` Abschnitt "Naechste Mission".
+### Ops-Tab (erledigt)
+Ops-Tab im Options-Dock: Background-Subtract (File oder Range, Mean/Median). Siehe `docs/TIMELINE_AGGREGATION.md`.
 
 
 ## Medium

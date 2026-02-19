@@ -57,8 +57,15 @@ class MIN(_ReduceOperation):
         return np.expand_dims(x.min(axis=0), axis=0)
 
 
+class MEDIAN(_ReduceOperation):
+
+    def _reduce(self, x: np.ndarray) -> np.ndarray:
+        return np.expand_dims(np.nanmedian(x, axis=0), axis=0)
+
+
 class ReduceOperation(Enum):
     MEAN = auto()
+    MEDIAN = auto()
     MAX = auto()
     MIN = auto()
     STD = auto()

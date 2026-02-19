@@ -115,3 +115,93 @@ Folgende Features benoetigen **vollen temporalen Zugriff** auf alle Frames:
 **Multicore fuer Video entfernt** (Stand: Feb 2026). Der Mehrwert rechtfertigte weder den Code-Aufwand noch die UX – Nutzer wurden bei Aktivierung langsamer. Single-Core ist fuer Videodecoding der sinnvolle Default.
 
 **Benchmark** (misst nur noch Single-Core): `python scripts/benchmark_video_load.py` – Variablen (path, n_runs, subset_ratio) im Script anpassen.
+
+---
+
+## Load-Profile (42k Dateien @ subset 0.01)
+
+**Script:** `python scripts/profile_load.py` (App starten, Load, schliessen) → `python scripts/profile_load.py --stats`  
+**Output:** `profile_stats.txt` (oder `-o andere_datei.txt`)
+
+### Typische Ergebnisse (Feb 2026)
+
+| Bereich | cumtime | ncalls | Aussage |
+|---------|---------|--------|---------|
+| `emit` (Qt-Signale) | ~21 s | 2545/905 | **Hauptkost**: Signal-Kaskaden nach Load |
+| `natsorted` | ~4.8 s | 8 | 337k natsort_key-Aufrufe (42k Pfade) |
+| `load_data` | ~3.6 s | 2 | Erwartbar |
+| `get_image_preview` | ~2.4 s | 2 | Dialog-Thumbnails |
+| `draw_line` | ~0.04 s | 22 | Lazy-Logik greift, kein Flaschenhals |
+| `roiChanged` | ~0.5 s | 20 | SetImage/roiClicked aus pyqtgraph |
+
+→ Die "5x Wartezeit mit niedriger CPU" kommt von **~21 s Signal-Verarbeitung** (emit), nicht von Rechenlast.
+
+---
+
+## Was macht die emit-Kaskade? (Ours vs PyQtGraph)
+
+**Ausloeser:** `load_data` → `setImage(matrix)` → Kaskade startet.
+
+### Ablauf (vereinfacht)
+
+```
+setImage(matrix)
+  ├─ super().setImage()     [PyQtGraph ImageView]
+  │    ├─ Image-Item, Histogramm, Timeline updaten
+  │    ├─ ROI an neue Groesse anpassen  →  roi.sigRegionChanged
+  │    └─ Interne PyQtGraph-Signale (viele)
+  │
+  ├─ init_roi()             [Unser Code]
+  │    └─ roi.sigRegionChanged → roiChanged
+  │
+  └─ image_changed.emit()   [Unser Code]
+       ├─ MeasureROI.reshape
+       ├─ ExtractionPlot.draw_line
+       └─ ExtractionPlot._invalidate_dataset_envelope_cache
+```
+
+**roiChanged** wird getriggert von: `ImageView.setImage` (intern) und `ImageView.roiClicked` (intern) – also PyQtGraph ruft unsere Slots auf, weil wir `roi.sigRegionChanged.connect(roiChanged)` verbunden haben.
+
+### Verantwortung
+
+| Bereich | Herkunft | Aenderbar? |
+|---------|----------|------------|
+| Histogramm, Image-Item, Timeline | PyQtGraph | Nein (Library) |
+| ROI-Updates aus setImage | PyQtGraph | Nein |
+| roiChanged (unser Slot) | Unser Code, von PG getriggert | Ja |
+| image_changed → draw_line, reshape | Unser Code | Ja |
+| reset_options → crop_range, spinboxes | Unser Code | Ja (blockSignals erledigt) |
+
+**Takeaway:** Der Grossteil der Kaskade kommt von **PyQtGraphs setImage-Interna** (Histogramm, ROI, Timeline). Wir steuern nur einen Teil (image_changed, roiChanged-Implementierung, reset_options). Weitere Optimierung waere: (a) image_changed-Slots debouncen/deferren, (b) roiChanged verschlanken oder lazy machen. PyQtGraph selbst aendern ist kein realistischer Pfad – entweder damit leben oder Display-Pipeline (setImage, Histogramm) durch Custom-Logik ersetzen (groesserer Aufwand).
+
+---
+
+## Lazy Extraction Plots
+
+**Datei:** `blitz/layout/widgets.py` (ExtractionPlot)
+
+**Logik:** `draw_line` wird nur ausgefuehrt, wenn der Plot sichtbar ist (`isVisible()`).
+Wenn Docks immer offen sind, bringt das keinen Nutzen – dann laeuft draw_line wie zuvor.
+
+| Ort | Code | Wirkung |
+|-----|------|---------|
+| `draw_line()` | `if not self.isVisible(): self._stale = True; return` | Keine Berechnung bei verstecktem Dock |
+| `showEvent()` | `if self._stale: self._stale = False; self.draw_line()` | Nachziehen, wenn Plot sichtbar wird |
+
+---
+
+## Qt emit-Kaskaden reduzieren (reset_options)
+
+**Problem:** Nach Load verbrauchen ~21 s Qt-Signal-Emissionen (emit-Kette).
+**Massnahme:** `blockSignals(True)` waehrend des kompletten `reset_options`-Batch-Updates.
+
+**Datei:** `blitz/layout/main.py`
+
+| Widgets blockiert | Triggerte Slots (ohne Block) |
+|-------------------|------------------------------|
+| crop_range | update_crop_range_labels, _on_crop_range_for_ops -> apply_ops |
+| spinbox_crop_range_*, spinbox_selection_window | _on_crop_range_*, apply_ops |
+| combobox_reduce, slider_ops_* | apply_ops |
+| timeline_tabwidget | _on_timeline_tab_changed |
+
+`apply_ops()` wird am Ende von `_reset_options_body` explizit einmal aufgerufen.

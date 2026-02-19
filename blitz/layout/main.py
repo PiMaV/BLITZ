@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from PyQt5.QtCore import QCoreApplication, Qt, QUrl
+from PyQt5.QtCore import QCoreApplication, Qt, QTimer, QUrl
 from PyQt5.QtGui import QDesktopServices, QKeySequence
 from PyQt5.QtWidgets import QApplication, QFileDialog, QMainWindow, QShortcut
 from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
@@ -11,7 +11,8 @@ from .. import settings
 from ..data.image import ImageData
 from ..data.load import DataLoader, get_image_metadata
 from ..data.web import WebDataLoader
-from ..tools import LoadingManager, get_available_ram, log
+from ..tools import (LoadingManager, format_size_mb, get_available_ram,
+                     get_cpu_percent, get_disk_io_mbs, get_used_ram, log)
 from .dialogs import ImageLoadOptionsDialog, VideoLoadOptionsDialog
 from .rosee import ROSEEAdapter
 from .tof import TOFAdapter
@@ -81,9 +82,6 @@ class MainWindow(QMainWindow):
 
         # image_viewer connections
         self.ui.image_viewer.file_dropped.connect(self.load)
-        self.ui.roi_plot.norm_range.sigRegionChanged.connect(
-            self.update_norm_range_labels
-        )
         self.ui.roi_plot.crop_range.sigRegionChanged.connect(
             self.update_crop_range_labels
         )
@@ -92,6 +90,9 @@ class MainWindow(QMainWindow):
         )
         self.ui.roi_plot.crop_range.sigRegionChangeFinished.connect(
             self._on_selection_changed
+        )
+        self.ui.roi_plot.crop_range.sigRegionChangeFinished.connect(
+            self._on_crop_range_for_ops
         )
         self.ui.image_viewer.scene.sigMouseMoved.connect(
             self.update_statusbar_position
@@ -207,71 +208,29 @@ class MainWindow(QMainWindow):
         )
         self.ui.button_reset_range.clicked.connect(self.reset_selection_range)
         self.ui.button_crop.clicked.connect(self.crop)
-        self.ui.checkbox_norm_apply.stateChanged.connect(
-            self.apply_normalization
+        self.ui.button_ops_open_aggregate.clicked.connect(
+            self._ops_open_aggregate_tab
         )
-        self.ui.combobox_norm_subtract.currentIndexChanged.connect(
-            self._update_norm_step_visibility
+        self.ui.combobox_ops_subtract_src.currentIndexChanged.connect(
+            self._update_ops_file_visibility
         )
-        self.ui.combobox_norm_subtract.currentIndexChanged.connect(
-            self.apply_normalization
+        self.ui.combobox_ops_divide_src.currentIndexChanged.connect(
+            self._update_ops_file_visibility
         )
-        self.ui.combobox_norm_divide.currentIndexChanged.connect(
-            self._update_norm_step_visibility
+        for cb in (self.ui.combobox_ops_subtract_src, self.ui.combobox_ops_divide_src):
+            cb.currentIndexChanged.connect(self.apply_ops)
+        self.ui.slider_ops_subtract.valueChanged.connect(
+            self._update_ops_slider_labels
         )
-        self.ui.combobox_norm_divide.currentIndexChanged.connect(
-            self.apply_normalization
+        self.ui.slider_ops_subtract.valueChanged.connect(self.apply_ops)
+        self.ui.slider_ops_divide.valueChanged.connect(
+            self._update_ops_slider_labels
         )
-        self.ui.slider_norm_subtract_amount.valueChanged.connect(
-            self._update_norm_amount_labels
-        )
-        self.ui.slider_norm_subtract_amount.valueChanged.connect(
-            self.apply_normalization
-        )
-        self.ui.slider_norm_divide_amount.valueChanged.connect(
-            self._update_norm_amount_labels
-        )
-        self.ui.slider_norm_divide_amount.valueChanged.connect(
-            self.apply_normalization
-        )
-        self.ui.spinbox_norm_blur.valueChanged.connect(
-            self.apply_normalization
-        )
-        self.ui.spinbox_norm_range_start.editingFinished.connect(
-            self.update_norm_range
-        )
-        self.ui.spinbox_norm_range_end.editingFinished.connect(
-            self.update_norm_range
-        )
-        self.ui.spinbox_norm_divide_start.editingFinished.connect(
-            self.update_norm_range
-        )
-        self.ui.spinbox_norm_divide_end.editingFinished.connect(
-            self.update_norm_range
-        )
-        self.ui.combobox_norm.currentIndexChanged.connect(
-            self.apply_normalization
-        )
-        self.ui.combobox_norm_divide_method.currentIndexChanged.connect(
-            self.apply_normalization
-        )
-        self.ui.checkbox_norm_show_range.stateChanged.connect(
-            self.ui.roi_plot.toggle_norm_range
-        )
-        self.ui.button_bg_input.clicked.connect(self.search_background_file)
-        self.ui.button_bg_divide.clicked.connect(self.search_background_file)
-        self.ui.spinbox_norm_window.valueChanged.connect(
-            self.apply_normalization
-        )
-        self.ui.spinbox_norm_lag.valueChanged.connect(
-            self.apply_normalization
-        )
-        self.ui.spinbox_norm_divide_window.valueChanged.connect(
-            self.apply_normalization
-        )
-        self.ui.spinbox_norm_divide_lag.valueChanged.connect(
-            self.apply_normalization
-        )
+        self.ui.slider_ops_divide.valueChanged.connect(self.apply_ops)
+        self.ui.button_ops_load_file.clicked.connect(self.load_ops_file)
+        self.ui.spinbox_crop_range_start.editingFinished.connect(self.apply_ops)
+        self.ui.spinbox_crop_range_end.editingFinished.connect(self.apply_ops)
+        self.ui.combobox_reduce.currentIndexChanged.connect(self.apply_ops)
         self.ui.timeline_tabwidget.currentChanged.connect(
             self._on_timeline_tab_changed
         )
@@ -357,8 +316,16 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_iso_smoothing.editingFinished.connect(
             self.update_isocurves
         )
+        self.ui.image_viewer.image_changed.connect(self.update_bench)
+        self.ui.image_viewer.image_size_changed.connect(self.update_bench)
+        self._bench_timer = QTimer(self)
+        self._bench_timer.timeout.connect(self.update_bench)
+        self.ui.option_tabwidget.currentChanged.connect(
+            self._on_option_tab_changed
+        )
         self._update_envelope_options()
         self._update_selection_visibility()
+        self.update_bench()
 
     def _update_envelope_options(self) -> None:
         per_image = self.ui.checkbox_minmax_per_image.isChecked()
@@ -487,7 +454,7 @@ class MainWindow(QMainWindow):
         self.ui.image_viewer.ui.histogram.gradient.lastCM = (
             settings.get("default/colormap")
         )
-        if settings.get("default/colormap") != "greyclip":
+        if settings.get("default/colormap") not in ("greyclip", "plasma", "bipolar"):
             self.ui.checkbox_auto_colormap.setChecked(False)
 
         settings.connect_sync(
@@ -587,30 +554,53 @@ class MainWindow(QMainWindow):
             self.ui.image_viewer.data.get_crop,
         )
 
-    def _update_norm_amount_labels(self) -> None:
-        """Update the Amount % labels from slider values."""
-        self.ui.label_norm_subtract_amount.setText(
-            f"{self.ui.slider_norm_subtract_amount.value()}%"
+    def _update_ops_file_visibility(self) -> None:
+        """Show Load button when subtract or divide uses File."""
+        sub = self.ui.combobox_ops_subtract_src.currentData() == "file"
+        div = self.ui.combobox_ops_divide_src.currentData() == "file"
+        self.ui.ops_file_widget.setVisible(sub or div)
+
+    def _update_ops_slider_labels(self) -> None:
+        self.ui.label_ops_subtract.setText(
+            f"{self.ui.slider_ops_subtract.value()}%"
         )
-        self.ui.label_norm_divide_amount.setText(
-            f"{self.ui.slider_norm_divide_amount.value()}%"
+        self.ui.label_ops_divide.setText(
+            f"{self.ui.slider_ops_divide.value()}%"
         )
 
-    def _update_norm_step_visibility(self) -> None:
-        """Show/hide param widgets based on source selection per step."""
-        sub = self.ui.combobox_norm_subtract.currentData()
-        div = self.ui.combobox_norm_divide.currentData()
-        self.ui.norm_subtract_range_widget.setVisible(sub == "range")
-        self.ui.norm_subtract_file_widget.setVisible(sub == "file")
-        self.ui.norm_subtract_sliding_widget.setVisible(sub == "sliding")
-        self.ui.norm_subtract_amount_widget.setVisible(sub != "none")
-        self.ui.norm_divide_range_widget.setVisible(div == "range")
-        self.ui.norm_divide_file_widget.setVisible(div == "file")
-        self.ui.norm_divide_sliding_widget.setVisible(div == "sliding")
-        self.ui.norm_divide_amount_widget.setVisible(div != "none")
-        self.update_norm_range()
+    def _ops_open_aggregate_tab(self) -> None:
+        """Switch to Aggregate tab so user can configure range and reduce."""
+        self.ui.timeline_tabwidget.setCurrentIndex(1)
+        self.ui.radio_aggregated.setChecked(True)
+
+    def _on_crop_range_for_ops(self) -> None:
+        """Crop range changed -> update Ops if Aggregate is used."""
+        self.apply_ops()
 
     def reset_options(self) -> None:
+        # Signale blockieren waehrend Batch-Update (verhindert 21s emit-Kaskaden nach Load)
+        _batch = [
+            self.ui.roi_plot.crop_range,
+            self.ui.spinbox_crop_range_start,
+            self.ui.spinbox_crop_range_end,
+            self.ui.spinbox_selection_window,
+            self.ui.spinbox_current_frame,
+            self.ui.combobox_reduce,
+            self.ui.timeline_tabwidget,
+            self.ui.combobox_ops_subtract_src,
+            self.ui.combobox_ops_divide_src,
+            self.ui.slider_ops_subtract,
+            self.ui.slider_ops_divide,
+        ]
+        for w in _batch:
+            w.blockSignals(True)
+        try:
+            self._reset_options_body()
+        finally:
+            for w in _batch:
+                w.blockSignals(False)
+
+    def _reset_options_body(self) -> None:
         self.ui.combobox_reduce.setCurrentIndex(0)
         self.ui.timeline_tabwidget.setCurrentIndex(0)
         self.ui.radio_time_series.setChecked(True)
@@ -621,33 +611,22 @@ class MainWindow(QMainWindow):
             self.ui.timeline_tabwidget.setTabEnabled(1, False)
         else:
             self.ui.timeline_tabwidget.setTabEnabled(1, True)
-        self.ui.checkbox_norm_apply.setChecked(False)
-        self.ui.combobox_norm_subtract.setCurrentIndex(0)
-        self.ui.combobox_norm_divide.setCurrentIndex(0)
-        self.ui.slider_norm_subtract_amount.setValue(100)
-        self.ui.slider_norm_divide_amount.setValue(100)
-        self.ui.button_bg_input.setText("Load background image")
-        self.ui.button_bg_divide.setText("Load background image")
+        self.ui.combobox_ops_subtract_src.setCurrentIndex(0)
+        self.ui.combobox_ops_divide_src.setCurrentIndex(0)
+        self.ui.slider_ops_subtract.setValue(100)
+        self.ui.slider_ops_divide.setValue(0)
+        self.ui.button_ops_load_file.setText("Load reference image")
         self.ui.image_viewer._background_image = None
         self.ui.checkbox_measure_roi.setChecked(False)
         self.ui.spinbox_crop_range_start.setValue(0)
-        self.ui.spinbox_norm_window.setValue(1)
-        self.ui.spinbox_norm_lag.setValue(0)
-        self.ui.spinbox_norm_window.setMinimum(1)
-        n = max(1, self.ui.image_viewer.data.n_images - 1)
-        self.ui.spinbox_norm_window.setMaximum(n)
-        self.ui.spinbox_norm_lag.setMaximum(max(0, n))
-        self.ui.spinbox_norm_divide_window.setMinimum(1)
-        self.ui.spinbox_norm_divide_window.setMaximum(n)
-        self.ui.spinbox_norm_divide_lag.setMaximum(max(0, n))
         self.ui.spinbox_crop_range_start.setMaximum(
-            self.ui.image_viewer.data.n_images-1
+            self.ui.image_viewer.data.n_images - 1
         )
         self.ui.spinbox_crop_range_end.setMaximum(
-            self.ui.image_viewer.data.n_images-1
+            self.ui.image_viewer.data.n_images - 1
         )
         self.ui.spinbox_crop_range_end.setValue(
-            self.ui.image_viewer.data.n_images-1
+            self.ui.image_viewer.data.n_images - 1
         )
         n_frames = max(1, self.ui.image_viewer.data.n_images)
         self.ui.spinbox_current_frame.setMaximum(n_frames - 1)
@@ -657,30 +636,9 @@ class MainWindow(QMainWindow):
         self.ui.roi_plot.crop_range.setRegion(
             (0, self.ui.image_viewer.data.n_images - 1)
         )
-        self.ui.spinbox_norm_range_start.setValue(0)
-        self.ui.spinbox_norm_range_start.setMaximum(
-            self.ui.image_viewer.data.n_images-1
-        )
-        self.ui.spinbox_norm_range_end.setMaximum(
-            self.ui.image_viewer.data.n_images-1
-        )
-        self.ui.spinbox_norm_range_end.setValue(
-            self.ui.image_viewer.data.n_images-1
-        )
-        self.ui.spinbox_norm_divide_start.setValue(0)
-        self.ui.spinbox_norm_divide_start.setMaximum(
-            self.ui.image_viewer.data.n_images - 1
-        )
-        self.ui.spinbox_norm_divide_end.setMaximum(
-            self.ui.image_viewer.data.n_images - 1
-        )
-        self.ui.spinbox_norm_divide_end.setValue(
-            self.ui.image_viewer.data.n_images - 1
-        )
-        self.ui.checkbox_norm_show_range.setChecked(False)
-        self.ui.spinbox_norm_blur.setValue(0)
-        self._update_norm_amount_labels()
-        self._update_norm_step_visibility()
+        self._update_ops_file_visibility()
+        self._update_ops_slider_labels()
+        self.apply_ops()
         self.ui.spinbox_selection_window.setMaximum(
             self.ui.image_viewer.data.n_images
         )
@@ -720,33 +678,6 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_rosee_in_image_v.setChecked(False)
         self.ui.label_rosee_plots.setEnabled(False)
         self.ui.label_rosee_image.setEnabled(False)
-
-    def update_norm_range_labels(self) -> None:
-        norm_range_ = self.ui.roi_plot.norm_range.getRegion()
-        left, right = map(round, norm_range_)  # type: ignore
-        sub = self.ui.combobox_norm_subtract.currentData()
-        div = self.ui.combobox_norm_divide.currentData()
-        if sub == "range":
-            self.ui.spinbox_norm_range_start.setValue(left)
-            self.ui.spinbox_norm_range_end.setValue(right)
-        elif div == "range":
-            self.ui.spinbox_norm_divide_start.setValue(left)
-            self.ui.spinbox_norm_divide_end.setValue(right)
-        self.ui.roi_plot.norm_range.setRegion((left, right))
-
-    def update_norm_range(self) -> None:
-        sub = self.ui.combobox_norm_subtract.currentData()
-        div = self.ui.combobox_norm_divide.currentData()
-        if sub == "range":
-            self.ui.roi_plot.norm_range.setRegion(
-                (self.ui.spinbox_norm_range_start.value(),
-                 self.ui.spinbox_norm_range_end.value())
-            )
-        elif div == "range":
-            self.ui.roi_plot.norm_range.setRegion(
-                (self.ui.spinbox_norm_divide_start.value(),
-                 self.ui.spinbox_norm_divide_end.value())
-            )
 
     def update_crop_range_labels(self) -> None:
         """Region-Drag -> Snap auf Int, Spinboxen + Window aktualisieren.
@@ -939,7 +870,7 @@ class MainWindow(QMainWindow):
         self.ui.image_viewer.setCurrentIndex(idx)
 
     def crop(self) -> None:
-        with LoadingManager(self, "Cropping..."):
+        with LoadingManager(self, "Cropping...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
             self.ui.image_viewer.crop(
                 left=self.ui.spinbox_crop_range_start.value(),
                 right=self.ui.spinbox_crop_range_end.value(),
@@ -948,15 +879,15 @@ class MainWindow(QMainWindow):
         self.reset_options()
 
     def apply_mask(self) -> None:
-        with LoadingManager(self, "Masking..."):
+        with LoadingManager(self, "Masking...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
             self.ui.image_viewer.apply_mask()
 
     def reset_mask(self) -> None:
-        with LoadingManager(self, "Reset..."):
+        with LoadingManager(self, "Reset...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
             self.ui.image_viewer.reset_mask()
 
     def change_roi(self) -> None:
-        with LoadingManager(self, "Change ROI..."):
+        with LoadingManager(self, "Change ROI...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
             self.ui.checkbox_roi_drop.setChecked(False)
             self.ui.image_viewer.change_roi()
 
@@ -964,7 +895,7 @@ class MainWindow(QMainWindow):
         file_path, _ = QFileDialog.getOpenFileName(
             directory=str(self.last_file_dir),
         )
-        with LoadingManager(self, "Masking..."):
+        with LoadingManager(self, "Masking...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
             self.ui.image_viewer.image_mask(Path(file_path))
 
     def toggle_rosee(self) -> None:
@@ -1022,21 +953,20 @@ class MainWindow(QMainWindow):
             smoothing=self.ui.spinbox_iso_smoothing.value(),
         )
 
-    def search_background_file(self) -> None:
-        if "Remove" not in self.ui.button_bg_input.text():
+    def load_ops_file(self) -> None:
+        """Load or remove reference image for Ops (subtract/divide)."""
+        if "Remove" not in self.ui.button_ops_load_file.text():
             file, _ = QFileDialog.getOpenFileName(
-                caption="Choose Background File",
+                caption="Choose Reference File",
                 directory=str(self.last_file_dir),
             )
             if file and self.ui.image_viewer.load_background_file(Path(file)):
-                self.ui.button_bg_input.setText("[Remove]")
-                self.ui.button_bg_divide.setText("[Remove]")
-                self.apply_normalization()
+                self.ui.button_ops_load_file.setText("[Remove]")
+                self.apply_ops()
         else:
             self.ui.image_viewer.unload_background_file()
-            self.ui.button_bg_input.setText("Load background image")
-            self.ui.button_bg_divide.setText("Load background image")
-            self.apply_normalization()
+            self.ui.button_ops_load_file.setText("Load reference image")
+            self.apply_ops()
 
     def on_strgC(self) -> None:
         cb = QApplication.clipboard()
@@ -1057,11 +987,78 @@ class MainWindow(QMainWindow):
         x, y, value = self.ui.image_viewer.get_position_info()
         self.ui.position_label.setText(f"X: {x} | Y: {y} | Value: {value}")
 
+    def _on_option_tab_changed(self, index: int) -> None:
+        """Start/stop Bench live timer when Bench tab is visible."""
+        bench_idx = getattr(
+            self.ui, "bench_tab_index",
+            self.ui.option_tabwidget.count() - 1,
+        )
+        if index == bench_idx:
+            self._bench_live_tick = 0
+            self._bench_timer.start(1000)
+            self.update_bench()
+        else:
+            self._bench_timer.stop()
+            self.ui.label_bench_live.setText("")
+
+    def update_bench(self) -> None:
+        """Update Bench tab labels (CPU, RAM, Disk + sparklines, matrix stats)."""
+        ram_free = get_available_ram()
+        ram_used = get_used_ram()
+        cpu = get_cpu_percent()
+        disk_r, disk_w = get_disk_io_mbs()
+        if self._bench_timer.isActive():
+            self.ui.bench_sparklines.add_point(
+                cpu, ram_used, ram_free, disk_r, disk_w
+            )
+        if self._bench_timer.isActive():
+            tick = getattr(self, "_bench_live_tick", 0)
+            self._bench_live_tick = tick + 1
+            self.ui.label_bench_live.setText(
+                "\u25cb LIVE" if tick % 2 else "\u25cf LIVE"
+            )
+        else:
+            self.ui.label_bench_live.setText("")
+        data = getattr(self.ui.image_viewer, "data", None)
+        if data is None:
+            self.ui.label_bench_raw.setText("Raw: —")
+            self.ui.label_bench_result.setText("Result: —")
+            self.ui.label_bench_mode.setText("View mode: —")
+            self.ui.label_bench_cache.setText("Cache: —")
+            return
+        shape = data._image.shape
+        dtype = data._image.dtype.name
+        self.ui.label_bench_raw.setText(
+            f"Raw: {format_size_mb(data._image.nbytes)} "
+            f"({shape[0]}x{shape[1]}x{shape[2]}x{shape[3]}, {dtype})"
+        )
+        result_cache = getattr(data, "_result_cache", {})
+        is_aggregate = getattr(data, "_redop", None) is not None
+        ops_in_cache = sorted(set(k[0] for k in result_cache.keys())) if result_cache else []
+        cache_str = f"Ready: {', '.join(ops_in_cache)}" if ops_in_cache else "—"
+        self.ui.label_bench_cache.setText(f"Result cache: {cache_str}")
+
+        if is_aggregate:
+            op = data._redop
+            bounds = getattr(data, "_agg_bounds", None)
+            self.ui.label_bench_mode.setText(f"View mode: Aggregate ({op})")
+            key = (op, bounds)
+            cached = result_cache.get(key) if result_cache else None
+            if cached is not None:
+                self.ui.label_bench_result.setText(
+                    f"Result: {format_size_mb(cached.nbytes)} (cached)"
+                )
+            else:
+                self.ui.label_bench_result.setText("Result: computing...")
+        else:
+            self.ui.label_bench_mode.setText("View mode: Frame")
+            self.ui.label_bench_result.setText("Result: —")
+
     def browse_tof(self) -> None:
         path, _ = QFileDialog.getOpenFileName()
         if not path:
             return
-        with LoadingManager(self, "Loading TOF data..."):
+        with LoadingManager(self, "Loading TOF data...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
             self.tof_adapter.set_data(path, self.ui.image_viewer.data.meta)
         self.ui.checkbox_tof.setEnabled(True)
         self.ui.checkbox_tof.setChecked(True)
@@ -1081,7 +1078,7 @@ class MainWindow(QMainWindow):
             self.load(Path(folder_path))
 
     def export(self) -> None:
-        with LoadingManager(self, "Exporting..."):
+        with LoadingManager(self, "Exporting...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
             self.ui.image_viewer.exportClicked()
 
     def browse_lut(self) -> None:
@@ -1177,7 +1174,7 @@ class MainWindow(QMainWindow):
             mask = mask if mask else None
             crop = crop if crop else None
             self.sync_project_preloading()
-            with LoadingManager(self, f"Loading {saved_path}") as lm:
+            with LoadingManager(self, f"Loading {saved_path}", blocking_label=self.ui.blocking_status) as lm:
                 self.ui.image_viewer.load_data(
                     saved_path,
                     progress_callback=lm.set_progress,
@@ -1382,7 +1379,7 @@ class MainWindow(QMainWindow):
 
         params.pop("mask_rel", None)
 
-        with LoadingManager(self, f"Loading {path}") as lm:
+        with LoadingManager(self, f"Loading {path}", blocking_label=self.ui.blocking_status) as lm:
             self.ui.image_viewer.load_data(
                 path,
                 progress_callback=lm.set_progress,
@@ -1395,89 +1392,55 @@ class MainWindow(QMainWindow):
         self.update_statusbar()
         self.reset_options()
 
-    def apply_normalization(self) -> None:
-        """Build pipeline from UI (one source per step) and set on data."""
+    def apply_ops(self) -> None:
+        """Build Ops pipeline from UI and set on data."""
         if self.ui.image_viewer.data.is_single_image():
             return
-        if not self.ui.checkbox_norm_apply.isChecked():
-            self.ui.image_viewer.data.set_normalization_pipeline(
-                [], factor=1.0, blur=0
-            )
-            self.ui.image_viewer.update_image()
-            return
-        blur = self.ui.spinbox_norm_blur.value()
-        pipeline: list[dict] = []
+        bounds = (
+            self.ui.spinbox_crop_range_start.value(),
+            self.ui.spinbox_crop_range_end.value(),
+        )
+        method = self.ui.combobox_reduce.currentText()
         bg = self.ui.image_viewer._background_image
 
-        sub = self.ui.combobox_norm_subtract.currentData()
-        sub_amount = self.ui.slider_norm_subtract_amount.value() / 100.0
-        if sub == "range":
-            pipeline.append({
-                "operation": "subtract",
-                "source": "range",
-                "bounds": (
-                    self.ui.spinbox_norm_range_start.value(),
-                    self.ui.spinbox_norm_range_end.value(),
-                ),
-                "use": self.ui.combobox_norm.currentText(),
-                "factor": sub_amount,
-            })
-        elif sub == "file" and bg is not None:
-            pipeline.append({
-                "operation": "subtract",
-                "source": "file",
-                "reference": bg,
-                "factor": sub_amount,
-            })
-        elif sub == "sliding":
-            pipeline.append({
-                "operation": "subtract",
-                "source": "sliding",
-                "window_lag": (
-                    self.ui.spinbox_norm_window.value(),
-                    self.ui.spinbox_norm_lag.value(),
-                ),
-                "factor": sub_amount,
-            })
+        def _step(src: str, amount: int) -> dict | None:
+            if not src or src == "off" or amount <= 0:
+                return None
+            if src == "aggregate":
+                if method == "None - current frame":
+                    return None
+                return {"source": "aggregate", "bounds": bounds, "method": method, "amount": amount / 100.0}
+            if src == "file" and bg is not None:
+                return {"source": "file", "reference": bg, "amount": amount / 100.0}
+            return None
 
-        div = self.ui.combobox_norm_divide.currentData()
-        div_amount = self.ui.slider_norm_divide_amount.value() / 100.0
-        if div == "range":
-            pipeline.append({
-                "operation": "divide",
-                "source": "range",
-                "bounds": (
-                    self.ui.spinbox_norm_divide_start.value(),
-                    self.ui.spinbox_norm_divide_end.value(),
-                ),
-                "use": self.ui.combobox_norm_divide_method.currentText(),
-                "factor": div_amount,
-            })
-        elif div == "file" and bg is not None:
-            pipeline.append({
-                "operation": "divide",
-                "source": "file",
-                "reference": bg,
-                "factor": div_amount,
-            })
-        elif div == "sliding":
-            pipeline.append({
-                "operation": "divide",
-                "source": "sliding",
-                "window_lag": (
-                    self.ui.spinbox_norm_divide_window.value(),
-                    self.ui.spinbox_norm_divide_lag.value(),
-                ),
-                "factor": div_amount,
-            })
+        sub_src = self.ui.combobox_ops_subtract_src.currentData()
+        sub_amt = self.ui.slider_ops_subtract.value()
+        div_src = self.ui.combobox_ops_divide_src.currentData()
+        div_amt = self.ui.slider_ops_divide.value()
 
-        with LoadingManager(self, "Applying normalization...") as lm:
-            self.ui.image_viewer.data.set_normalization_pipeline(
-                pipeline, factor=1.0, blur=blur
-            )
-            self.ui.image_viewer.update_image()
+        pipeline: dict = {}
+        if sub := _step(sub_src, sub_amt):
+            pipeline["subtract"] = sub
+        if div := _step(div_src, div_amt):
+            pipeline["divide"] = div
+
         if pipeline:
-            log(f"Normalization applied in {lm.duration:.2f}s")
+            parts = []
+            if "subtract" in pipeline:
+                parts.append("Subtracting")
+            if "divide" in pipeline:
+                parts.append("Dividing")
+            msg = " & ".join(parts) + "..."
+        else:
+            msg = None
+        if msg:
+            with LoadingManager(self, msg, blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
+                self.ui.image_viewer.data.set_ops_pipeline(pipeline)
+                self.ui.image_viewer.update_image()
+        else:
+            self.ui.image_viewer.data.set_ops_pipeline(None)
+            self.ui.image_viewer.update_image()
 
     def update_view_mode(self) -> None:
         """Switch between Single Frame (Time Series) and Aggregated Image."""
@@ -1489,9 +1452,10 @@ class MainWindow(QMainWindow):
         if is_agg:
             self.apply_aggregation()
         else:
-            with LoadingManager(self, "Unpacking..."):
+            with LoadingManager(self, "Switching...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
                 self.ui.image_viewer.unravel()
             self.update_statusbar()
+            self.update_bench()
 
     def _on_selection_changed(self) -> None:
         """Selection geaendert (Range-Drag oder Spinbox) -> Aggregation neu berechnen."""
@@ -1505,20 +1469,22 @@ class MainWindow(QMainWindow):
             return
         text = self.ui.combobox_reduce.currentText()
         if text == "None - current frame":
-            with LoadingManager(self, "Unpacking..."):
+            with LoadingManager(self, "Switching...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
                 self.ui.image_viewer.unravel()
             self.update_statusbar()
+            self.update_bench()
             return
         bounds = (
             self.ui.spinbox_crop_range_start.value(),
             self.ui.spinbox_crop_range_end.value(),
         )
-        with LoadingManager(self, f"Loading {text}...") as lm:
+        with LoadingManager(self, f"Computing {text}...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0) as lm:
             self.ui.image_viewer.reduce(text, bounds=bounds)
         s, e = bounds
         center = (s + e) / 2
         self.ui.image_viewer.timeLine.setPos((center, 0))
         self.update_statusbar()
+        self.update_bench()
         log(f"{text} in {lm.duration:.2f}s")
 
     def update_roi_settings(self) -> None:

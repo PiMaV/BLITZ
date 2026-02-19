@@ -58,6 +58,12 @@ Neue Property in `blitz/data/image.py`:
 
 ---
 
-## Naechste Mission: Normalization
+## Ops-Tab (erledigt)
 
-Die **Normalization** soll als eigener Tab im oberen Panel (Options-Dock) umgesetzt werden. Die bisherige Integration in den Time-Tab wird dadurch ersetzt bzw. vereinheitlicht.
+**Ops** ist ein eigener Tab im Options-Dock. Subtract und Divide nutzen dieselbe Referenz-Quelle:
+
+- **1. Subtract**: Source Off | Aggregate | File, Amount 0-100%
+- **2. Divide**: Source Off | Aggregate | File, Amount 0-100%
+- **Aggregate**: Verwendet Range und Reduce aus dem Aggregate-Tab (Open Aggregate)
+- **File**: Geladenes Referenzbild (Dark Frame, Flat Field)
+- Subtract und Divide koennen kombiniert werden (z.B. Subtract: File, Divide: Aggregate)

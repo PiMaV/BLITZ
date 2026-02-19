@@ -6,7 +6,7 @@
     "action_restart": "Manually restart the application.",
 
     "button_autofit": "Automatically fits the range of the colormap to the colors in the image.",
-    "checkbox_auto_colormap": "If set, switches to a centered diverging colormap if negative values in the image appear (e.g. through normalization).",
+    "checkbox_auto_colormap": "If set, uses plasma for normal data and switches to bipolar (diverging) colormap when negative values appear (e.g. through normalization or fluctuation around zero).",
     "button_load_lut": "Loads a LUT from a .json file.",
     "button_export_lut": "Saves the current LUT to a .json file. If an .blitz project file is selected, this LUT gets loaded automatically the next time the application is opened.",
 

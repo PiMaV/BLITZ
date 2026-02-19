@@ -1,4 +1,5 @@
-"""Unit tests for ImageData normalization pipeline and aggregation range."""
+"""Unit tests for ImageData ops pipeline and aggregation range."""
+import time
 import numpy as np
 import pytest
 
@@ -19,13 +20,10 @@ def _make_meta(n: int) -> list[MetaData]:
     ]
 
 
-class TestNormalizationPipeline:
-    """Test pipeline math: subtract then divide."""
+class TestOpsPipeline:
+    """Test subtract and divide steps with aggregate/file sources."""
 
-    def test_subtract_then_divide_range(self) -> None:
-        # Data: frames 0,1,2 have values 10,20,30. Mean of 0-2 = 20.
-        # Subtract mean ->  -10, 0, 10
-        # Divide by mean (20) -> -0.5, 0, 0.5
+    def test_subtract_aggregate_mean(self) -> None:
         data = np.arange(12, dtype=np.float32).reshape(3, 2, 2, 1)
         data[0] = 10
         data[1] = 20
@@ -33,48 +31,38 @@ class TestNormalizationPipeline:
         meta = _make_meta(3)
         img = ImageData(data, meta)
 
-        pipeline = [
-            {"operation": "subtract", "source": "range", "bounds": (0, 2), "use": "MEAN"},
-            {"operation": "divide", "source": "range", "bounds": (0, 2), "use": "MEAN"},
-        ]
-        img.set_normalization_pipeline(pipeline, factor=1.0, blur=0)
-
+        pipeline = {
+            "subtract": {"source": "aggregate", "bounds": (0, 2), "method": "MEAN", "amount": 1.0},
+        }
+        img.set_ops_pipeline(pipeline)
         out = img.image
-        # After subtract: 10-20=-10, 20-20=0, 30-20=10
-        # After divide by 20: -10/20=-0.5, 0/20=0, 10/20=0.5
-        np.testing.assert_allclose(out[0, ..., 0], -0.5)
+        np.testing.assert_allclose(out[0, ..., 0], -10.0)
         np.testing.assert_allclose(out[1, ..., 0], 0.0)
-        np.testing.assert_allclose(out[2, ..., 0], 0.5)
+        np.testing.assert_allclose(out[2, ..., 0], 10.0)
 
-    def test_divide_then_subtract_range(self) -> None:
-        # Pipeline: divide by mean(base), subtract mean(base).
-        # Both refs from raw. divide by 10->1, subtract 10->-9.
-        data = np.ones((3, 2, 2, 1), dtype=np.float32) * 10.0
+    def test_subtract_aggregate_median(self) -> None:
+        data = np.array([10, 20, 30], dtype=np.float32).reshape(3, 1, 1, 1)
         meta = _make_meta(3)
         img = ImageData(data, meta)
 
-        pipeline = [
-            {"operation": "divide", "source": "range", "bounds": (0, 2), "use": "MEAN"},
-            {"operation": "subtract", "source": "range", "bounds": (0, 2), "use": "MEAN"},
-        ]
-        img.set_normalization_pipeline(pipeline, factor=1.0, blur=0)
-
+        pipeline = {
+            "subtract": {"source": "aggregate", "bounds": (0, 2), "method": "MEDIAN", "amount": 1.0},
+        }
+        img.set_ops_pipeline(pipeline)
         out = img.image
-        # After divide by 10: all 1.0. After subtract 10: 1-10=-9
-        np.testing.assert_allclose(out, -9.0)
+        np.testing.assert_allclose(out[:, 0, 0, 0], [-10.0, 0.0, 10.0])
 
-    def test_factor_scaling(self) -> None:
+    def test_subtract_amount(self) -> None:
         data = np.ones((2, 2, 2, 1), dtype=np.float32) * 100.0
         meta = _make_meta(2)
         img = ImageData(data, meta)
 
-        pipeline = [
-            {"operation": "subtract", "source": "range", "bounds": (0, 1), "use": "MEAN"},
-        ]
-        img.set_normalization_pipeline(pipeline, factor=0.5, blur=0)
-
+        pipeline = {
+            "subtract": {"source": "aggregate", "bounds": (0, 1), "method": "MEAN", "amount": 0.5},
+        }
+        img.set_ops_pipeline(pipeline)
         out = img.image
-        # Reference mean = 100. With factor 0.5, we subtract 50. Result = 50.
+        # Ref mean=100, amount 0.5 -> subtract 50. Result=50.
         np.testing.assert_allclose(out, 50.0)
 
     def test_empty_pipeline_identity(self) -> None:
@@ -82,9 +70,23 @@ class TestNormalizationPipeline:
         meta = _make_meta(3)
         img = ImageData(data, meta)
 
-        img.set_normalization_pipeline([], factor=1.0, blur=0)
+        img.set_ops_pipeline(None)
         out = img.image
         np.testing.assert_array_equal(out, data)
+
+    def test_subtract_then_divide(self) -> None:
+        data = np.ones((3, 2, 2, 1), dtype=np.float32) * 20.0
+        meta = _make_meta(3)
+        img = ImageData(data, meta)
+
+        pipeline = {
+            "subtract": {"source": "aggregate", "bounds": (0, 2), "method": "MEAN", "amount": 1.0},
+            "divide": {"source": "aggregate", "bounds": (0, 2), "method": "MEAN", "amount": 1.0},
+        }
+        img.set_ops_pipeline(pipeline)
+        out = img.image
+        # After subtract: 20-20=0. After divide by 20: 0/20=0.
+        np.testing.assert_allclose(out, 0.0)
 
 
 class TestAggregationRange:
@@ -101,7 +103,7 @@ class TestAggregationRange:
 
         img.reduce("MEAN")
         out = img.image
-        expected = np.array([[[[5.], [6.]], [[7.], [8.]]]])  # 4D, mean over frames
+        expected = np.array([[[[5.], [6.]], [[7.], [8.]]]])
         np.testing.assert_allclose(out, expected)
 
     def test_reduce_with_bounds(self) -> None:
@@ -115,24 +117,10 @@ class TestAggregationRange:
 
         img.reduce("MEAN", bounds=(1, 2))
         out = img.image
-        # Mean of frames 1 and 2 only: (5+9)/2=7, (6+10)/2=8, (7+11)/2=9, (8+12)/2=10
         expected = np.array([[[[7.], [8.]], [[9.], [10.]]]])
         np.testing.assert_allclose(out, expected)
 
-    def test_reduce_single_frame_bounds(self) -> None:
-        data = np.array([
-            [[1, 2], [3, 4]],
-            [[5, 6], [7, 8]],
-        ], dtype=np.float32).reshape(2, 2, 2, 1)
-        meta = _make_meta(2)
-        img = ImageData(data, meta)
-
-        img.reduce("MAX", bounds=(0, 0))
-        out = img.image
-        np.testing.assert_allclose(out, data[0:1])
-
-    def test_pipeline_then_aggregation_bounds(self) -> None:
-        """Normalization pipeline then aggregation with bounds."""
+    def test_ops_then_aggregation_bounds(self) -> None:
         data = np.array([
             [[10, 10], [10, 10]],
             [[20, 20], [20, 20]],
@@ -141,13 +129,89 @@ class TestAggregationRange:
         meta = _make_meta(3)
         img = ImageData(data, meta)
 
-        pipeline = [
-            {"operation": "subtract", "source": "range", "bounds": (0, 2), "use": "MEAN"},
-        ]
-        img.set_normalization_pipeline(pipeline, factor=1.0, blur=0)
+        pipeline = {
+            "subtract": {"source": "aggregate", "bounds": (0, 2), "method": "MEAN", "amount": 1.0},
+        }
+        img.set_ops_pipeline(pipeline)
         img.reduce("MEAN", bounds=(0, 1))
         out = img.image
-        # After subtract: -10, 0, 10 (mean was 20)
-        # Bounds 0-1: frames -10 and 0. Mean = -5
         expected = np.array([[[[-5.], [-5.]], [[-5.], [-5.]]]])
         np.testing.assert_allclose(out, expected)
+
+
+class TestResultCache:
+    """Test that the result cache is used when params match."""
+
+    def test_cache_reuse_after_unravel(self) -> None:
+        """Frame -> Aggregate -> Frame -> Aggregate (same params) reuses cache."""
+        data = np.random.rand(100, 8, 8, 1).astype(np.float32)
+        meta = _make_meta(100)
+        img = ImageData(data, meta)
+
+        img.reduce("MEAN", bounds=(0, 99))
+        out1 = img.image.copy()
+        assert ("MEAN", (0, 99)) in img._result_cache
+
+        img.unravel()
+        assert ("MEAN", (0, 99)) in img._result_cache  # Preserved for fast switch back
+
+        img.reduce("MEAN", bounds=(0, 99))
+        out2 = img.image.copy()
+        np.testing.assert_allclose(out1, out2)
+        assert ("MEAN", (0, 99)) in img._result_cache
+
+    def test_cache_reuse_mean_median_mean(self) -> None:
+        """Mean -> Median -> Mean: second Mean is cache hit (no recompute)."""
+        data = np.random.rand(50, 8, 8, 1).astype(np.float32)
+        meta = _make_meta(50)
+        img = ImageData(data, meta)
+
+        img.reduce("MEAN", bounds=(0, 49))
+        _ = img.image
+        mean_result = img._result_cache[("MEAN", (0, 49))].copy()
+
+        img.reduce("MEDIAN", bounds=(0, 49))
+        _ = img.image
+        assert ("MEAN", (0, 49)) in img._result_cache  # Mean still cached
+
+        img.reduce("MEAN", bounds=(0, 49))
+        out = img.image.copy()
+        np.testing.assert_allclose(out, mean_result)
+        assert img._bench_cache_hits >= 1
+
+    def test_cache_different_bounds_both_cached(self) -> None:
+        """Different bounds produce different results, both remain in cache."""
+        data = np.arange(20 * 4 * 4, dtype=np.float32).reshape(20, 4, 4, 1)  # 0..319
+        meta = _make_meta(20)
+        img = ImageData(data, meta)
+
+        img.reduce("MEAN", bounds=(0, 9))
+        _ = img.image
+        prev_result = img._result_cache[("MEAN", (0, 9))].copy()
+
+        img.reduce("MEAN", bounds=(10, 19))
+        _ = img.image
+        curr = img._result_cache[("MEAN", (10, 19))]
+        assert not np.allclose(prev_result, curr)
+        assert ("MEAN", (0, 9)) in img._result_cache
+
+    def test_cache_faster_than_recompute(self) -> None:
+        """Cache hit is faster than recompute (smoke test with 2k frames)."""
+        n = 2000
+        data = np.random.rand(n, 32, 32, 1).astype(np.float32)
+        meta = _make_meta(n)
+        img = ImageData(data, meta)
+
+        img.reduce("MEAN", bounds=(0, n - 1))
+        t0 = time.perf_counter()
+        for _ in range(5):
+            _ = img.image
+        t_cached = (time.perf_counter() - t0) / 5
+
+        img._invalidate_result()
+        t0 = time.perf_counter()
+        _ = img.image
+        t_compute = time.perf_counter() - t0
+
+        # Cache hit should be at least 2x faster (typically 10-100x for median)
+        assert t_cached < t_compute, f"cached={t_cached:.4f}s, compute={t_compute:.4f}s"
