@@ -6,12 +6,11 @@ from typing import Callable, Optional
 
 import cv2
 import numpy as np
-import pydicom
 from natsort import natsorted
 
 from .. import settings
 from ..tools import log
-from .image import DicomMetaData, ImageData, MetaData, VideoMetaData
+from .image import ImageData, MetaData, VideoMetaData
 from .tools import (adjust_ratio_for_memory, resize_and_convert,
                     resize_and_convert_to_8_bit)
 
@@ -281,14 +280,6 @@ class DataLoader:
         return file.suffix.lower() in VIDEO_EXTENSIONS
 
     @staticmethod
-    def _is_dicom(path: Path) -> bool:
-        try:
-            pydicom.dcmread(path)
-            return True
-        except Exception:
-            return False
-
-    @staticmethod
     def get_video_metadata(path: Path) -> VideoMetaData:
         cap = cv2.VideoCapture(str(path))
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -386,11 +377,6 @@ class DataLoader:
             # This path is generally not reached if called via load() for video,
             # but kept for compatibility.
             return self._load_video(path)
-        elif DataLoader._is_dicom(path):
-            image, metadata = self._load_dicom_file(path)
-            done = ImageData(image[np.newaxis, ...], [metadata])
-            self._log_arguments(done)
-            return done
         else:
             log("Error: Unsupported file type", color="red")
             return DataLoader.from_text(
@@ -428,10 +414,6 @@ class DataLoader:
             sample, _ = self._load_single_array(content[0])
             total_size_estimate = sample.nbytes * len(content)
             load_function = self._load_single_array
-        elif DataLoader._is_dicom(content[0]):
-            sample, _ = self._load_dicom_file(content[0])
-            total_size_estimate = sample.nbytes * len(content)
-            load_function = self._load_dicom_file
         else:
             log("Error: Unknown file extension in folder", color="red")
             return DataLoader.from_text(
@@ -486,14 +468,7 @@ class DataLoader:
             )
         done = ImageData(matrices, metadata)
 
-        if isinstance(done.meta[0], DicomMetaData):
-            sorted_indices = np.argsort(
-                [meta.sequence_number for meta in done.meta]
-            )
-            done = ImageData(
-                done.image[sorted_indices],
-                [done.meta[i] for i in sorted_indices]
-            )
+        # Removed DICOM sorting logic here
 
         self._log_arguments(done)
         return done
@@ -527,21 +502,6 @@ class DataLoader:
             color_model= "grayscale" if image.ndim == 2 else "rgb",
         )
         return np.swapaxes(image, 0, 1), metadata
-
-    def _load_dicom_file(self, path: Path) -> tuple[np.ndarray, MetaData]:
-        dicom_data = pydicom.dcmread(path)
-        image = dicom_data.pixel_array
-        image = np.swapaxes(image, 0, 1)
-        metadata = DicomMetaData(
-            file_name=path.name,
-            file_size_MB=os.path.getsize(path) / 2**20,
-            size=(image.shape[0], image.shape[1]),
-            dtype=image.dtype,
-            bit_depth=8 * image.dtype.itemsize,
-            color_model="grayscale",
-            sequence_number=int(dicom_data.InstanceNumber),
-        )
-        return image, metadata
 
     def _load_video(
         self,
