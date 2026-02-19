@@ -90,11 +90,20 @@ class MainWindow(QMainWindow):
         self.ui.roi_plot.crop_range.sigRegionChanged.connect(
             self._crop_region_to_frame
         )
+        self.ui.roi_plot.crop_range.sigRegionChangeFinished.connect(
+            self._on_selection_changed
+        )
         self.ui.image_viewer.scene.sigMouseMoved.connect(
             self.update_statusbar_position
         )
         self.ui.image_viewer.timeLine.sigPositionChanged.connect(
             self.update_statusbar
+        )
+        self.ui.image_viewer.timeLine.sigPositionChanged.connect(
+            self._sync_current_frame_spinbox
+        )
+        self.ui.spinbox_current_frame.valueChanged.connect(
+            self._on_current_frame_spinbox_changed
         )
 
         # lut connections
@@ -163,14 +172,23 @@ class MainWindow(QMainWindow):
                 self.ui.checkbox_roi_drop.isChecked()
             )
         )
-        self.ui.checkbox_crop_show_range.stateChanged.connect(
-            self._on_crop_show_range_changed
-        )
         self.ui.spinbox_crop_range_start.editingFinished.connect(
             self.update_crop_range
         )
         self.ui.spinbox_crop_range_end.editingFinished.connect(
             self.update_crop_range
+        )
+        self.ui.spinbox_selection_window.editingFinished.connect(
+            self._on_selection_changed
+        )
+        self.ui.spinbox_crop_range_start.valueChanged.connect(
+            lambda: self._sync_selection_window_from_range(from_start=True)
+        )
+        self.ui.spinbox_crop_range_end.valueChanged.connect(
+            lambda: self._sync_selection_window_from_range(from_start=False)
+        )
+        self.ui.checkbox_window_const.stateChanged.connect(
+            lambda: self._sync_selection_from_window_const()
         )
         self.ui.spinbox_crop_range_start.valueChanged.connect(
             self._crop_index_to_frame
@@ -178,6 +196,16 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_crop_range_end.valueChanged.connect(
             self._crop_index_to_frame
         )
+        self.ui.spinbox_crop_range_start.editingFinished.connect(
+            self._on_selection_changed
+        )
+        self.ui.spinbox_crop_range_end.editingFinished.connect(
+            self._on_selection_changed
+        )
+        self.ui.spinbox_selection_window.valueChanged.connect(
+            self._sync_selection_range_from_window
+        )
+        self.ui.button_reset_range.clicked.connect(self.reset_selection_range)
         self.ui.button_crop.clicked.connect(self.crop)
         self.ui.checkbox_norm_apply.stateChanged.connect(
             self.apply_normalization
@@ -244,28 +272,26 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_norm_divide_lag.valueChanged.connect(
             self.apply_normalization
         )
+        self.ui.timeline_tabwidget.currentChanged.connect(
+            self._on_timeline_tab_changed
+        )
+        self.ui.checkbox_timeline_bands.stateChanged.connect(
+            self._on_timeline_options_changed
+        )
+        self.ui.combobox_timeline_aggregation.currentIndexChanged.connect(
+            self._on_timeline_options_changed
+        )
+        self.ui.checkbox_agg_update_on_drag.stateChanged.connect(
+            self._on_agg_update_on_drag_changed
+        )
+        self._on_agg_update_on_drag_changed()
         self.ui.radio_time_series.toggled.connect(self.update_view_mode)
         self.ui.radio_aggregated.toggled.connect(self.update_view_mode)
         self.ui.combobox_reduce.currentIndexChanged.connect(
             self.apply_aggregation
         )
-        self.ui.checkbox_agg_sliding.stateChanged.connect(
-            self._update_agg_sliding_visibility
-        )
-        self.ui.checkbox_agg_sliding.stateChanged.connect(
-            self.apply_aggregation
-        )
-        self.ui.spinbox_agg_window.valueChanged.connect(
-            self._update_agg_slider_range
-        )
-        self.ui.spinbox_agg_window.valueChanged.connect(
-            self.apply_aggregation
-        )
-        self.ui.slider_agg_pos.valueChanged.connect(
-            self._update_agg_pos_label
-        )
-        self.ui.slider_agg_pos.valueChanged.connect(
-            self.apply_aggregation
+        self.ui.spinbox_selection_window.valueChanged.connect(
+            self._sync_selection_range_from_window
         )
         self.ui.checkbox_measure_roi.stateChanged.connect(
             self.ui.measure_roi.toggle
@@ -332,6 +358,7 @@ class MainWindow(QMainWindow):
             self.update_isocurves
         )
         self._update_envelope_options()
+        self._update_selection_visibility()
 
     def _update_envelope_options(self) -> None:
         per_image = self.ui.checkbox_minmax_per_image.isChecked()
@@ -351,6 +378,63 @@ class MainWindow(QMainWindow):
             self.ui.h_plot.draw_line()
         if not (rosee_active and self.ui.checkbox_rosee_v.isChecked()):
             self.ui.v_plot.draw_line()
+
+    def _on_timeline_tab_changed(self, index: int) -> None:
+        """Tab-Wechsel = Modus: Frame->Single, Agg->Aggregated."""
+        if index == 0:
+            self.ui.radio_time_series.setChecked(True)
+        else:
+            self.ui.radio_aggregated.setChecked(True)
+
+    def _on_timeline_options_changed(self) -> None:
+        """Frame-Tab: Upper/lower band + Mean/Median fuer Timeline-Kurve."""
+        mode = self.ui.combobox_timeline_aggregation.currentData()
+        self.ui.image_viewer.set_timeline_options(
+            mode,
+            self.ui.checkbox_timeline_bands.isChecked(),
+        )
+
+    def _on_agg_update_on_drag_changed(self) -> None:
+        """Update on drag: connect/disconnect crop_range.sigRegionChanged."""
+        on_drag = self.ui.checkbox_agg_update_on_drag.isChecked()
+        try:
+            self.ui.roi_plot.crop_range.sigRegionChanged.disconnect(
+                self._on_selection_changed_from_drag
+            )
+        except TypeError:
+            pass
+        if on_drag:
+            self.ui.roi_plot.crop_range.sigRegionChanged.connect(
+                self._on_selection_changed_from_drag
+            )
+
+    def _on_selection_changed_from_drag(self) -> None:
+        """Live update during range drag. Throttled: nur bei geaenderten Bounds."""
+        s = self.ui.spinbox_crop_range_start.value()
+        e = self.ui.spinbox_crop_range_end.value()
+        prev = getattr(self, "_last_agg_bounds_from_drag", None)
+        if prev == (s, e):
+            return
+        self._last_agg_bounds_from_drag = (s, e)
+        self._on_selection_changed()
+
+    def _update_selection_visibility(self) -> None:
+        """Idx immer aktiv (wenn Daten). Range + Tab Agg nur bei Multi-Frame."""
+        data = getattr(self.ui.image_viewer, "data", None)
+        n = data.n_images if data else 0
+        is_agg = self.ui.radio_aggregated.isChecked()
+        needs_range = n > 1 and is_agg
+
+        self.ui.timeline_tabwidget.setTabEnabled(1, n > 1)
+        if n <= 1 and self.ui.timeline_tabwidget.currentIndex() == 1:
+            self.ui.timeline_tabwidget.setCurrentIndex(0)
+            self.ui.radio_time_series.setChecked(True)
+        self.ui.spinbox_current_frame.setEnabled(n > 0)
+        self.ui.range_section_widget.setEnabled(needs_range)
+        if needs_range:
+            self.ui.roi_plot.crop_range.show()
+        else:
+            self.ui.roi_plot.crop_range.hide()
 
     def setup_sync(self) -> None:
         screen_geometry = QApplication.primaryScreen().availableGeometry()
@@ -528,17 +612,15 @@ class MainWindow(QMainWindow):
 
     def reset_options(self) -> None:
         self.ui.combobox_reduce.setCurrentIndex(0)
+        self.ui.timeline_tabwidget.setCurrentIndex(0)
         self.ui.radio_time_series.setChecked(True)
-        self.ui.agg_options_widget.setVisible(False)
         self.ui.checkbox_flipx.setChecked(False)
         self.ui.checkbox_flipy.setChecked(False)
         self.ui.checkbox_transpose.setChecked(False)
         if self.ui.image_viewer.data.is_single_image():
-            self.ui.combobox_reduce.setEnabled(False)
-            self.ui.radio_aggregated.setEnabled(False)
+            self.ui.timeline_tabwidget.setTabEnabled(1, False)
         else:
-            self.ui.combobox_reduce.setEnabled(True)
-            self.ui.radio_aggregated.setEnabled(True)
+            self.ui.timeline_tabwidget.setTabEnabled(1, True)
         self.ui.checkbox_norm_apply.setChecked(False)
         self.ui.combobox_norm_subtract.setCurrentIndex(0)
         self.ui.combobox_norm_divide.setCurrentIndex(0)
@@ -567,7 +649,14 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_crop_range_end.setValue(
             self.ui.image_viewer.data.n_images-1
         )
-        self.ui.checkbox_crop_show_range.setChecked(False)
+        n_frames = max(1, self.ui.image_viewer.data.n_images)
+        self.ui.spinbox_current_frame.setMaximum(n_frames - 1)
+        self.ui.spinbox_current_frame.setValue(
+            min(self.ui.image_viewer.currentIndex, n_frames - 1)
+        )
+        self.ui.roi_plot.crop_range.setRegion(
+            (0, self.ui.image_viewer.data.n_images - 1)
+        )
         self.ui.spinbox_norm_range_start.setValue(0)
         self.ui.spinbox_norm_range_start.setMaximum(
             self.ui.image_viewer.data.n_images-1
@@ -592,15 +681,11 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_norm_blur.setValue(0)
         self._update_norm_amount_labels()
         self._update_norm_step_visibility()
-        self.ui.checkbox_agg_sliding.setChecked(False)
-        self.ui.agg_sliding_widget.setVisible(False)
-        self.ui.spinbox_agg_window.setValue(4)
-        self.ui.spinbox_agg_window.setMaximum(
+        self.ui.spinbox_selection_window.setMaximum(
             self.ui.image_viewer.data.n_images
         )
-        self._update_agg_slider_range()
-        self.ui.slider_agg_pos.setValue(0)
-        self._update_agg_pos_label()
+        self._sync_selection_window_from_range()
+        self._update_selection_visibility()
         self.ui.checkbox_roi_drop.setChecked(
             self.ui.image_viewer.is_roi_on_drop_update()
         )
@@ -664,15 +749,139 @@ class MainWindow(QMainWindow):
             )
 
     def update_crop_range_labels(self) -> None:
+        """Region-Drag -> Snap auf Int, Spinboxen + Window aktualisieren.
+        Win const. gilt nur bei Spinner/Aendern: Beim Handle-Ziehen immer Window
+        aus neuer Spannweite berechnen (wie ohne Win const.)."""
         crop_range_ = self.ui.roi_plot.crop_range.getRegion()
-        left, right = map(round, crop_range_)  # type: ignore
+        data = getattr(self.ui.image_viewer, "data", None)
+        n = max(1, data.n_images) if data is not None else 1
+        n_max = max(0, n - 1)
+
+        left = max(0, min(int(round(crop_range_[0])), n_max)) if n > 0 else 0
+        right = max(0, min(int(round(crop_range_[1])), n_max)) if n > 0 else 0
+        if left > right:
+            left, right = right, left
+        w = max(1, right - left + 1)
+
+        self.ui.roi_plot.crop_range.blockSignals(True)
+        self.ui.roi_plot.crop_range.setRegion((left, right))
+        self.ui.roi_plot.crop_range.blockSignals(False)
         self.ui.spinbox_crop_range_start.blockSignals(True)
         self.ui.spinbox_crop_range_start.setValue(left)
         self.ui.spinbox_crop_range_start.blockSignals(False)
         self.ui.spinbox_crop_range_end.blockSignals(True)
         self.ui.spinbox_crop_range_end.setValue(right)
         self.ui.spinbox_crop_range_end.blockSignals(False)
-        self.ui.roi_plot.crop_range.setRegion((left, right))
+        self.ui.spinbox_selection_window.blockSignals(True)
+        self.ui.spinbox_selection_window.setValue(w)
+        self.ui.spinbox_selection_window.blockSignals(False)
+        self._update_window_const_bounds()
+
+    def _sync_current_frame_spinbox(self) -> None:
+        """Timeline/Cursor -> Idx-Spinbox."""
+        try:
+            idx = int(round(self.ui.image_viewer.timeLine.pos()[0]))
+        except (AttributeError, TypeError):
+            return
+        data = getattr(self.ui.image_viewer, "data", None)
+        n = max(1, data.n_images) if data is not None else 1
+        idx = max(0, min(idx, n - 1))
+        self.ui.spinbox_current_frame.blockSignals(True)
+        self.ui.spinbox_current_frame.setMaximum(max(0, n - 1))
+        self.ui.spinbox_current_frame.setValue(idx)
+        self.ui.spinbox_current_frame.blockSignals(False)
+
+    def _on_current_frame_spinbox_changed(self) -> None:
+        """Idx-Spinbox -> setCurrentIndex."""
+        idx = self.ui.spinbox_current_frame.value()
+        self.ui.image_viewer.setCurrentIndex(idx)
+
+    def _sync_selection_from_window_const(self) -> None:
+        """Beim Toggle von Win const.: Range anpassen."""
+        if self.ui.checkbox_window_const.isChecked():
+            self._sync_selection_range_from_window()
+        self._update_window_const_bounds()
+
+    def _update_window_const_bounds(self) -> None:
+        """Bei Win const.: Start max = End - Window + 1, End min = Start + Window - 1."""
+        data = getattr(self.ui.image_viewer, "data", None)
+        n_max = max(0, data.n_images - 1) if data else 0
+
+        if not self.ui.checkbox_window_const.isChecked():
+            self.ui.spinbox_crop_range_start.setMaximum(n_max)
+            self.ui.spinbox_crop_range_end.setMinimum(0)
+            self.ui.spinbox_crop_range_end.setMaximum(n_max)
+            return
+
+        w = max(1, self.ui.spinbox_selection_window.value())
+        # Start: 0 .. n_max - w + 1 (End folgt); End: w - 1 .. n_max (Start folgt)
+        self.ui.spinbox_crop_range_start.setMaximum(max(0, n_max - w + 1))
+        self.ui.spinbox_crop_range_end.setMinimum(max(0, w - 1))
+        self.ui.spinbox_crop_range_end.setMaximum(n_max)
+
+    def _sync_selection_window_from_range(self, from_start: bool = True) -> None:
+        """Start <= End. Bei Win const.: anderes Bound bewegen, sonst Window anpassen."""
+        s, e = (
+            self.ui.spinbox_crop_range_start.value(),
+            self.ui.spinbox_crop_range_end.value(),
+        )
+        w = max(1, self.ui.spinbox_selection_window.value())
+        n = 0
+        if hasattr(self.ui.image_viewer, "data") and self.ui.image_viewer.data:
+            n = max(1, self.ui.image_viewer.data.n_images)
+
+        if self.ui.checkbox_window_const.isChecked():
+            if from_start:
+                e = max(s, min(s + w - 1, n - 1)) if n > 0 else s + w - 1
+                self.ui.spinbox_crop_range_end.blockSignals(True)
+                self.ui.spinbox_crop_range_end.setValue(e)
+                self.ui.spinbox_crop_range_end.blockSignals(False)
+            else:
+                s = max(0, min(e - w + 1, n - w)) if n > 0 else max(0, e - w + 1)
+                e = s + w - 1
+                self.ui.spinbox_crop_range_start.blockSignals(True)
+                self.ui.spinbox_crop_range_start.setValue(s)
+                self.ui.spinbox_crop_range_start.blockSignals(False)
+                self.ui.spinbox_crop_range_end.blockSignals(True)
+                self.ui.spinbox_crop_range_end.setValue(e)
+                self.ui.spinbox_crop_range_end.blockSignals(False)
+
+        else:
+            if s > e:
+                if from_start:
+                    e = s
+                    self.ui.spinbox_crop_range_end.blockSignals(True)
+                    self.ui.spinbox_crop_range_end.setValue(e)
+                    self.ui.spinbox_crop_range_end.blockSignals(False)
+                else:
+                    s = e
+                    self.ui.spinbox_crop_range_start.blockSignals(True)
+                    self.ui.spinbox_crop_range_start.setValue(s)
+                    self.ui.spinbox_crop_range_start.blockSignals(False)
+            w = max(1, e - s + 1)
+            self.ui.spinbox_selection_window.blockSignals(True)
+            self.ui.spinbox_selection_window.setValue(w)
+            self.ui.spinbox_selection_window.blockSignals(False)
+
+        s, e = self.ui.spinbox_crop_range_start.value(), self.ui.spinbox_crop_range_end.value()
+        self.ui.roi_plot.crop_range.setRegion((s, e))
+        self._update_window_const_bounds()
+
+    def _sync_selection_range_from_window(self) -> None:
+        """End = Start + Window - 1 (from Window). Window min 1, Start <= End."""
+        s = self.ui.spinbox_crop_range_start.value()
+        w = max(1, self.ui.spinbox_selection_window.value())
+        if w != self.ui.spinbox_selection_window.value():
+            self.ui.spinbox_selection_window.blockSignals(True)
+            self.ui.spinbox_selection_window.setValue(w)
+            self.ui.spinbox_selection_window.blockSignals(False)
+        mx = self.ui.spinbox_crop_range_end.maximum()
+        e = max(s, min(s + w - 1, mx))
+        self.ui.spinbox_crop_range_end.blockSignals(True)
+        self.ui.spinbox_crop_range_end.setValue(e)
+        self.ui.spinbox_crop_range_end.blockSignals(False)
+        self.ui.roi_plot.crop_range.setRegion((s, e))
+        self._update_window_const_bounds()
 
     def toggle_hvplot_markings(self) -> None:
         self.ui.h_plot.toggle_mark_position()
@@ -680,14 +889,22 @@ class MainWindow(QMainWindow):
         self.ui.v_plot.toggle_mark_position()
         self.ui.v_plot.draw_line()
 
-    def _on_crop_show_range_changed(self, state: int) -> None:
-        """When range is activated, sync region from spinboxes before showing."""
-        if state == Qt.Checked:
-            self.ui.roi_plot.crop_range.setRegion(
-                (self.ui.spinbox_crop_range_start.value(),
-                 self.ui.spinbox_crop_range_end.value())
-            )
-        self.ui.roi_plot.toggle_crop_range()
+    def reset_selection_range(self) -> None:
+        """Set Selection auf volle Range [0, n-1]."""
+        if not hasattr(self.ui.image_viewer, "data") or self.ui.image_viewer.data is None:
+            return
+        n = max(1, self.ui.image_viewer.data.n_images)
+        self.ui.spinbox_crop_range_start.blockSignals(True)
+        self.ui.spinbox_crop_range_end.blockSignals(True)
+        self.ui.spinbox_selection_window.blockSignals(True)
+        self.ui.spinbox_crop_range_start.setValue(0)
+        self.ui.spinbox_crop_range_end.setValue(n - 1)
+        self.ui.spinbox_selection_window.setValue(n)
+        self.ui.spinbox_crop_range_start.blockSignals(False)
+        self.ui.spinbox_crop_range_end.blockSignals(False)
+        self.ui.spinbox_selection_window.blockSignals(False)
+        self.ui.roi_plot.crop_range.setRegion((0, n - 1))
+        self._on_selection_changed()
 
     def update_crop_range(self) -> None:
         self.ui.roi_plot.crop_range.setRegion(
@@ -1265,54 +1482,42 @@ class MainWindow(QMainWindow):
     def update_view_mode(self) -> None:
         """Switch between Single Frame (Time Series) and Aggregated Image."""
         is_agg = self.ui.radio_aggregated.isChecked()
-        self.ui.agg_options_widget.setVisible(is_agg)
+        self.ui.timeline_tabwidget.blockSignals(True)
+        self.ui.timeline_tabwidget.setCurrentIndex(1 if is_agg else 0)
+        self.ui.timeline_tabwidget.blockSignals(False)
+        self._update_selection_visibility()
         if is_agg:
-            self._update_agg_sliding_visibility()
             self.apply_aggregation()
         else:
             with LoadingManager(self, "Unpacking..."):
                 self.ui.image_viewer.unravel()
             self.update_statusbar()
 
-    def _update_agg_sliding_visibility(self) -> None:
-        """Show/hide sliding aggregation controls."""
-        on = self.ui.checkbox_agg_sliding.isChecked()
-        self.ui.agg_sliding_widget.setVisible(on)
-        if on:
-            self._update_agg_slider_range()
-
-    def _update_agg_slider_range(self) -> None:
-        """Set slider max from n_frames - window_size."""
-        n = self.ui.image_viewer.data.n_images
-        w = self.ui.spinbox_agg_window.value()
-        mx = max(0, n - w)
-        self.ui.slider_agg_pos.setMaximum(mx)
-        if self.ui.slider_agg_pos.value() > mx:
-            self.ui.slider_agg_pos.setValue(mx)
-
-    def _update_agg_pos_label(self) -> None:
-        """Update the position label for sliding aggregation."""
-        p = self.ui.slider_agg_pos.value()
-        w = self.ui.spinbox_agg_window.value()
-        self.ui.label_agg_pos.setText(f"Pos: {p} ({p}-{p + w - 1})")
+    def _on_selection_changed(self) -> None:
+        """Selection geaendert (Range-Drag oder Spinbox) -> Aggregation neu berechnen."""
+        if (self.ui.radio_aggregated.isChecked()
+                and self.ui.combobox_reduce.currentText() != "None - current frame"):
+            self.apply_aggregation()
 
     def apply_aggregation(self) -> None:
-        """Apply reduction (with optional bounds) when in Aggregated mode."""
+        """Apply reduction over Selection [Start, End] when in Aggregated mode."""
         if not self.ui.radio_aggregated.isChecked():
             return
         text = self.ui.combobox_reduce.currentText()
-        if text == "-":
+        if text == "None - current frame":
             with LoadingManager(self, "Unpacking..."):
                 self.ui.image_viewer.unravel()
             self.update_statusbar()
             return
-        bounds = None
-        if self.ui.checkbox_agg_sliding.isChecked():
-            pos = self.ui.slider_agg_pos.value()
-            w = self.ui.spinbox_agg_window.value()
-            bounds = (pos, pos + w - 1)
+        bounds = (
+            self.ui.spinbox_crop_range_start.value(),
+            self.ui.spinbox_crop_range_end.value(),
+        )
         with LoadingManager(self, f"Loading {text}...") as lm:
             self.ui.image_viewer.reduce(text, bounds=bounds)
+        s, e = bounds
+        center = (s + e) / 2
+        self.ui.image_viewer.timeLine.setPos((center, 0))
         self.update_statusbar()
         log(f"{text} in {lm.duration:.2f}s")
 

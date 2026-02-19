@@ -1,14 +1,15 @@
 import json
 
 import pyqtgraph as pg
-from PyQt5.QtCore import QFile, Qt
+from PyQt5.QtCore import QFile, Qt, QTimer
 from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox,
                              QFrame, QGridLayout, QGroupBox, QHBoxLayout,
                              QLabel, QLayout, QLineEdit, QMenu, QMenuBar,
                              QPushButton, QRadioButton, QScrollArea,
-                             QSizePolicy, QSlider, QSpinBox, QStatusBar, QStyle,
-                             QTabWidget, QVBoxLayout, QWidget)
+                             QSizePolicy, QSlider, QSplitter, QSpinBox,
+                             QStatusBar, QStyle, QTabWidget, QVBoxLayout,
+                             QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import __version__, settings
@@ -129,7 +130,10 @@ class UI_MainWindow(QWidget):
         # this decoy prevents an error being thrown in the ImageView
         timeline_decoy = pg.PlotWidget(self.image_viewer.ui.splitter)
         timeline_decoy.hide()
-        self.dock_t_line.addWidget(self.roi_plot)
+        self.timeline_splitter = QSplitter(Qt.Horizontal)
+        self.timeline_splitter.addWidget(self.roi_plot)
+        self.timeline_splitter.setStretchFactor(0, 1)
+        self.dock_t_line.addWidget(self.timeline_splitter)
         self.image_viewer.ui.menuBtn.setParent(None)
 
         self.v_plot.setYLink(self.image_viewer.getView())
@@ -312,6 +316,15 @@ class UI_MainWindow(QWidget):
         connect_lay.addWidget(self.button_connect, 2, 0, 2, 1)
         connect_lay.addWidget(self.button_disconnect, 2, 1, 2, 1)
         file_layout.addLayout(connect_lay)
+        self.crop_section_widget = QWidget()
+        crop_section_layout = QVBoxLayout(self.crop_section_widget)
+        crop_label = QLabel("Crop")
+        crop_label.setStyleSheet(style_heading)
+        crop_section_layout.addWidget(crop_label)
+        self.button_crop = QPushButton("Apply Crop")
+        crop_section_layout.addWidget(self.button_crop)
+        file_layout.addWidget(self.crop_section_widget)
+        self.crop_section_widget.setVisible(False)
         file_layout.addStretch()
         self.create_option_tab(file_layout, "File")
 
@@ -419,90 +432,130 @@ class UI_MainWindow(QWidget):
         view_layout.addStretch()
         self.create_option_tab(view_layout, "View")
 
-        # --- Time: Cropping, View Mode, Normalization ---
-        timeop_layout = QVBoxLayout()
-
-        # --- Section 1: Global Cropping (zuerst: Bereich waehlen) ---
-        self.label_crop = QLabel("Global Cropping")
-        self.label_crop.setStyleSheet(style_heading)
-        timeop_layout.addWidget(self.label_crop)
-        crop_range_label_to = QLabel("-")
+        # --- Timeline Panel: 2 Tabs Frame | Agg (Tab-Wechsel = Modus) ---
+        self.spinbox_current_frame = QSpinBox()
+        self.spinbox_current_frame.setMinimum(0)
+        self.spinbox_current_frame.setPrefix("Idx: ")
+        self.spinbox_current_frame.setMinimumWidth(72)
         self.spinbox_crop_range_start = QSpinBox()
         self.spinbox_crop_range_start.setMinimum(0)
-        self.spinbox_crop_range_start.setMinimumWidth(72)  # 5 digits
+        self.spinbox_crop_range_start.setMinimumWidth(72)
         self.spinbox_crop_range_end = QSpinBox()
-        self.spinbox_crop_range_end.setMinimum(1)
-        self.spinbox_crop_range_end.setMinimumWidth(72)  # 5 digits
-        self.checkbox_crop_show_range = QCheckBox("")
-        map_ = getattr(QStyle, "SP_DesktopIcon")
-        self.checkbox_crop_show_range.setIcon(
-            self.checkbox_crop_show_range.style().standardIcon(map_)
-        )
-        self.button_crop = QPushButton("Apply")
-        range_crop_layout = QHBoxLayout()
-        range_crop_layout.setSpacing(2)
-        range_crop_layout.addWidget(self.spinbox_crop_range_start)
-        range_crop_layout.addWidget(crop_range_label_to)
-        range_crop_layout.addWidget(self.spinbox_crop_range_end)
-        range_crop_layout.addWidget(self.checkbox_crop_show_range)
-        range_crop_layout.addStretch()
-        range_crop_layout.addWidget(self.button_crop)
-        timeop_layout.addLayout(range_crop_layout)
+        self.spinbox_crop_range_end.setMinimum(0)
+        self.spinbox_crop_range_end.setMinimumWidth(72)
+        self.spinbox_selection_window = QSpinBox()
+        self.spinbox_selection_window.setPrefix("Win: ")
+        self.spinbox_selection_window.setMinimum(1)
+        self.spinbox_selection_window.setMinimumWidth(52)
+        self.checkbox_window_const = QCheckBox("Win const.")
+        self.button_reset_range = QPushButton("Full Range")
 
-        # --- Section 2: View Mode ---
-        view_mode_label = QLabel("View Mode")
-        view_mode_label.setStyleSheet(style_heading)
-        timeop_layout.addWidget(view_mode_label)
+        self.combobox_reduce = QComboBox()
+        self.combobox_reduce.addItem("None - current frame")
+        for op in ReduceOperation:
+            self.combobox_reduce.addItem(op.name)
 
-        self.radio_time_series = QRadioButton("Single Frame (Time Series)")
+        self.radio_time_series = QRadioButton()
         self.radio_time_series.setChecked(True)
-        self.radio_aggregated = QRadioButton("Aggregated Image")
+        self.radio_aggregated = QRadioButton()
         self.view_mode_group = QButtonGroup()
         self.view_mode_group.addButton(self.radio_time_series)
         self.view_mode_group.addButton(self.radio_aggregated)
-        timeop_layout.addWidget(self.radio_time_series)
-        timeop_layout.addWidget(self.radio_aggregated)
 
-        self.agg_options_widget = QWidget()
-        agg_options_layout = QVBoxLayout()
-        self.agg_options_widget.setLayout(agg_options_layout)
-        self.label_reduce = QLabel("Aggregation")
-        self.label_reduce.setStyleSheet(style_heading_small)
-        agg_options_layout.addWidget(self.label_reduce)
-        self.combobox_reduce = QComboBox()
-        self.combobox_reduce.addItem("-")
-        for op in ReduceOperation:
-            self.combobox_reduce.addItem(op.name)
-        agg_options_layout.addWidget(self.combobox_reduce)
-        self.checkbox_agg_sliding = QCheckBox("Sliding window")
-        agg_options_layout.addWidget(self.checkbox_agg_sliding)
-        self.agg_sliding_widget = QWidget()
-        agg_slid_layout = QHBoxLayout()
-        self.spinbox_agg_window = QSpinBox()
-        self.spinbox_agg_window.setPrefix("Window: ")
-        self.spinbox_agg_window.setMinimum(1)
-        self.spinbox_agg_window.setValue(4)
-        self.slider_agg_pos = QSlider(Qt.Horizontal)
-        self.slider_agg_pos.setMinimum(0)
-        self.slider_agg_pos.setMaximum(1)
-        self.label_agg_pos = QLabel("Pos: 0")
-        agg_slid_layout.addWidget(self.spinbox_agg_window)
-        agg_slid_layout.addWidget(self.slider_agg_pos)
-        agg_slid_layout.addWidget(self.label_agg_pos)
-        self.agg_sliding_widget.setLayout(agg_slid_layout)
-        agg_options_layout.addWidget(self.agg_sliding_widget)
-        timeop_layout.addWidget(self.agg_options_widget)
-        self.agg_sliding_widget.setVisible(False)
-        self.agg_options_widget.setVisible(False)
+        frame_tab = QWidget()
+        frame_layout = QVBoxLayout(frame_tab)
+        frame_layout.setContentsMargins(4, 2, 4, 2)
+        frame_layout.addWidget(self.spinbox_current_frame)
+        self.checkbox_timeline_bands = QCheckBox("Upper/lower band")
+        self.checkbox_timeline_bands.setChecked(False)
+        self.checkbox_timeline_bands.setToolTip(
+            "Show min/max envelope in the timeline plot"
+        )
+        frame_layout.addWidget(self.checkbox_timeline_bands)
+        timeline_agg_row = QHBoxLayout()
+        timeline_agg_row.addWidget(QLabel("Curve:"))
+        self.combobox_timeline_aggregation = QComboBox()
+        self.combobox_timeline_aggregation.addItem("Mean", "mean")
+        self.combobox_timeline_aggregation.addItem("Median", "median")
+        self.combobox_timeline_aggregation.setToolTip(
+            "Aggregation within ROI per frame for the timeline curve"
+        )
+        timeline_agg_row.addWidget(self.combobox_timeline_aggregation)
+        frame_layout.addLayout(timeline_agg_row)
+        frame_layout.addStretch()
 
-        # --- Section 3: Normalization ---
+        self.range_section_widget = QWidget()
+        range_layout = QVBoxLayout(self.range_section_widget)
+        range_layout.setContentsMargins(0, 0, 0, 0)
+        sel_row1 = QHBoxLayout()
+        sel_row1.addWidget(QLabel("Start:"))
+        sel_row1.addWidget(self.spinbox_crop_range_start)
+        sel_row1.addWidget(QLabel("-"))
+        sel_row1.addWidget(QLabel("End:"))
+        sel_row1.addWidget(self.spinbox_crop_range_end)
+        range_layout.addLayout(sel_row1)
+        sel_win_row = QHBoxLayout()
+        sel_win_row.addWidget(self.spinbox_selection_window)
+        sel_win_row.addWidget(self.checkbox_window_const)
+        sel_win_row.addWidget(self.button_reset_range)
+        range_layout.addLayout(sel_win_row)
+
+        self.checkbox_agg_update_on_drag = QCheckBox("Update on drag")
+        self.checkbox_agg_update_on_drag.setChecked(False)
+        self.checkbox_agg_update_on_drag.setToolTip(
+            "Aggregate updates live while dragging the range (off = update on drop)"
+        )
+        agg_tab = QWidget()
+        agg_layout = QVBoxLayout(agg_tab)
+        agg_layout.setContentsMargins(4, 2, 4, 2)
+        agg_layout.addWidget(QLabel("Reduce:"))
+        agg_layout.addWidget(self.combobox_reduce)
+        agg_layout.addWidget(self.range_section_widget)
+        agg_layout.addWidget(self.checkbox_agg_update_on_drag)
+        agg_layout.addStretch()
+
+        self.timeline_tabwidget = QTabWidget()
+        self.timeline_tabwidget.addTab(frame_tab, "Frame")
+        self.timeline_tabwidget.addTab(agg_tab, "Aggregate")
+
+        self.selection_panel = QWidget()
+        sel_layout = QVBoxLayout(self.selection_panel)
+        sel_layout.setContentsMargins(0, 0, 0, 0)
+        sel_layout.addWidget(self.timeline_tabwidget)
+        w = max(800, self.width())
+        border_size = int(0.25 * w / 2)
+        image_viewer_size = int(0.75 * w)
+        self.selection_panel.setMinimumWidth(max(120, border_size))
+        self.timeline_splitter.addWidget(self.selection_panel)
+
+        def _set_timeline_splitter_sizes():
+            try:
+                lut_w = self.dock_lookup.width()
+            except Exception:
+                lut_w = int(0.25 * max(800, self.width()) / 2)
+            if lut_w < 100:
+                lut_w = int(0.25 * max(800, self.width()) / 2)
+            total = self.timeline_splitter.width()
+            if total > 100:
+                self.timeline_splitter.setSizes([max(200, total - lut_w), lut_w])
+            else:
+                w = max(800, self.width())
+                bw = int(0.25 * w / 2)
+                iv = int(0.75 * w)
+                self.timeline_splitter.setSizes([max(200, iv - bw), bw])
+
+        QTimer.singleShot(150, _set_timeline_splitter_sizes)
+
+        # --- Normalization (vorerst ausgeblendet, fuer Connections) ---
+        self.norm_section_widget = QWidget()
+        norm_section_layout = QVBoxLayout()
         norm_section_label = QLabel("Normalization")
         norm_section_label.setStyleSheet(style_heading)
-        timeop_layout.addWidget(norm_section_label)
+        norm_section_layout.addWidget(norm_section_label)
 
         self.checkbox_norm_apply = QCheckBox("Apply")
         self.checkbox_norm_apply.setChecked(False)
-        timeop_layout.addWidget(self.checkbox_norm_apply)
+        norm_section_layout.addWidget(self.checkbox_norm_apply)
 
         # Step 1: Subtract
         step1_group = QGroupBox("1. Subtract background (e.g. dark frame)")
@@ -569,7 +622,7 @@ class UI_MainWindow(QWidget):
         step1_layout.addWidget(self.norm_subtract_amount_widget)
 
         step1_group.setLayout(step1_layout)
-        timeop_layout.addWidget(step1_group)
+        norm_section_layout.addWidget(step1_group)
 
         # Step 2: Divide
         step2_group = QGroupBox("2. Divide by (e.g. flatfield)")
@@ -631,17 +684,18 @@ class UI_MainWindow(QWidget):
         step2_layout.addWidget(self.norm_divide_amount_widget)
 
         step2_group.setLayout(step2_layout)
-        timeop_layout.addWidget(step2_group)
+        norm_section_layout.addWidget(step2_group)
 
         # Blur (optional, global)
         self.spinbox_norm_blur = QSpinBox()
         self.spinbox_norm_blur.setPrefix("Blur ref: ")
         self.spinbox_norm_blur.setMinimum(0)
         self.spinbox_norm_blur.setValue(0)
-        timeop_layout.addWidget(self.spinbox_norm_blur)
+        norm_section_layout.addWidget(self.spinbox_norm_blur)
 
-        timeop_layout.addStretch()
-        self.create_option_tab(timeop_layout, "Time")
+        self.norm_section_widget.setLayout(norm_section_layout)
+        self.norm_section_widget.setVisible(False)
+        agg_layout.addWidget(self.norm_section_widget)
 
         # --- Tools ---
         tools_layout = QVBoxLayout()

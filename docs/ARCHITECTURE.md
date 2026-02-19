@@ -23,6 +23,7 @@ BLITZ is a Python-based image viewer and analysis tool built with **PyQt5** and 
     *   Lazy evaluation of crops, masks, and flips.
     *   Normalization (subtract/divide).
     *   Reduction (Mean, Max, Min, Std).
+    *   **`image_timeline`**: Property fuer die Timeline im Aggregate-Modus – liefert vollen Stack (norm + mask) ohne Reduce. Siehe `docs/TIMELINE_AGGREGATION.md`.
 *   **`DataLoader` (`load.py`)**: Responsible for reading files (Images, Video, DICOM, Numpy). It uses `multiprocessing.Pool` for parallel loading of large image sequences.
 
 ### 2. UI Layer (`blitz/layout`)

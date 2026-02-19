@@ -4,11 +4,14 @@ from typing import Any, Optional, Self, Sequence
 
 import numpy as np
 import psutil
+from PyQt5.QtCore import QTimer
 from PyQt5.QtGui import QColor, QFont, QTextCharFormat
 from PyQt5.QtWidgets import (QApplication, QDialog, QLabel, QProgressBar,
                              QTextEdit, QVBoxLayout)
 
 from . import settings
+
+PROGRESS_DIALOG_DELAY_MS = 1000
 
 LOGGER: Any = None
 
@@ -73,11 +76,20 @@ class LoggingTextEdit(QTextEdit):
 
 class LoadingManager:
 
-    def __init__(self, parent, text: str = "Loading ...") -> None:
+    def __init__(
+        self,
+        parent,
+        text: str = "Loading ...",
+        delay_ms: int = PROGRESS_DIALOG_DELAY_MS,
+    ) -> None:
         self.text = text
         self.parent = parent
+        self._delay_ms = delay_ms
         self._start_time = 0
         self._time_needed = 0
+        self._dialog: Optional[LoadingDialog] = None
+        self._timer: Optional[QTimer] = None
+        self._dialog_shown = False
 
     @property
     def time(self) -> float:
@@ -87,20 +99,28 @@ class LoadingManager:
     def duration(self) -> float:
         return self._time_needed
 
+    def _show_dialog(self) -> None:
+        if not self._dialog_shown and self._dialog is not None:
+            self._dialog.show()
+            QApplication.processEvents()
+            self._dialog_shown = True
+
     def __enter__(self) -> Self:
-        self._dialog = LoadingDialog(self.parent, self.text)
-        self._dialog.show()
-        QApplication.processEvents()
         self._start_time = clock()
+        self._dialog = LoadingDialog(self.parent, self.text)
+        self._timer = QTimer()
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self._show_dialog)
+        self._timer.start(self._delay_ms)
         return self
 
     def set_progress(self, value: int) -> None:
-        if hasattr(self, "_dialog"):
+        if self._dialog_shown and self._dialog is not None:
             self._dialog.set_progress(value)
             QApplication.processEvents()
 
     def set_message(self, message: str) -> None:
-        if hasattr(self, "_dialog"):
+        if self._dialog_shown and self._dialog is not None:
             self._dialog.set_message(message)
             QApplication.processEvents()
 
@@ -110,8 +130,14 @@ class LoadingManager:
         excinst: Optional[BaseException],
         exctb: Optional[TracebackType],
     ) -> bool:
-        self._dialog.accept()
-        del self._dialog
+        if self._timer is not None:
+            self._timer.stop()
+            self._timer = None
+        if self._dialog is not None:
+            if self._dialog_shown:
+                self._dialog.accept()
+            del self._dialog
+            self._dialog = None
         self._time_needed = clock() - self._start_time
         return False
 

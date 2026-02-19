@@ -39,8 +39,10 @@
     "button_crop_undo": "Reloads the last saved dataset. If uncropped data was not saved in RAM, instead loads it from the last loaded path again.",
     "checkbox_crop_keep": "If checked, crop is reversible: full data stays in RAM, Undo restores all.",
     "checkbox_crop_show_range": "Show a blue box in the timeline to select a time interval.",
+    "spinbox_current_frame": "Current frame index. Direct input to jump to a frame.",
     "spinbox_crop_range_start": "Index of the first image in the cropped dataset.",
     "spinbox_crop_range_end": "Index of the last image in the cropped dataset.",
+    "checkbox_window_const": "Keep window length fixed when changing Start or End. Useful for scanning a fixed window along the timeline.",
 
     "checkbox_minmax_per_image": "Envelope: at each x (horizontal) or y (vertical), min and max over ALL values in the orthogonal direction.",
     "checkbox_envelope_per_crosshair": "Envelope for current frame: min/max per position across crosshair thickness.",

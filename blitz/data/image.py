@@ -158,6 +158,31 @@ class ImageData:
         return image
 
     @property
+    def image_timeline(self) -> np.ndarray | None:
+        """Full stack for timeline: norm + mask, no reduce. None wenn nicht moeglich."""
+        if self._redop is None:
+            return None
+        if self._image_mask is not None:
+            image: np.ndarray = self._image.astype(np.float32).copy()
+        else:
+            image: np.ndarray = self._image
+        if self._norm_pipeline:
+            image = self._apply_normalization_pipeline(image)
+        if self._cropped is not None:
+            image = image[self._cropped[0] : self._cropped[1] + 1]
+        if self._image_mask is not None:
+            image[:, ~self._image_mask] = np.nan
+        if self._mask is not None:
+            image = image[self._mask]
+        if self._transposed:
+            image = np.swapaxes(image, 1, 2)
+        if self._flipped_x:
+            image = np.flip(image, 1)
+        if self._flipped_y:
+            image = np.flip(image, 2)
+        return image
+
+    @property
     def n_images(self) -> int:
         if self._cropped is not None:
             return self._image[self._cropped[0]:self._cropped[1]+1].shape[0]

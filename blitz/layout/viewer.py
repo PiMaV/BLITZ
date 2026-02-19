@@ -39,6 +39,8 @@ class ImageViewer(pg.ImageView):
         super().__init__(view=view, roi=self.square_roi)
         self.poly_roi_state = self.poly_roi.getState()
         self.square_roi_state = self.square_roi.getState()
+        self._timeline_aggregation = "mean"
+        self._timeline_show_bands = False
         self.ui.graphicsView.setBackground(pg.mkBrush(20, 20, 20))
 
         self.ui.roiBtn.setChecked(True)
@@ -98,6 +100,85 @@ class ImageViewer(pg.ImageView):
             self.set_roi(self.square_roi)
         self.roiChanged()
         self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
+
+    def set_timeline_options(self, aggregation: str, show_bands: bool) -> None:
+        self._timeline_aggregation = aggregation
+        self._timeline_show_bands = show_bands
+        self.roiChanged()
+
+    def roiChanged(self) -> None:
+        if self.image is None:
+            return
+        data_obj = getattr(self, "data", None)
+        in_agg = (
+            data_obj is not None
+            and getattr(data_obj, "_redop", None) is not None
+            and data_obj.image_timeline is not None
+        )
+        if in_agg:
+            image = data_obj.image_timeline
+        else:
+            image = self.getProcessedImage()
+        colmaj = self.imageItem.axisOrder == 'col-major'
+        if colmaj:
+            axes = (self.axes['x'], self.axes['y'])
+        else:
+            axes = (self.axes['y'], self.axes['x'])
+        data, coords = self.roi.getArrayRegion(
+            image.view(np.ndarray), img=self.imageItem, axes=axes,
+            returnMappedCoords=True,
+        )
+        if data is None:
+            return
+        agg = np.nanmedian if self._timeline_aggregation == "median" else np.nanmean
+        if self.axes['t'] is None and not in_agg:
+            data_main = agg(data, axis=self.axes['y'])
+            if colmaj:
+                coords = coords[:, :, 0] - coords[:, 0:1, 0]
+            else:
+                coords = coords[:, 0, :] - coords[:, 0, 0:1]
+            xvals = (coords**2).sum(axis=0) ** 0.5
+            data_min = np.nanmin(data, axis=self.axes['y'])
+            data_max = np.nanmax(data, axis=self.axes['y'])
+        else:
+            data_main = agg(data, axis=axes)
+            data_min = np.nanmin(data, axis=axes) if self._timeline_show_bands else None
+            data_max = np.nanmax(data, axis=axes) if self._timeline_show_bands else None
+            xvals = (
+                np.arange(image.shape[0]) if in_agg else self.tVals
+            )
+        if data_main.ndim == 1:
+            plots = [(xvals, data_main, 'w')]
+            if self._timeline_show_bands and (in_agg or self.axes['t'] is not None) and data_min is not None:
+                plots.append((xvals, data_min, (100, 150, 100)))
+                plots.append((xvals, data_max, (150, 200, 150)))
+        elif data_main.ndim == 2:
+            colors = 'w' if data_main.shape[1] == 1 else 'rgbw'
+            plots = []
+            for i in range(data_main.shape[1]):
+                d = data_main[:, i]
+                plots.append((xvals, d, colors[i]))
+            if self._timeline_show_bands and (in_agg or self.axes['t'] is not None) and data_min is not None:
+                for i in range(data_min.shape[1]):
+                    plots.append((xvals, data_min[:, i], (100, 150, 100)))
+                    plots.append((xvals, data_max[:, i], (150, 200, 150)))
+        else:
+            plots = [(xvals, data_main.squeeze(), 'w')]
+        while len(plots) < len(self.roiCurves):
+            c = self.roiCurves.pop()
+            c.scene().removeItem(c)
+        while len(plots) > len(self.roiCurves):
+            self.roiCurves.append(self.ui.roiPlot.plot())
+        for i in range(len(plots)):
+            x, y, p = plots[i]
+            self.roiCurves[i].setData(x, y, pen=p)
+        if in_agg and len(xvals) > 0:
+            xmin = 0.0
+            xmax = float(xvals.max())
+            self.timeLine.setBounds([xmin, xmax])
+        self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
+        if in_agg and len(xvals) > 0:
+            self.ui.roiPlot.setXRange(0.0, float(xvals.max()), padding=0)
 
     def image_mask(self, file_path: Optional[Path] = None, **kwargs) -> None:
         mask = DataLoader(**kwargs).load(file_path)
@@ -290,8 +371,13 @@ class ImageViewer(pg.ImageView):
         bounds: Optional[tuple[int, int]] = None,
     ) -> None:
         self.data.reduce(operation, bounds=bounds)
+        img = self.data.image
+        if img.ndim == 2:
+            img = img[np.newaxis, ...]
+        elif img.ndim == 3 and img.shape[2] in (1, 3):
+            img = img[np.newaxis, ...]
         self.setImage(
-            self.data.image,
+            img,
             autoRange=False,
             autoLevels=False,
         )

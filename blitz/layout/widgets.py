@@ -31,7 +31,7 @@ class TimePlot(pg.PlotWidget):
         self.addItem(image_viewer.timeLine)
         self.timeline = image_viewer.timeLine
         self.timeline.setMovable(False)
-        self.timeline.setPen(pg.mkPen((0, 200, 255), width=4))
+        self.timeline.setPen(pg.mkPen((0, 200, 255), width=6))
         self.addItem(image_viewer.frameTicks)
         self.addItem(image_viewer.normRgn)
         self.old_roi_plot = image_viewer.ui.roiPlot
@@ -48,7 +48,7 @@ class TimePlot(pg.PlotWidget):
         self.setMinimumSize(QSize(0, 40))
         self.norm_range = pg.LinearRegionItem(
             brush=pg.mkBrush(80, 120, 180, 80),
-            pen=pg.mkPen((80, 120, 180), width=3),
+            pen=pg.mkPen((80, 120, 180), width=5),
         )
         self.norm_range.setZValue(0)
         if hasattr(self.norm_range, "handleSize"):
@@ -63,7 +63,6 @@ class TimePlot(pg.PlotWidget):
             self.crop_range.handleSize = 12
         self.crop_range.setZValue(0)
         self.addItem(self.crop_range)
-        self.crop_range.hide()
         self._accept_all_events = False
 
     def toggle_norm_range(self) -> None:
@@ -90,11 +89,19 @@ class TimePlot(pg.PlotWidget):
                 pos = self.timeline.getPos()
                 self.timeline.setPos((pos[0]-1, pos[1]))
 
+    def _is_hovering_crop(self) -> bool:
+        return (self.crop_range.mouseHovering
+                or self.crop_range.childItems()[0].mouseHovering
+                or self.crop_range.childItems()[1].mouseHovering)
+
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if (event.modifiers() == Qt.KeyboardModifier.NoModifier
                 and event.button() == Qt.MouseButton.LeftButton
-                and not self.norm_range.isVisible()
-                and not self.crop_range.isVisible()):
+                and not (self.norm_range.isVisible()
+                    and (self.norm_range.mouseHovering
+                        or self.norm_range.childItems()[0].mouseHovering
+                        or self.norm_range.childItems()[1].mouseHovering))
+                and not self._is_hovering_crop()):
             x = self.plotItem.vb.mapSceneToView(  # type: ignore
                 event.pos()
             ).x()
@@ -105,12 +112,7 @@ class TimePlot(pg.PlotWidget):
                         or self.norm_range.childItems()[0].mouseHovering
                         or self.norm_range.childItems()[1].mouseHovering))
                 or not self.norm_range.isVisible())
-                or
-              (((self.crop_range.isVisible()
-                    and (self.crop_range.mouseHovering
-                        or self.crop_range.childItems()[0].mouseHovering
-                        or self.crop_range.childItems()[1].mouseHovering))
-                or not self.crop_range.isVisible()))):
+                or self._is_hovering_crop()):
             super().mousePressEvent(event)
         else:
             event.ignore()
