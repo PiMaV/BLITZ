@@ -9,12 +9,10 @@ from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 
 from .. import settings
 from ..data.image import ImageData
-from ..data.live import LiveView
 from ..data.load import DataLoader, get_image_metadata
 from ..data.web import WebDataLoader
 from ..tools import LoadingManager, get_available_ram, log
-from .dialogs import (ImageLoadOptionsDialog, LiveViewOptionsDialog,
-                      VideoLoadOptionsDialog)
+from .dialogs import ImageLoadOptionsDialog, VideoLoadOptionsDialog
 from .rosee import ROSEEAdapter
 from .tof import TOFAdapter
 from .ui import UI_MainWindow
@@ -40,7 +38,6 @@ class MainWindow(QMainWindow):
         self._video_session_defaults: dict = {}
         self._image_session_defaults: dict = {}
         self._image_load_dialog_shown: bool = False
-        self._live_view: Optional[LiveView] = None
 
         self.tof_adapter = TOFAdapter(self.ui.roi_plot)
         self.rosee_adapter = ROSEEAdapter(
@@ -72,7 +69,6 @@ class MainWindow(QMainWindow):
         # menu connections
         self.ui.action_open_file.triggered.connect(self.browse_file)
         self.ui.action_open_folder.triggered.connect(self.browse_folder)
-        self.ui.action_open_camera.triggered.connect(self.open_camera)
         self.ui.action_load_tof.triggered.connect(self.browse_tof)
         self.ui.action_export.triggered.connect(self.export)
         self.ui.action_restart.triggered.connect(restart)
@@ -767,58 +763,6 @@ class MainWindow(QMainWindow):
         )
         if folder_path:
             self.load(Path(folder_path))
-
-    def open_camera(self) -> None:
-        dlg = LiveViewOptionsDialog(self)
-        if not dlg.exec():
-            return
-
-        params = dlg.get_params()
-
-        # If already running, stop it
-        if self._live_view:
-            self._live_view.stop()
-            self._live_view = None
-
-        self._live_view = LiveView(
-            cam_id=params["cam_id"],
-            buffer_size=params["buffer_size"],
-            frame_interval_ms=params["frame_interval_ms"],
-            grayscale=params["grayscale"],
-            downsample=params["downsample"],
-        )
-
-        # Connect frame ready signal to viewer's setImage
-        # We use a lambda to ensure the signal sends what setImage expects
-        self._live_view.on_frame_ready.connect(
-            lambda frame: self.ui.image_viewer.setImage(
-                frame, autoLevels=False
-            )
-        )
-
-        self.ui.group_camera.show()
-        # Start immediately
-        self.ui.button_camera_toggle.setChecked(True)
-        self.toggle_live_view(True)
-
-    def toggle_live_view(self, checked: bool) -> None:
-        if self._live_view is None:
-            return
-
-        if checked:
-            self.ui.button_camera_toggle.setText("Stop")
-            if not self._live_view.is_running():
-                self._live_view.start()
-        else:
-            self.ui.button_camera_toggle.setText("Start")
-            if self._live_view.is_running():
-                data = self._live_view.stop()
-                if data:
-                    self.ui.image_viewer.set_image(data)
-                    self.reset_options()
-                    self.update_statusbar()
-                    log(f"Captured {data.n_images} frames from live view.",
-                        color="green")
 
     def export(self) -> None:
         with LoadingManager(self, "Exporting..."):
