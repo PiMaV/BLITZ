@@ -37,7 +37,6 @@ def _install_mocks():
         ('socketio.exceptions', MagicMock()),
         ('cv2', MagicMock()),
         ('numpy', MagicMock()),
-        ('pydicom', MagicMock()),
         ('natsort', MagicMock()),
     ]
     for name, mock in mods:

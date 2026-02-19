@@ -28,11 +28,6 @@ class VideoMetaData(MetaData):
     codec: str
 
 
-@dataclass(kw_only=True)
-class DicomMetaData(MetaData):
-    sequence_number: int
-
-
 class ImageData:
 
     def __init__(
