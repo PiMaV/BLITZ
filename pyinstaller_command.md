@@ -1,11 +1,10 @@
-poetry install
+uv sync
 
- poetry add --group dev pyinstaller
+uv add --dev pyinstaller
 
- poetry env info
+uv venv   # oder uv run -- aktiviert venv nicht explizit
 
-poetry shell   
-### sind die requirements installiert und nicht 
-poetry run pip list
+### requirements pruefen
+uv pip list
 
-poetry run pyinstaller --onefile --windowed --clean --name BLITZ --icon=./resources/icon/blitz.ico blitz_main.py
+uv run pyinstaller --onefile --windowed --clean --name BLITZ --icon=./resources/icon/blitz.ico blitz_main.py

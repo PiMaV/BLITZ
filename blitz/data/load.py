@@ -467,9 +467,6 @@ class DataLoader:
                 color=(255, 0, 0),
             )
         done = ImageData(matrices, metadata)
-
-        # Removed DICOM sorting logic here
-
         self._log_arguments(done)
         return done
 

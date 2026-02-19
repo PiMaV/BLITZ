@@ -419,7 +419,7 @@ class ExtractionPlot(pg.PlotWidget):
         self._coupled: ExtractionPlot | None = None
         self._mark_coupled_position: bool = True
         self._show_minmax_per_image: bool = False
-        self._show_envelope_per_crosshair: bool = True
+        self._show_envelope_per_crosshair: bool = False
         self._show_envelope_per_dataset: bool = False
         self._envelope_pct: float = 0.0  # 0 = min/max, >0 = percentile
         self._dataset_envelope_cache: tuple[np.ndarray, np.ndarray] | None = None

@@ -1,11 +1,14 @@
+"""
+Standalone script: DICOM -> .npy converter for BLITZ.
+Knowledge store only - not imported by BLITZ. Run with: python scripts/dicom_converter.py ...
+
+Dependencies (install manually): pip install pydicom numpy
+"""
 import argparse
 import os
 import sys
 from pathlib import Path
 import numpy as np
-
-# Note: These dependencies must be installed manually as they are not part of the core BLITZ environment anymore.
-# pip install pydicom numpy
 try:
     import pydicom
 except ImportError:

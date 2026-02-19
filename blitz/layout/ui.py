@@ -390,7 +390,7 @@ class UI_MainWindow(QWidget):
         self.checkbox_minmax_per_image = QCheckBox("Min/Max per image")
         self.checkbox_minmax_per_image.setChecked(False)
         self.checkbox_envelope_per_crosshair = QCheckBox("Envelope per crosshair")
-        self.checkbox_envelope_per_crosshair.setChecked(True)
+        self.checkbox_envelope_per_crosshair.setChecked(False)
         self.checkbox_envelope_per_dataset = QCheckBox("Envelope per position (dataset)")
         self.checkbox_envelope_per_dataset.setChecked(False)
         self.spinbox_envelope_pct = QSpinBox()

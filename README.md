@@ -38,33 +38,18 @@ To compile and develop locally:
 
 1. Clone the repository:
 
-        $ git clone https://github.com/CodeSchmiedeHGW/BLITZ.git
+        $ git clone https://github.com/pimav/BLITZ.git
         $ cd BLITZ
 
-2. Set up a virtual environment and install dependencies:
+2. Set up a virtual environment and install dependencies with [uv](https://docs.astral.sh/uv/):
 
-        $ pip install poetry
-        $ poetry install
-        $ poetry run python -m blitz
-
-    Sometimes the installation with poetry might fail due to package restrictions with ``PyQt5``.
-    For a quick fix, comment out the following three lines in [pyproject.toml](pyproject.toml).
-    ```
-    # PyQt5 = "^5.15.11"
-    # pyqtgraph = "^0.13.7"
-    # QDarkStyle = "^3.2.3"
-    ```
-    Afterwards, just install these packages via ``pip`` inside the newly created virtual
-    environment:
-
-        $ poetry shell
-        $ python -m pip install PyQt5==5.15.11
-        $ python -m pip install pyqtgraph==0.13.7
-        $ python -m pip install QDarkStyle==3.2.3
+        $ pip install uv
+        $ uv sync
+        $ uv run python -m blitz
 
 3. To create a binary executable:
 
-        $ pyinstaller --onefile --noconsole --icon=./resources/icon/blitz.ico blitz_main.py
+        $ uv run pyinstaller --onefile --noconsole --icon=./resources/icon/blitz.ico blitz_main.py
 
 ## Additional Resources
 

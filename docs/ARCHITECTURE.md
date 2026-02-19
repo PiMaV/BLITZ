@@ -24,7 +24,7 @@ BLITZ is a Python-based image viewer and analysis tool built with **PyQt5** and 
     *   Normalization (subtract/divide).
     *   Reduction (Mean, Max, Min, Std).
     *   **`image_timeline`**: Property fuer die Timeline im Aggregate-Modus – liefert vollen Stack (norm + mask) ohne Reduce. Siehe `docs/TIMELINE_AGGREGATION.md`.
-*   **`DataLoader` (`load.py`)**: Responsible for reading files (Images, Video, DICOM, Numpy). It uses `multiprocessing.Pool` for parallel loading of large image sequences.
+*   **`DataLoader` (`load.py`)**: Responsible for reading files (Images, Video, Numpy). It uses `multiprocessing.Pool` for parallel loading of large image sequences.
 
 ### 2. UI Layer (`blitz/layout`)
 *   **`MainWindow` (`main.py`)**: The central controller. It initializes the UI, handles signals from widgets, and orchestrates calls to `DataLoader` and `ImageData`.
@@ -50,12 +50,12 @@ BLITZ is a Python-based image viewer and analysis tool built with **PyQt5** and 
     *   Exceptions are often caught and logged to the UI, sometimes swallowing the stack trace or using generic error messages.
 
 5.  **Project Management**:
-    *   Poetry is used, but the `pyproject.toml` has commented-out dependencies.
+    *   `uv` is used for dependency management (pyproject.toml, uv.lock).
     *   No formal test suite exists.
 
 ## Improvement Plan (Summary)
 
-1.  **Migration**: Switch to `uv` for faster, cleaner dependency management.
+1.  ~~**Migration**: Switch to `uv` for faster, cleaner dependency management.~~ (erledigt)
 2.  **Refactoring**:
     *   Extract logic from `MainWindow` into specialized handlers (e.g., `ProjectHandler`, `ViewSettingsHandler`).
     *   Decouple `DataLoader` from UI logging (return errors/status instead of printing directly).
