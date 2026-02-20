@@ -82,78 +82,85 @@ def _lightning_build_tree(
     height: int,
     seed: int,
     segment_length: float,
+    source_origin: str = "left",
+    max_branches: int = 3,
 ) -> tuple[list[list[tuple[int, int]]], list[tuple[int, int]]]:
-    """Build lightning tree: start at left, grow right. Length capped; each segment length has random variation. After segments may split. Stop when any tip touches right wall."""
+    """Build lightning tree. source_origin: 'left' = start left, grow right; 'top' = start top, grow down.
+    max_branches: cap on number of branches (splits).
+    Length capped; each segment length has random variation. After segments may split. Stop when any tip touches wall."""
     rng = random.Random(seed)
     w, h = width, height
     margin = max(2, w // 20)
+    from_top = source_origin.lower() == "top"
 
-    # Start: Middle of left side with some variation
-    start_y = int(h / 2 + rng.uniform(-h * 0.2, h * 0.2))
-    start_x = margin
+    if from_top:
+        # Start: top center with some variation. Angle 0 = downward.
+        start_x = int(w / 2 + rng.uniform(-w * 0.2, w * 0.2))
+        start_y = margin
+    else:
+        # Start: middle of left side. Angle 0 = right.
+        start_y = int(h / 2 + rng.uniform(-h * 0.2, h * 0.2))
+        start_x = margin
 
-    # Structure: branches is list of lists of points
     branches: list[list[tuple[int, int]]] = []
-    # reveal order: (branch_idx, point_count_in_branch)
     reveal: list[tuple[int, int]] = []
-
     branches.append([(start_x, start_y)])
     reveal.append((0, 1))
 
-    # Active branches: (branch_idx, current_angle_rad, steps_since_split)
-    # Angle 0 is straight right.
+    # (branch_idx, current_angle_rad, steps_since_split). Angle 0 = main direction (right or down).
     active: list[list] = [[0, 0.0, 0]]
-
     base_seg_len = max(2, int(segment_length))
     wall_hit = False
 
     while active and not wall_hit:
-        # Pick random active branch to grow (adds randomness to growth order)
         idx_in_active = rng.randint(0, len(active) - 1)
         bid, angle, steps = active[idx_in_active]
-
         pts = branches[bid]
         px, py = pts[-1]
 
-        # Determine new segment
         this_len = base_seg_len * rng.uniform(0.5, 1.5)
-
-        # Wander the angle slightly (momentum)
         angle += rng.uniform(-0.3, 0.3)
-        # Strong bias towards Right (0 rad) to ensure progress
         angle = angle * 0.7
 
-        nx = int(px + np.cos(angle) * this_len)
-        ny = int(py + np.sin(angle) * this_len)
+        if from_top:
+            # Angle 0 = down: dx = sin(angle), dy = cos(angle)
+            dx, dy = np.sin(angle), np.cos(angle)
+            nx = int(px + dx * this_len)
+            ny = int(py + dy * this_len)
+        else:
+            dx, dy = np.cos(angle), np.sin(angle)
+            nx = int(px + dx * this_len)
+            ny = int(py + dy * this_len)
 
-        # Check bounds
-        if ny < 0 or ny >= h:
-            # Hit top/bottom: kill branch
-            active.pop(idx_in_active)
-            continue
-
-        if nx >= w - margin:
-            # Hit right wall: Stop everything
-            nx = w - margin
-            pts.append((nx, ny))
-            reveal.append((bid, len(pts)))
-            wall_hit = True
-            break
+        if from_top:
+            if nx < 0 or nx >= w:
+                active.pop(idx_in_active)
+                continue
+            if ny >= h - margin:
+                ny = h - margin
+                pts.append((nx, ny))
+                reveal.append((bid, len(pts)))
+                wall_hit = True
+                break
+        else:
+            if ny < 0 or ny >= h:
+                active.pop(idx_in_active)
+                continue
+            if nx >= w - margin:
+                nx = w - margin
+                pts.append((nx, ny))
+                reveal.append((bid, len(pts)))
+                wall_hit = True
+                break
 
         pts.append((nx, ny))
         reveal.append((bid, len(pts)))
-
-        # Update active state
         steps += 1
         active[idx_in_active][1] = angle
         active[idx_in_active][2] = steps
 
-        # Split?
-        # Chance increases with steps, limited by total branches
-        if steps > rng.randint(2, 8) and len(branches) < 10 and rng.random() < 0.3:
-            active[idx_in_active][2] = 0  # reset steps for parent
-
-            # Spawn new branch
+        if steps > rng.randint(2, 8) and len(branches) < max(1, max_branches) and rng.random() < 0.3:
+            active[idx_in_active][2] = 0
             split_angle = angle + rng.choice([-1, 1]) * rng.uniform(0.3, 0.8)
             branches.append([(nx, ny)])
             new_bid = len(branches) - 1
@@ -169,29 +176,26 @@ def _lightning_frame(
     height: int,
     grayscale: bool,
     exposure_time_ms: float = 16.0,
-    segment_length: int = 10,
-    segment_thickness: int = 3,
-    noise_sigma: int = 10,
+    segment_length: int = 33,
+    segment_thickness: int = 7,
+    noise_sigma: int = 13,
+    source_origin: str = "left",
+    max_branches: int = 3,
 ) -> np.ndarray:
-    """Lightning: grows left-to-right. Multi-pass additive rendering for glow effect."""
+    """Lightning: grows from source_origin ('left' or 'top'). Multi-pass additive rendering with soft glow."""
     w, h = width, height
     cycle_pos = (t % _LIGHTNING_CYCLE) / _LIGHTNING_CYCLE
     exposure_scale = min(1.5, max(0.3, exposure_time_ms / 20.0))
     seed = int(t // _LIGHTNING_CYCLE) & 0x7FFFFFFF
-    # Base thickness for the glow
     thickness = max(1, min(24, segment_thickness))
 
-    # Float accumulator for additive blending
     if grayscale:
         out_float = np.zeros((h, w), dtype=np.float32)
     else:
         out_float = np.zeros((h, w, 3), dtype=np.float32)
 
-    # Phases: 0-0.35 grow; 0.35-0.42 frozen; 0.42-0.58 afterglow 1; 0.58-0.72 afterglow 2; 0.72-0.86 afterglow 3; 0.86-1.0 black
     grow_done = cycle_pos >= 0.35
     decay = 1.0
-
-    # Envelope
     if 0.42 <= cycle_pos < 0.58:
         decay = 1.0 - (cycle_pos - 0.42) / 0.16
     elif 0.58 <= cycle_pos < 0.72:
@@ -199,14 +203,13 @@ def _lightning_frame(
     elif 0.72 <= cycle_pos < 0.86:
         decay = 0.25 - (cycle_pos - 0.72) / 0.14 * 0.25
 
-    # High frequency flicker noise
     flicker = 1.0
     if grow_done and cycle_pos < 0.86:
         rng_flicker = random.Random(int(t * 20))
         flicker = rng_flicker.uniform(0.7, 1.3)
 
     if cycle_pos < 0.86:
-        branches, reveal = _lightning_build_tree(w, h, seed, segment_length)
+        branches, reveal = _lightning_build_tree(w, h, seed, segment_length, source_origin=source_origin, max_branches=max_branches)
         n_steps = len(reveal)
 
         if n_steps > 0:
@@ -219,55 +222,59 @@ def _lightning_frame(
             step_cut = int(progress * n_steps)
             step_cut = max(0, min(n_steps, step_cut))
 
-            # Determine visible length for each branch
             visible_len: dict[int, int] = {}
             for i in range(step_cut):
                 bid, pc = reveal[i]
                 visible_len[bid] = max(visible_len.get(bid, 0), pc)
 
-            # Prepare branches to draw
             to_draw = []
             for bid, pts in enumerate(branches):
                 n_vis = visible_len.get(bid, 0)
                 if n_vis < 2:
                     continue
-
-                # Extract points and convert to numpy for polylines
-                # Use only visible points
                 pts_vis = np.array(pts[:n_vis], dtype=np.int32)
-
-                # Base intensity: Main branch (0) is brighter
                 branch_int = 1.0 if bid == 0 else 0.6
                 to_draw.append((pts_vis, branch_int))
 
-            # Multi-pass rendering (Additive)
-            # Passes: (thickness_multiplier, opacity_multiplier)
-            # 1. Wide Glow (Outer)
-            # 2. Soft Glow (Inner)
-            # 3. Core (Sharp)
-            passes = [
-                (4.0, 0.15),
-                (1.5, 0.4),
-                (0.0, 1.0) # 0.0 thickness means 1px line or handled specifically
-            ]
-
             base_intensity = 0.9 * exposure_scale * decay * flicker
 
-            for th_mult, op_mult in passes:
+            # Glow passes: more layers with smooth falloff for softer "drimherum" (less blocky)
+            glow_passes = [
+                (5.0, 0.08),
+                (3.5, 0.12),
+                (2.5, 0.18),
+                (1.8, 0.28),
+                (1.0, 0.45),
+            ]
+            glow_accum = np.zeros_like(out_float)
+            for th_mult, op_mult in glow_passes:
                 layer_th = max(1, int(thickness * th_mult))
-                if th_mult == 0.0:
-                    layer_th = 1
-
                 for pts_arr, branch_int in to_draw:
                     final_int = base_intensity * branch_int * op_mult
                     val = final_int * 255.0
-
                     if grayscale:
-                        cv2.polylines(out_float, [pts_arr], False, float(val), layer_th, cv2.LINE_AA)
+                        cv2.polylines(glow_accum, [pts_arr], False, float(val), layer_th, cv2.LINE_AA)
                     else:
-                        # Blue-ish lightning color: (255, 200, 120) BGR
                         color = (255.0 * val / 255.0, 200.0 * val / 255.0, 120.0 * val / 255.0)
-                        cv2.polylines(out_float, [pts_arr], False, color, layer_th, cv2.LINE_AA)
+                        cv2.polylines(glow_accum, [pts_arr], False, color, layer_th, cv2.LINE_AA)
+
+            # Soften glow edges (reduces blocky look)
+            k = max(3, min(w, h) // 64) | 1
+            if grayscale:
+                glow_accum = cv2.GaussianBlur(glow_accum, (k, k), k * 0.25)
+            else:
+                glow_accum = cv2.GaussianBlur(glow_accum, (k, k), k * 0.25)
+            out_float += glow_accum
+
+            # Core (Skelte line): sharp 1px
+            for pts_arr, branch_int in to_draw:
+                final_int = base_intensity * branch_int * 1.0
+                val = final_int * 255.0
+                if grayscale:
+                    cv2.polylines(out_float, [pts_arr], False, float(val), 1, cv2.LINE_AA)
+                else:
+                    color = (255.0 * val / 255.0, 200.0 * val / 255.0, 120.0 * val / 255.0)
+                    cv2.polylines(out_float, [pts_arr], False, color, 1, cv2.LINE_AA)
 
     # Global sensor noise (Rauschen)
     noise_seed = (seed + int(t * 100)) & 0x7FFFFFFF
@@ -308,9 +315,11 @@ def _mock_frame(
     height: int,
     grayscale: bool,
     exposure_time_ms: float,
-    lightning_segment_length: int = 10,
-    lightning_thickness: int = 3,
-    lightning_noise: int = 10,
+    lightning_segment_length: int = 33,
+    lightning_thickness: int = 7,
+    lightning_noise: int = 13,
+    lightning_source_origin: str = "left",
+    lightning_max_branches: int = 3,
 ) -> np.ndarray:
     """Dispatch to the correct frame generator by variant."""
     if variant == "lightning":
@@ -323,6 +332,8 @@ def _mock_frame(
             segment_length=lightning_segment_length,
             segment_thickness=lightning_thickness,
             noise_sigma=lightning_noise,
+            source_origin=lightning_source_origin,
+            max_branches=lightning_max_branches,
         )
     return _lissajous_frame(t, width, height, grayscale, exposure_time_ms)
 
@@ -342,9 +353,12 @@ class _LissajousWorker(QObject):
         exposure_time_ms: float,
         variant: str,
         handler: "MockLiveHandler",
-        lightning_segment_length: int = 10,
-        lightning_thickness: int = 3,
-        lightning_noise: int = 10,
+        lightning_segment_length: int = 33,
+        lightning_thickness: int = 7,
+        lightning_noise: int = 13,
+        lightning_source_origin: str = "left",
+        lightning_max_branches: int = 3,
+        lightning_speed: float = 1.0,
     ):
         super().__init__()
         self._w = max(64, width)
@@ -358,6 +372,9 @@ class _LissajousWorker(QObject):
         self._lightning_segment_length = lightning_segment_length
         self._lightning_thickness = lightning_thickness
         self._lightning_noise = lightning_noise
+        self._lightning_source_origin = lightning_source_origin
+        self._lightning_max_branches = lightning_max_branches
+        self._lightning_speed = max(0.1, min(5.0, lightning_speed))
         self._running = True
         self._t = 0.0
 
@@ -379,8 +396,10 @@ class _LissajousWorker(QObject):
                 lightning_segment_length=self._lightning_segment_length,
                 lightning_thickness=self._lightning_thickness,
                 lightning_noise=self._lightning_noise,
+                lightning_source_origin=self._lightning_source_origin,
+                lightning_max_branches=self._lightning_max_branches,
             )
-            self._t += 0.08
+            self._t += 0.08 * self._lightning_speed
             self._handler._append_frame(frame)
             QThread.msleep(interval_ms)
         self.stopped.emit()
@@ -422,9 +441,12 @@ class MockLiveHandler(QObject):
         grayscale: bool = True,
         exposure_time_ms: float = 16.67,
         variant: str = "lightning",
-        lightning_segment_length: int = 10,
-        lightning_thickness: int = 3,
-        lightning_noise: int = 10,
+        lightning_segment_length: int = 33,
+        lightning_thickness: int = 7,
+        lightning_noise: int = 13,
+        lightning_source_origin: str = "left",
+        lightning_max_branches: int = 3,
+        lightning_speed: float = 1.0,
     ):
         super().__init__()
         self._width = width
@@ -437,6 +459,9 @@ class MockLiveHandler(QObject):
         self._lightning_segment_length = lightning_segment_length
         self._lightning_thickness = lightning_thickness
         self._lightning_noise = lightning_noise
+        self._lightning_source_origin = lightning_source_origin
+        self._lightning_max_branches = lightning_max_branches
+        self._lightning_speed = lightning_speed
         self._lock = threading.Lock()
         self._buffer: list[np.ndarray] = []
         self._thread: Optional[QThread] = None
@@ -483,6 +508,9 @@ class MockLiveHandler(QObject):
             lightning_segment_length=self._lightning_segment_length,
             lightning_thickness=self._lightning_thickness,
             lightning_noise=self._lightning_noise,
+            lightning_source_origin=self._lightning_source_origin,
+            lightning_max_branches=self._lightning_max_branches,
+            lightning_speed=self._lightning_speed,
         )
         self._worker.moveToThread(self._thread)
         self._worker.stopped.connect(self._on_worker_stopped)

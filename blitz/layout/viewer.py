@@ -72,7 +72,8 @@ class ImageViewer(pg.ImageView):
         self._auto_colormap = True
         self._background_image: ImageData | None = None
         self._last_set_image_time = 0.0
-        self._set_image_throttle_sec = 0.035  # ~28 FPS max redraw to avoid UI freeze at 30 FPS stream
+        self._set_image_throttle_sec = 0.035
+        self._set_image_throttle_live_sec = 0.025
         self.load_data()
 
     @property
@@ -205,13 +206,14 @@ class ImageViewer(pg.ImageView):
         file_path = e.mimeData().urls()[0].toLocalFile()
         self.file_dropped.emit(file_path)
 
-    def setImage(self, *args, keep_timestep: bool = False, **kwargs) -> None:
+    def setImage(self, *args, keep_timestep: bool = False, skip_roi_init: bool = False, **kwargs) -> None:
         if keep_timestep:
             pos = self.timeLine.pos()
         super().setImage(*args, **kwargs)
         if keep_timestep:
             self.timeLine.setPos(pos)  # type: ignore
-        self.init_roi()
+        if not skip_roi_init:
+            self.init_roi()
         self.image_changed.emit()
 
     def updateImage(self, autoHistogramRange: bool = False) -> None:
@@ -257,16 +259,20 @@ class ImageViewer(pg.ImageView):
         self.autoRange()
         self.image_size_changed.emit()
 
-    def set_image(self, img: ImageData) -> None:
+    def set_image(self, img: ImageData, live_update: bool = False) -> None:
         self.data = img
         now = time.perf_counter()
-        if now - self._last_set_image_time >= self._set_image_throttle_sec:
+        throttle = self._set_image_throttle_live_sec if live_update else self._set_image_throttle_sec
+        if now - self._last_set_image_time >= throttle:
             self._last_set_image_time = now
-            self.update_image()
+            self.update_image(live_update=live_update)
 
-    def update_image(self) -> None:
-        self.setImage(self.data.image)
-        self.autoRange()
+    def update_image(self, live_update: bool = False) -> None:
+        if live_update:
+            self.setImage(self.data.image, skip_roi_init=True)
+        else:
+            self.setImage(self.data.image)
+            self.autoRange()
         self.image_size_changed.emit()
 
     def load_background_file(self, path: Path) -> bool:

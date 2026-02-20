@@ -1,6 +1,6 @@
 [project]
 name = "BLITZ"
-version = "1.4.2"
+version = "1.4.3"
 description = "Bulk Loading and Interactive Time series Zonal analysis"
 authors = [
     { name = "Richard Krieg", email = "alienkrieg@gmail.com" },

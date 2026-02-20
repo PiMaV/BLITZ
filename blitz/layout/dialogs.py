@@ -1014,7 +1014,7 @@ class AsciiLoadOptionsDialog(QDialog):
 
 
 class RealCameraDialog(QDialog):
-    """Eigener Dialog fuer echte Kamera: Slider (Exposure, Gain, etc.), Start/Stop."""
+    """Minimal webcam dialog: Device, Grayscale, Buffer. Tuning (Exposure, FPS) extern spaeter."""
 
     def __init__(
         self,
@@ -1024,7 +1024,7 @@ class RealCameraDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowIcon(QIcon(":/icon/blitz.ico"))
-        self.setWindowTitle("Echte Kamera")
+        self.setWindowTitle("Webcam")
         self._on_frame = on_frame
         self._on_stop = on_stop
         self._handler: Any = None
@@ -1035,130 +1035,81 @@ class RealCameraDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
-        layout.addWidget(QLabel("<b>Echte Kamera (cv2.VideoCapture)</b>"))
+        layout.addWidget(QLabel("<b>Webcam (cv2.VideoCapture)</b>"))
+        qd = QLabel("Quick & Dirty. Exposure/FPS/Resolution: externer Streamer spaeter.")
+        qd.setStyleSheet("color: #888; font-size: 8pt;")
+        qd.setWordWrap(True)
+        qd.setToolTip("Minimal: nur Device, Grayscale, Buffer. Tuning (Exposure, FPS, etc.) kommt im externen Streamer.")
+        layout.addWidget(qd)
 
         form = QFormLayout()
 
         self.cmb_device = QComboBox()
-        self.cmb_device.addItems(["0", "1", "2", "3"])
+        self.cmb_device.addItems(["0", "1"])
         self.cmb_device.setCurrentIndex(0)
-        self.cmb_device.setToolTip("Device ID (0 = default webcam, 1/2/3 = weitere Kameras)")
+        self.cmb_device.setToolTip("0 = default webcam, 1 = second camera.")
         form.addRow("Device:", self.cmb_device)
-
-        def _slider_row(tooltip: str) -> tuple[QSlider, QLabel, QWidget]:
-            s = QSlider(Qt.Orientation.Horizontal)
-            s.setRange(0, 100)
-            s.setValue(50)
-            s.setToolTip(tooltip)
-            lbl = QLabel("50")
-            lbl.setFixedWidth(28)
-            s.valueChanged.connect(lambda v: lbl.setText(str(v)))
-            row = QHBoxLayout()
-            row.addWidget(s, 1)
-            row.addWidget(lbl)
-            w = QWidget()
-            w.setLayout(row)
-            return s, lbl, w
-
-        self.slider_exposure, self.lbl_exposure, exp_w = _slider_row(
-            "Belichtung (nicht alle Kameras unterstuetzen)"
-        )
-        form.addRow("Exposure:", exp_w)
-
-        self.slider_gain, _, gain_w = _slider_row("Verstaerkung")
-        form.addRow("Gain:", gain_w)
-
-        self.slider_brightness, _, bright_w = _slider_row("Helligkeit")
-        form.addRow("Brightness:", bright_w)
-
-        self.slider_contrast, _, contrast_w = _slider_row("Kontrast")
-        form.addRow("Contrast:", contrast_w)
-
-        self.chk_auto_exposure = QCheckBox("Auto Exposure")
-        self.chk_auto_exposure.setChecked(True)
-        self.chk_auto_exposure.setToolTip("Kamera steuert Belichtung selbst")
-        form.addRow("", self.chk_auto_exposure)
-
-        self.spin_fps = QSpinBox()
-        self.spin_fps.setRange(10, 60)
-        self.spin_fps.setValue(25)
-        self.spin_fps.setToolTip("Ziel-Framerate")
-        form.addRow("FPS:", self.spin_fps)
-
-        self.spin_buffer = QSpinBox()
-        self.spin_buffer.setRange(8, 128)
-        self.spin_buffer.setValue(32)
-        self.spin_buffer.setToolTip("Rolling buffer (Frames in Timeline)")
-        form.addRow("Buffer:", self.spin_buffer)
 
         self.chk_grayscale = QCheckBox("Grayscale (Plasma)")
         self.chk_grayscale.setChecked(True)
         form.addRow("", self.chk_grayscale)
 
+        self.spin_buffer = QSpinBox()
+        self.spin_buffer.setRange(8, 128)
+        self.spin_buffer.setValue(32)
+        self.spin_buffer.setToolTip("Frames in ring; nach Stop siehst du so viele Frames in der Timeline.")
+        form.addRow("Buffer:", self.spin_buffer)
+
         layout.addLayout(form)
 
         btn_row = QHBoxLayout()
-        self.btn_start = QPushButton("Start")
-        self.btn_start.setToolTip("Kamera oeffnen, Stream in BLITZ Viewer")
-        self.btn_start.clicked.connect(lambda: self._start(RealCameraHandler))
-        btn_row.addWidget(self.btn_start)
-        self.btn_stop = QPushButton("Stop")
-        self.btn_stop.setEnabled(False)
-        self.btn_stop.clicked.connect(self._stop)
-        btn_row.addWidget(self.btn_stop)
+        self.btn_toggle = QPushButton("Start")
+        self.btn_toggle.setToolTip("Start or stop camera stream")
+        self.btn_toggle.clicked.connect(self._on_toggle_clicked)
+        btn_row.addWidget(self.btn_toggle)
+        self.btn_close = QPushButton("Close")
+        self.btn_close.setToolTip("Stop stream (if running) and close dialog")
+        self.btn_close.clicked.connect(self.close)
+        btn_row.addWidget(self.btn_close)
         layout.addLayout(btn_row)
+
+    def _on_toggle_clicked(self) -> None:
+        from ..data.live_camera import RealCameraHandler
+        if self._handler is None:
+            self._start(RealCameraHandler)
+        else:
+            self._stop()
 
     def _start(self, HandlerClass) -> None:
         if self._handler is not None:
             return
         device = self.cmb_device.currentIndex()
-        fps = float(self.spin_fps.value())
         buf = self.spin_buffer.value()
         gray = self.chk_grayscale.isChecked()
-        exp = self.slider_exposure.value() / 100.0
-        gain = self.slider_gain.value() / 100.0
-        bright = self.slider_brightness.value() / 100.0
-        contr = self.slider_contrast.value() / 100.0
-        auto_exp = self.chk_auto_exposure.isChecked()
         self._handler = HandlerClass(
             parent=self,
             device_id=device,
-            fps=fps,
+            width=640,
+            height=480,
+            fps=0.0,
             buffer_size=buf,
             grayscale=gray,
-            exposure=exp,
-            gain=gain,
-            brightness=bright,
-            contrast=contr,
-            auto_exposure=auto_exp,
+            exposure=0.5,
+            gain=0.5,
+            brightness=0.5,
+            contrast=0.5,
+            auto_exposure=True,
+            send_live_only=True,
         )
         if self._on_frame:
             self._handler.frame_ready.connect(self._on_frame)
         self._handler.start()
-        self.btn_start.setEnabled(False)
-        self.btn_stop.setEnabled(True)
-        self.slider_exposure.valueChanged.connect(self._on_exposure_changed)
-        self.slider_gain.valueChanged.connect(self._on_gain_changed)
-
-    def _on_exposure_changed(self, v: int) -> None:
-        if self._handler:
-            self._handler.set_exposure(v / 100.0)
-
-    def _on_gain_changed(self, v: int) -> None:
-        if self._handler:
-            self._handler.set_gain(v / 100.0)
+        self.btn_toggle.setText("Stop")
+        self._set_stream_controls_enabled(False)
 
     def _stop(self) -> None:
         if self._handler is None:
             return
-        try:
-            self.slider_exposure.valueChanged.disconnect(self._on_exposure_changed)
-        except (TypeError, RuntimeError):
-            pass
-        try:
-            self.slider_gain.valueChanged.disconnect(self._on_gain_changed)
-        except (TypeError, RuntimeError):
-            pass
         self._handler.stop()
         if not self._handler.wait_stopped(4000):
             from ..tools import log
@@ -1171,8 +1122,14 @@ class RealCameraDialog(QDialog):
         self._handler = None
         if self._on_stop:
             self._on_stop()
-        self.btn_start.setEnabled(True)
-        self.btn_stop.setEnabled(False)
+        self.btn_toggle.setText("Start")
+        self._set_stream_controls_enabled(True)
+
+    def _set_stream_controls_enabled(self, enabled: bool) -> None:
+        self.btn_toggle.setEnabled(True)
+        self.cmb_device.setEnabled(enabled)
+        self.spin_buffer.setEnabled(enabled)
+        self.chk_grayscale.setEnabled(enabled)
 
     def stop_stream(self) -> None:
         self._stop()

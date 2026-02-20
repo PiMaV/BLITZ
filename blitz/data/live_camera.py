@@ -1,7 +1,11 @@
 """LiveView handler: Real camera via cv2.VideoCapture.
 
-USB webcams, etc. Exposure, Gain, FPS configurable.
+USB webcams, etc. Exposure, Gain, resolution, FPS request configurable.
 On Windows: uses CAP_DSHOW (DirectShow) for better webcam support.
+
+Capture runs at camera speed (no FPS sleep in loop): we read as fast as the
+camera delivers so the ring buffer fills with the real frame rate. FPS setting
+is only sent to the camera (CAP_PROP_FPS); actual rate depends on the driver.
 """
 
 import sys
@@ -51,6 +55,8 @@ class _CameraWorker(QObject):
     def __init__(
         self,
         device_id: int,
+        width: int,
+        height: int,
         fps: float,
         buffer_size: int,
         grayscale: bool,
@@ -59,10 +65,13 @@ class _CameraWorker(QObject):
         brightness: float,
         contrast: float,
         auto_exposure: bool,
+        send_live_only: bool = True,
     ):
         super().__init__()
         self._device = device_id
-        self._fps = max(1, min(60, fps))
+        self._width = max(160, min(4096, width))
+        self._height = max(120, min(2160, height))
+        self._fps = fps
         self._buffer_size = max(1, min(1024, buffer_size))
         self._grayscale = grayscale
         self._exposure = exposure
@@ -70,6 +79,7 @@ class _CameraWorker(QObject):
         self._brightness = brightness
         self._contrast = contrast
         self._auto_exposure = 0.75 if auto_exposure else 0.25  # 0.25=manual
+        self._send_live_only = send_live_only
         self._running = True
         self._buffer: list[np.ndarray] = []
         self._cap: Optional[cv2.VideoCapture] = None
@@ -83,10 +93,9 @@ class _CameraWorker(QObject):
             log(f"[CAM] Cannot open camera {self._device} (try other device or backend)", color="red")
             self.stopped.emit()
             return
-        # Manche Treiber brauchen explizite Aufloesung
         try:
-            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self._width)
+            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
         except Exception:
             pass
         try:
@@ -95,15 +104,16 @@ class _CameraWorker(QObject):
             self._cap.set(_CAP_GAIN, self._gain)
             self._cap.set(_CAP_BRIGHTNESS, self._brightness)
             self._cap.set(_CAP_CONTRAST, self._contrast)
-            self._cap.set(_CAP_FPS, self._fps)
+            if self._fps > 0:
+                self._cap.set(_CAP_FPS, min(120.0, self._fps))
         except Exception:
             pass
-        # Einige Webcams liefern erst nach ein paar Reads gueltige Frames
         for _ in range(5):
             self._cap.read()
         cap_w = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         cap_h = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        log(f"[CAM] Device {self._device}: {cap_w}x{cap_h}")
+        cap_fps = self._cap.get(_CAP_FPS)
+        log(f"[CAM] Device {self._device}: {cap_w}x{cap_h}, FPS request={self._fps}, actual FPS={cap_fps:.1f}")
         while self._running and self._cap.isOpened():
             ret, frame = self._cap.read()
             if not ret or frame is None:
@@ -115,10 +125,16 @@ class _CameraWorker(QObject):
             self._buffer.append(f.copy())
             if len(self._buffer) > self._buffer_size:
                 self._buffer.pop(0)
-            out = _frames_to_imagedata(np.stack(self._buffer), self._grayscale)
+            if self._send_live_only and self._buffer:
+                out = _frames_to_imagedata(
+                    np.stack([self._buffer[-1]]), self._grayscale
+                )
+            else:
+                out = _frames_to_imagedata(
+                    np.stack(self._buffer), self._grayscale
+                )
             self.frame_ready.emit(out)
-            # 20-30 Hz: Rolling Buffer, angepasste Anzeigerate
-            QThread.msleep(max(33, min(50, int(1000 / self._fps))))
+            QThread.msleep(1)
         if self._buffer:
             final = _frames_to_imagedata(np.stack(self._buffer), self._grayscale)
             self.frame_ready.emit(final)
@@ -156,6 +172,8 @@ class RealCameraHandler(QObject):
         self,
         parent: Optional[QObject] = None,
         device_id: int = 0,
+        width: int = 640,
+        height: int = 480,
         fps: float = 25.0,
         buffer_size: int = 32,
         grayscale: bool = True,
@@ -164,9 +182,12 @@ class RealCameraHandler(QObject):
         brightness: float = 0.5,
         contrast: float = 0.5,
         auto_exposure: bool = True,
+        send_live_only: bool = True,
     ):
         super().__init__(parent)
         self._device = device_id
+        self._width = width
+        self._height = height
         self._fps = fps
         self._buffer_size = buffer_size
         self._grayscale = grayscale
@@ -175,6 +196,7 @@ class RealCameraHandler(QObject):
         self._brightness = brightness
         self._contrast = contrast
         self._auto_exposure = auto_exposure
+        self._send_live_only = send_live_only
         self._thread: Optional[QThread] = None
         self._worker: Optional[_CameraWorker] = None
 
@@ -184,6 +206,8 @@ class RealCameraHandler(QObject):
         self._thread = QThread()
         self._worker = _CameraWorker(
             self._device,
+            self._width,
+            self._height,
             self._fps,
             self._buffer_size,
             self._grayscale,
@@ -192,6 +216,7 @@ class RealCameraHandler(QObject):
             self._brightness,
             self._contrast,
             self._auto_exposure,
+            self._send_live_only,
         )
         self._worker.moveToThread(self._thread)
         self._worker.frame_ready.connect(self.frame_ready.emit)

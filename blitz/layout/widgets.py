@@ -733,6 +733,8 @@ class ExtractionPlot(pg.PlotWidget):
                 fe_min, fe_max = self._compute_crosshair_envelope(slice_raw)
                 val_min = min(val_min, float(np.min(fe_min)))
                 val_max = max(val_max, float(np.max(fe_max)))
+        if np.isnan(val_min) or np.isnan(val_max):
+            return
         if val_min == val_max:
             val_min -= 0.5
             val_max += 0.5

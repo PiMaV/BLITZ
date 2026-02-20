@@ -166,7 +166,7 @@ class HasDialog(Protocol):
 4. **Loader-Registry** – Grundgeruest fuer erweiterbare Loader
 5. **CSV-Konverter** – Standard, als erster Converter
 6. **Dual-Build-Setup** – Standard- und Full-EXE bauen koennen
-7. ~~LiveView~~ – Mock Live + Echte Kamera implementiert
+7. ~~LiveView~~ – Mock Live + Webcam implementiert
 
 ---
 
@@ -179,12 +179,12 @@ class HasDialog(Protocol):
 
 ---
 
-## 9. Echte Kamera (implementiert)
+## 9. Webcam (implementiert)
 
 - **Zweck:** Live-Stream von USB-Webcam. Rolling Buffer (8-128 Frames), Ausgabe als ImageData in den Viewer. Gleiche Ring-Logik wie Cam Mock: Index 0 = Ring-Start, letzter Index = Ring-Ende; beim Stopp wird der Ring-Zustand als finaler Snapshot uebergeben.
-- **UI:** Eigener Dialog (`RealCameraDialog`): Device (0-3), Slider (Exposure, Gain, Brightness, Contrast), Auto Exposure, FPS (10-60), Buffer, Grayscale; Start/Stop.
+- **UI:** Eigener Dialog (`RealCameraDialog`): Device (0 oder 1), Resolution (640x480–1920x1080), FPS (1–120 oder Max), Buffer, Grayscale, Send to BLITZ (Live/Timeline); Slider Exposure/Gain/Brightness/Contrast, Auto Exposure; Start/Stop-Toggle, Close.
 - **Technik:** `cv2.VideoCapture` mit CAP_DSHOW unter Windows; BGR->RGB; Worker emittiert beim Beenden einmal den aktuellen Ring als finalen Snapshot. Siehe `docs/LIVE_AND_MOCK.md`.
-- **Pfade:** `blitz/data/live_camera.py` (Handler, Worker), `blitz/layout/dialogs.py` (RealCameraDialog), Button "Echte Kamera" im File-Tab.
+- **Pfade:** `blitz/data/live_camera.py` (Handler, Worker), `blitz/layout/dialogs.py` (RealCameraDialog), Button "Webcam" im File-Tab.
 
 ---
 

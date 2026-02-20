@@ -1076,6 +1076,8 @@ class MainWindow(QMainWindow):
 
     def _load_ascii(self, path: Path) -> None:
         """Load ASCII (.asc, .dat) via options dialog. Path from Open File/Folder or drop."""
+        if path.exists():
+            path = path.resolve()
         meta = get_ascii_metadata(path)
         if meta is None:
             log("Cannot read ASCII metadata", color="red")
@@ -1209,7 +1211,7 @@ class MainWindow(QMainWindow):
                 Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint
             )
             def _mock_frame_cb(img):
-                self.ui.image_viewer.set_image(img)
+                self.ui.image_viewer.set_image(img, live_update=True)
                 self.ui.image_viewer.setCurrentIndex(img.n_images - 1)
             self._winamp_mock.set_frame_callback(_mock_frame_cb)
             self._winamp_mock.setWindowIcon(self.windowIcon())
@@ -1218,26 +1220,28 @@ class MainWindow(QMainWindow):
         self._winamp_mock.activateWindow()
 
     def show_real_camera_dialog(self) -> None:
-        """Open Echte Kamera dialog: sliders, Start/Stop, streams to viewer."""
+        """Open Webcam dialog: sliders, Start/Stop, streams to viewer."""
         from PyQt6.QtCore import Qt
         if self._real_camera_dialog is None:
             self._camera_pending: ImageData | None = None
             self._camera_apply_timer = QTimer(self)
             self._camera_apply_timer.setSingleShot(True)
 
+            _CAMERA_APPLY_MS = 25
+
             def _apply_camera_frame() -> None:
                 if self._camera_pending is not None:
                     img = self._camera_pending
                     self._camera_pending = None
-                    self.ui.image_viewer.set_image(img)
+                    self.ui.image_viewer.set_image(img, live_update=True)
                     self.ui.image_viewer.setCurrentIndex(img.n_images - 1)
                 if self._camera_pending is not None:
-                    self._camera_apply_timer.start(50)
+                    self._camera_apply_timer.start(_CAMERA_APPLY_MS)
 
             def _on_camera_frame(img: ImageData) -> None:
                 self._camera_pending = img
                 if not self._camera_apply_timer.isActive():
-                    self._camera_apply_timer.start(50)
+                    self._camera_apply_timer.start(1)
 
             self._camera_apply_timer.timeout.connect(_apply_camera_frame)
 
@@ -1267,6 +1271,9 @@ class MainWindow(QMainWindow):
             return self.ui.image_viewer.load_data()
 
         if isinstance(path, str):
+            path = path.strip()
+            if path.startswith("file://"):
+                path = QUrl(path).toLocalFile()
             path = Path(path)
         # Sofortiges Feedback bei Drop/Open (Scan von Ordnern kann laenger dauern)
         lbl = self.ui.blocking_status

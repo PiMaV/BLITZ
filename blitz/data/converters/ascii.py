@@ -1,5 +1,6 @@
 """ASCII Loader: tab/space/comma-separated numeric data (.asc, .dat) -> ImageData."""
 
+import io
 from multiprocessing import Pool
 
 from ..._cpu import physical_cpu_count
@@ -100,15 +101,24 @@ def _parse_ascii(
     delimiter: str,
     first_col_is_row_number: bool,
 ) -> np.ndarray | None:
-    """Parse ASCII file to 2D array (rows, cols)."""
-    try:
-        data = np.loadtxt(
-            str(path),
-            delimiter=delimiter,
-            dtype=np.float64,
-            encoding="utf-8",
-        )
-    except Exception:
+    """Parse ASCII file to 2D array (rows, cols). Invalid cells (e.g. '...', empty) become NaN."""
+    path_str = str(path.resolve() if path.exists() else path)
+    data = None
+    for encoding in ("utf-8", "latin-1"):
+        try:
+            with open(path_str, encoding=encoding, errors="replace") as f:
+                text = f.read()
+            data = np.genfromtxt(
+                io.StringIO(text),
+                delimiter=delimiter,
+                dtype=np.float64,
+                invalid_raise=False,
+                filling_values=np.nan,
+            )
+            break
+        except Exception:
+            continue
+    if data is None:
         return None
     if data.size == 0:
         return None
@@ -188,7 +198,9 @@ def _load_single_ascii_file(
         if convert_to_8_bit:
             lo, hi = np.nanpercentile(arr, (2, 98))
             if hi > lo:
-                arr = np.clip((arr - lo) / (hi - lo) * 255, 0, 255).astype(np.uint8)
+                arr = np.clip((arr - lo) / (hi - lo) * 255, 0, 255)
+                arr = np.nan_to_num(arr, nan=0.0, posinf=255, neginf=0)
+                arr = arr.astype(np.uint8)
             else:
                 arr = np.zeros_like(arr, dtype=np.uint8)
         h, w = arr.shape[0], arr.shape[1]
@@ -213,9 +225,10 @@ def _array_to_preview_uint8(arr: np.ndarray, normalize: bool = True) -> np.ndarr
         lo, hi = np.nanpercentile(arr, (2, 98))
     else:
         lo, hi = np.nanmin(arr), np.nanmax(arr)
-    if hi <= lo:
+    if np.isnan(lo) or np.isnan(hi) or hi <= lo:
         return np.zeros_like(arr, dtype=np.uint8)
     normalized = np.clip((arr.astype(np.float64) - lo) / (hi - lo) * 255, 0, 255)
+    normalized = np.nan_to_num(normalized, nan=0.0, posinf=255, neginf=0)
     return normalized.astype(np.uint8)
 
 

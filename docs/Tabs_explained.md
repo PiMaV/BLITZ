@@ -31,7 +31,7 @@ Quickly configure how data is loaded to optimize performance based on your compu
 ### LiveView
 
 - **Winamp Mock Live:** Generiert Lissajous-Visualisierung als Teststream (kein Video). FPS, Groesse, Buffer, Grayscale einstellbar.
-- **Echte Kamera:** USB-Webcam via cv2. Eigener Dialog: Device (0-3), Slider (Exposure, Gain, Helligkeit, Kontrast), Auto Exposure, FPS, Rolling Buffer (8-128 Frames), Grayscale. Stream laeuft in den Viewer, Timeline zeigt den Buffer.
+- **Webcam:** USB-Webcam via cv2. Eigener Dialog: Device (0-3), Slider (Exposure, Gain, Helligkeit, Kontrast), Auto Exposure, FPS, Rolling Buffer (8-128 Frames), Grayscale. Stream laeuft in den Viewer, Timeline zeigt den Buffer.
 
 ### Network Options
 

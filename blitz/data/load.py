@@ -452,8 +452,14 @@ class DataLoader:
             progress_callback(0)
         content = [f for f in path.iterdir() if not f.is_dir()]
         content = natsorted(content)
+        if not content:
+            log("Folder is empty or contains no files", color="red")
+            return DataLoader.from_text("Empty folder", color=(255, 0, 0))
         suffixes = {s: len([f for f in content if f.suffix == s])
                     for s in set(f.suffix for f in content)}
+        if not suffixes:
+            log("No file types found in folder", color="red")
+            return DataLoader.from_text("No files", color=(255, 0, 0))
         most_frequent_suffix = max(suffixes, key=suffixes.get)  # type: ignore
         if len(suffixes) > 1:
             log("Warning: folder contains multiple file types; "

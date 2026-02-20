@@ -1,6 +1,6 @@
 # Live sources and connection to BLITZ
 
-This document describes how **Cam Mock** and **Echte Kamera** (real camera) connect to the BLITZ viewer, and the **ring-buffer semantics** shared by both.
+This document describes how **Cam Mock** and **Webcam** (real camera) connect to the BLITZ viewer, and the **ring-buffer semantics** shared by both.
 
 ---
 
@@ -24,7 +24,7 @@ You can scroll back in the timeline to inspect older frames; the event “Stop�
 There is **no separate “Connect” button**. The link is established when you open the live source and start it:
 
 1. **BLITZ (main window)** has the **viewer** (central image/timeline widget).
-2. You open **Cam Mock** or **Echte Kamera** from the main window. The main window creates the dialog and registers a callback so that incoming frames are passed to the viewer (and the current index is set to the last frame).
+2. You open **Cam Mock** or **Webcam** from the main window. The main window creates the dialog and registers a callback so that incoming frames are passed to the viewer (and the current index is set to the last frame).
 3. When you press **Play** (Mock) or **Start** (Real Camera), the stream starts and the viewer is updated with ring snapshots; the viewer stays on the **last frame**.
 4. When you press **Stop**, the source sends **one final snapshot** (the ring at stop time), the viewer is set to the last frame, then the stream is torn down. The frozen image in BLITZ is exactly the ring at stop.
 
@@ -42,23 +42,26 @@ So: **“Connected”** = dialog is open and stream is running. After **Stop**, 
 
 ---
 
-## 4. Echte Kamera (real camera)
+## 4. Webcam (real camera)
 
 - **Purpose:** Live stream from USB webcam via `cv2.VideoCapture`. Exposure, gain, FPS, buffer configurable.
-- **Architecture:** **Push model.** Worker thread reads frames, keeps a ring buffer, and on each frame emits `frame_ready(ImageData)` with the current buffer (full ring). Main window throttles application to the viewer (e.g. 20 Hz) and sets current index to last frame.
-- **Parameters:** Device ID, exposure, gain, brightness, contrast, auto exposure, FPS, buffer (frames), grayscale. See `blitz/data/live_camera.py`, `blitz/layout/dialogs.py` (`RealCameraDialog`).
-- **On Stop:** The worker, when exiting the loop, emits **one final** `frame_ready` with the current ring buffer so the viewer gets the ring at stop. The dialog disconnects `frame_ready` only **after** `wait_stopped()`, so this final frame is delivered. Callback (main) already does `set_image(img)` + `setCurrentIndex(img.n_images - 1)`.
-- **Code:** `_CameraWorker.run()` emits a final `frame_ready` with `self._buffer` before releasing the capture and emitting `stopped`. `RealCameraDialog._stop()` calls `handler.stop()`, then `wait_stopped()`, then disconnects `frame_ready` and clears the handler.
+- **Architecture:** **Push model.** Worker thread reads frames, keeps a ring buffer. **Send to BLITZ:** either **Live (last frame only)** or **Timeline (ring buffer)**. Live = emit only the newest frame each time so the viewer shows a single updating image (true live view; ring still kept for final snapshot on Stop). Timeline = emit full ring each time (viewer gets rolling timeline). Main window throttles updates to the viewer and sets current index to last frame.
+- **UI:** Start/Stop **toggle**, **Close** button. **Device:** 0 or 1 only. **Resolution:** 640x480–1920x1080. **FPS:** 1–120 or **Max** (request to camera only; we do **not** throttle capture – the ring buffer fills at whatever rate the camera delivers). **Send to BLITZ:** Live (during stream = one frame) or Timeline (during stream = full ring so you can scroll; after Stop both give the same full ring).
+- **Capture rate:** The worker does **not** sleep between reads; it reads as fast as the camera gives frames. So the buffer always fills at the camera’s real rate. If you only see e.g. 77 frames in 6 s, the camera/driver is delivering ~13 FPS (requesting 120 only tells the camera; the driver may cap lower). Use "Max FPS" to avoid limiting the request.
+- **Parameters:** device_id (0/1), width, height, fps (0 = do not set), buffer_size, grayscale, exposure, gain, brightness, contrast, auto_exposure, send_live_only. After open, actual resolution and FPS are read back and logged. See `blitz/data/live_camera.py`, `blitz/layout/dialogs.py` (`RealCameraDialog`).
+- **On Stop:** The worker emits **one final** `frame_ready` with the full ring so the viewer gets the ring at stop. Dialog disconnects `frame_ready` only **after** `wait_stopped()`. Callback does `set_image(img)` + `setCurrentIndex(img.n_images - 1)`.
+- **Code:** `_CameraWorker` takes `send_live_only`; when true, emits `_frames_to_imagedata([buffer[-1]], ...)` each tick, else full buffer. On exit always emits full buffer. `RealCameraDialog`: one toggle button (Start/Stop), Close button, `_stop()` then `wait_stopped()` then disconnect.
 
 ---
 
 ## 5. Summary table
 
-| Aspect              | Cam Mock                    | Echte Kamera                 |
+| Aspect              | Cam Mock                    | Webcam                 |
 |---------------------|-----------------------------|------------------------------|
 | Model               | Pull (timer → get_snapshot) | Push (frame_ready)           |
 | Ring in             | Handler                     | Worker                       |
-| Display cap         | Yes (e.g. 50 MB)            | No (full buffer each emit)   |
+| Live vs timeline    | —                           | Combo: Live (last frame) or Timeline (full ring) |
+| Display cap         | Yes (e.g. 50 MB)           | Live = 1 frame; Timeline = full buffer |
 | Final snapshot      | get_snapshot(999 MB) on stop| Worker emits final buffer on exit |
 | Viewer on last frame| Callback sets index         | Callback sets index          |
 

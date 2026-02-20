@@ -204,6 +204,10 @@ class WinampMockLiveWidget(QFrame):
         hint.setObjectName("MockLiveHint")
         hint.setToolTip("Cam Mock: Lissajous (and later e.g. Blitz). Same pull/ring-buffer as real Live.")
         layout.addWidget(hint)
+        qd = QLabel("Quick & Dirty – ROI/View preserved. Real streamer later (e.g. Network).")
+        qd.setObjectName("MockLiveHint")
+        qd.setStyleSheet("color: #666; font-size: 8pt;")
+        layout.addWidget(qd)
 
         row1 = QHBoxLayout()
         self.display = QLabel("Ready.")
@@ -224,32 +228,59 @@ class WinampMockLiveWidget(QFrame):
         layout.addLayout(variant_row)
         self.spectrum.set_variant(self.combo_variant.currentText())
 
-        # Lightning params: one row per regler (label left, int spin right)
+        # Lightning params: Source Origin (names swapped for 90deg-rotated display), then length/thick/noise/branches/speed
         max_half = 960
+        origin_row = QHBoxLayout()
+        origin_row.addWidget(QLabel("Source Origin:"))
+        self.combo_source_origin = QComboBox()
+        self.combo_source_origin.addItems(["Top", "Left"])
+        self.combo_source_origin.setCurrentIndex(1)
+        self.combo_source_origin.setToolTip("Propagation direction (for 90deg-rotated display): Top = grow right, Left = grow down.")
+        origin_row.addWidget(self.combo_source_origin, 1)
+        layout.addLayout(origin_row)
+
         seg_row = QHBoxLayout()
-        seg_row.addWidget(QLabel("Seg len:"))
+        seg_row.addWidget(QLabel("Length:"))
         self.spin_segment_length = QSpinBox()
         self.spin_segment_length.setRange(3, max_half)
-        self.spin_segment_length.setValue(25)
-        self.spin_segment_length.setToolTip("Segment length (px). Capped at half image width. Random variation per segment.")
+        self.spin_segment_length.setValue(9)
+        self.spin_segment_length.setToolTip("Segment length (px). Random variation per segment.")
         seg_row.addWidget(self.spin_segment_length, 1)
         layout.addLayout(seg_row)
         thick_row = QHBoxLayout()
         thick_row.addWidget(QLabel("Thick:"))
         self.spin_thickness = QSpinBox()
-        self.spin_thickness.setRange(1, 24)
-        self.spin_thickness.setValue(3)
-        self.spin_thickness.setToolTip("Segment thickness (px).")
+        self.spin_thickness.setRange(1, max_half//2)
+        self.spin_thickness.setValue(17)
+        self.spin_thickness.setToolTip("Segment thickness (px) for glow.")
         thick_row.addWidget(self.spin_thickness, 1)
         layout.addLayout(thick_row)
         noise_row = QHBoxLayout()
         noise_row.addWidget(QLabel("Noise:"))
         self.spin_noise = QSpinBox()
         self.spin_noise.setRange(0, 50)
-        self.spin_noise.setValue(10)
+        self.spin_noise.setValue(17)
         self.spin_noise.setToolTip("Intensity noise (Rauschen) strength.")
         noise_row.addWidget(self.spin_noise, 1)
         layout.addLayout(noise_row)
+        branches_row = QHBoxLayout()
+        branches_row.addWidget(QLabel("Branches:"))
+        self.spin_branches = QSpinBox()
+        self.spin_branches.setRange(1, 42)
+        self.spin_branches.setValue(9)
+        self.spin_branches.setToolTip("Max number of branches (splits).")
+        branches_row.addWidget(self.spin_branches, 1)
+        layout.addLayout(branches_row)
+        speed_row = QHBoxLayout()
+        speed_row.addWidget(QLabel("Speed:"))
+        self.spin_speed = QDoubleSpinBox()
+        self.spin_speed.setRange(0.25, 5.0)
+        self.spin_speed.setValue(1.0)
+        self.spin_speed.setDecimals(2)
+        self.spin_speed.setSingleStep(0.25)
+        self.spin_speed.setToolTip("Animation speed of growth/cycle (independent of FPS).")
+        speed_row.addWidget(self.spin_speed, 1)
+        layout.addLayout(speed_row)
 
         fps_row = QHBoxLayout()
         fps_row.addWidget(QLabel("FPS:"))
@@ -360,6 +391,9 @@ class WinampMockLiveWidget(QFrame):
         grayscale = self.check_grayscale.isChecked()
         exposure_ms = self.spin_exposure.value()
         variant = self.combo_variant.currentText().lower()
+        # UI "Top" -> start left / grow right; "Left" -> start top / grow down (for 90deg-rotated display)
+        src = self.combo_source_origin.currentText().lower()
+        source_origin = "left" if src == "top" else "top"
         self._handler = MockLiveHandler(
             width=w,
             height=h,
@@ -371,6 +405,9 @@ class WinampMockLiveWidget(QFrame):
             lightning_segment_length=self.spin_segment_length.value(),
             lightning_thickness=self.spin_thickness.value(),
             lightning_noise=self.spin_noise.value(),
+            lightning_source_origin=source_origin,
+            lightning_max_branches=self.spin_branches.value(),
+            lightning_speed=self.spin_speed.value(),
         )
         self._handler.stopped.connect(self._on_stream_stopped)
         self._handler.start()
@@ -385,10 +422,13 @@ class WinampMockLiveWidget(QFrame):
         self.fps_slider.setEnabled(False)
         self.spin_exposure.setEnabled(False)
         self.combo_variant.setEnabled(False)
+        self.combo_source_origin.setEnabled(False)
         self.check_grayscale.setEnabled(False)
         self.spin_segment_length.setEnabled(False)
         self.spin_thickness.setEnabled(False)
         self.spin_noise.setEnabled(False)
+        self.spin_branches.setEnabled(False)
+        self.spin_speed.setEnabled(False)
         self.spectrum.start()
 
     def _on_stop(self) -> None:
@@ -421,10 +461,13 @@ class WinampMockLiveWidget(QFrame):
         self.fps_slider.setEnabled(True)
         self.spin_exposure.setEnabled(True)
         self.combo_variant.setEnabled(True)
+        self.combo_source_origin.setEnabled(True)
         self.check_grayscale.setEnabled(True)
         self.spin_segment_length.setEnabled(True)
         self.spin_thickness.setEnabled(True)
         self.spin_noise.setEnabled(True)
+        self.spin_branches.setEnabled(True)
+        self.spin_speed.setEnabled(True)
         self.spectrum.stop()
 
     def _pull_and_display(self) -> None:
