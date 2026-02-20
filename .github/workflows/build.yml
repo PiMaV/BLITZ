@@ -3,10 +3,8 @@ name: Build BLITZ
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
     tags:
-      - 'v*.*.*'
+      - 'build*'
 
 jobs:
   windows:
