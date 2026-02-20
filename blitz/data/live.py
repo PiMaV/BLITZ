@@ -83,91 +83,84 @@ def _lightning_build_tree(
     seed: int,
     segment_length: float,
 ) -> tuple[list[list[tuple[int, int]]], list[tuple[int, int]]]:
-    """Build lightning tree: start at top, add segments. Length capped at half image; each segment length has random variation. After 1-5 segments may split. Stop when any tip touches left/right wall."""
+    """Build lightning tree: start at left, grow right. Length capped; each segment length has random variation. After segments may split. Stop when any tip touches right wall."""
     rng = random.Random(seed)
     w, h = width, height
     margin = max(2, w // 20)
-    top_y = int(h * 0.12)
-    cx = w // 2
-    max_seg = max(2, min(w, h) // 2)
-    base_seg_len = max(2, min(max_seg, int(segment_length)))
+
+    # Start: Middle of left side with some variation
+    start_y = int(h / 2 + rng.uniform(-h * 0.2, h * 0.2))
+    start_x = margin
+
+    # Structure: branches is list of lists of points
     branches: list[list[tuple[int, int]]] = []
+    # reveal order: (branch_idx, point_count_in_branch)
     reveal: list[tuple[int, int]] = []
-    # Start one branch from center top
-    x = cx + rng.randint(-w // 12, w // 12)
-    x = max(margin, min(w - margin, x))
-    branches.append([(x, top_y)])
+
+    branches.append([(start_x, start_y)])
     reveal.append((0, 1))
-    # Frontier: (branch_idx, segs_until_can_split)
-    next_split = rng.randint(1, 5)
-    active = [0]
-    segs_since_split = [0]
+
+    # Active branches: (branch_idx, current_angle_rad, steps_since_split)
+    # Angle 0 is straight right.
+    active: list[list] = [[0, 0.0, 0]]
+
+    base_seg_len = max(2, int(segment_length))
     wall_hit = False
+
     while active and not wall_hit:
-        bid = active[rng.randint(0, len(active) - 1)]
+        # Pick random active branch to grow (adds randomness to growth order)
+        idx_in_active = rng.randint(0, len(active) - 1)
+        bid, angle, steps = active[idx_in_active]
+
         pts = branches[bid]
         px, py = pts[-1]
-        # Segment length: random variation so not all equal
-        this_len = base_seg_len * rng.uniform(0.45, 1.35)
-        this_len = max(2, int(this_len))
-        # Direction: any (360), light downward bias
-        angle = rng.uniform(0, 2 * np.pi)
-        bias = rng.uniform(0.15, 0.45)
-        angle = angle * (1 - bias) + (-np.pi / 2) * bias
-        dx = int(np.cos(angle) * this_len)
-        dy = int(np.sin(angle) * this_len)
-        if abs(dx) < 1 and abs(dy) < 1:
-            dx = 1 if rng.random() > 0.5 else -1
-            dy = this_len
-        nx, ny = px + dx, py + dy
-        if nx <= margin or nx >= w - margin:
+
+        # Determine new segment
+        this_len = base_seg_len * rng.uniform(0.5, 1.5)
+
+        # Wander the angle slightly (momentum)
+        angle += rng.uniform(-0.3, 0.3)
+        # Strong bias towards Right (0 rad) to ensure progress
+        angle = angle * 0.7
+
+        nx = int(px + np.cos(angle) * this_len)
+        ny = int(py + np.sin(angle) * this_len)
+
+        # Check bounds
+        if ny < 0 or ny >= h:
+            # Hit top/bottom: kill branch
+            active.pop(idx_in_active)
+            continue
+
+        if nx >= w - margin:
+            # Hit right wall: Stop everything
+            nx = w - margin
+            pts.append((nx, ny))
+            reveal.append((bid, len(pts)))
             wall_hit = True
             break
-        nx = max(margin, min(w - margin, nx))
+
         pts.append((nx, ny))
-        si = active.index(bid)
-        segs_since_split[si] = segs_since_split[si] + 1
         reveal.append((bid, len(pts)))
-        # Split after 1-5 segments on this branch?
-        if segs_since_split[si] >= next_split and len(branches) < 6:
-            segs_since_split[si] = 0
-            next_split = rng.randint(1, 5)
-            n_new = rng.randint(1, 2)
-            bx, by = pts[-1]
-            for _ in range(n_new):
-                branches.append([(bx, by)])
-                new_bid = len(branches) - 1
-                active.append(new_bid)
-                segs_since_split.append(0)
-                reveal.append((new_bid, 1))
+
+        # Update active state
+        steps += 1
+        active[idx_in_active][1] = angle
+        active[idx_in_active][2] = steps
+
+        # Split?
+        # Chance increases with steps, limited by total branches
+        if steps > rng.randint(2, 8) and len(branches) < 10 and rng.random() < 0.3:
+            active[idx_in_active][2] = 0  # reset steps for parent
+
+            # Spawn new branch
+            split_angle = angle + rng.choice([-1, 1]) * rng.uniform(0.3, 0.8)
+            branches.append([(nx, ny)])
+            new_bid = len(branches) - 1
+            active.append([new_bid, split_angle, 0])
+            reveal.append((new_bid, 1))
+
     return branches, reveal
-
-
-def _draw_segment_radial(
-    out: np.ndarray,
-    p0: tuple[int, int],
-    p1: tuple[int, int],
-    thickness: int,
-    intensity: float,
-    grayscale: bool,
-    noise_sigma: float,
-    rng: random.Random,
-) -> None:
-    """Draw one segment with radial falloff (outer dim, inner bright) and light noise on intensity."""
-    th = max(1, thickness)
-    # Outer layer (softer), then inner (bright) for radial falloff
-    for layer, (dth, mult) in enumerate([(max(1, th + 1), 0.35), (th, 1.0)]):
-        fac = intensity * mult * (1.0 + rng.uniform(-noise_sigma, noise_sigma))
-        fac = max(0.03, min(1.0, fac))
-        if grayscale:
-            val = int(255 * fac)
-            val = max(0, min(255, val))
-            if val > 0:
-                cv2.line(out, (int(p0[0]), int(p0[1])), (int(p1[0]), int(p1[1])), val, dth)
-        else:
-            b, g, r = int(255 * fac), int(180 * fac), int(80 * fac)
-            if max(b, g, r) > 0:
-                cv2.line(out, (int(p0[0]), int(p0[1])), (int(p1[0]), int(p1[1])), (b, g, r), dth)
 
 
 def _lightning_frame(
@@ -180,22 +173,25 @@ def _lightning_frame(
     segment_thickness: int = 3,
     noise_sigma: int = 10,
 ) -> np.ndarray:
-    """Lightning: tree grows (splits after 1-5 segs), stops when tip touches side wall; then afterglow. Segments drawn with radial falloff + noise."""
+    """Lightning: grows left-to-right. Multi-pass additive rendering for glow effect."""
     w, h = width, height
     cycle_pos = (t % _LIGHTNING_CYCLE) / _LIGHTNING_CYCLE
     exposure_scale = min(1.5, max(0.3, exposure_time_ms / 20.0))
     seed = int(t // _LIGHTNING_CYCLE) & 0x7FFFFFFF
+    # Base thickness for the glow
     thickness = max(1, min(24, segment_thickness))
-    noise_sigma_n = max(0, min(50, noise_sigma)) / 100.0
 
+    # Float accumulator for additive blending
     if grayscale:
-        out = np.zeros((h, w), dtype=np.uint8)
+        out_float = np.zeros((h, w), dtype=np.float32)
     else:
-        out = np.zeros((h, w, 3), dtype=np.uint8)
+        out_float = np.zeros((h, w, 3), dtype=np.float32)
 
     # Phases: 0-0.35 grow; 0.35-0.42 frozen; 0.42-0.58 afterglow 1; 0.58-0.72 afterglow 2; 0.72-0.86 afterglow 3; 0.86-1.0 black
     grow_done = cycle_pos >= 0.35
     decay = 1.0
+
+    # Envelope
     if 0.42 <= cycle_pos < 0.58:
         decay = 1.0 - (cycle_pos - 0.42) / 0.16
     elif 0.58 <= cycle_pos < 0.72:
@@ -203,53 +199,90 @@ def _lightning_frame(
     elif 0.72 <= cycle_pos < 0.86:
         decay = 0.25 - (cycle_pos - 0.72) / 0.14 * 0.25
 
+    # High frequency flicker noise
+    flicker = 1.0
+    if grow_done and cycle_pos < 0.86:
+        rng_flicker = random.Random(int(t * 20))
+        flicker = rng_flicker.uniform(0.7, 1.3)
+
     if cycle_pos < 0.86:
         branches, reveal = _lightning_build_tree(w, h, seed, segment_length)
         n_steps = len(reveal)
-        if n_steps == 0:
-            pass
-        else:
+
+        if n_steps > 0:
             if grow_done:
                 progress = 1.0
             else:
                 progress = (cycle_pos - 0.02) / 0.33
                 progress = max(0, min(1, progress))
+
             step_cut = int(progress * n_steps)
             step_cut = max(0, min(n_steps, step_cut))
+
+            # Determine visible length for each branch
             visible_len: dict[int, int] = {}
             for i in range(step_cut):
                 bid, pc = reveal[i]
                 visible_len[bid] = max(visible_len.get(bid, 0), pc)
-            rng_draw = random.Random((seed + int(t * 50)) & 0x7FFFFFFF)
-            base_int = 0.85 * exposure_scale * decay
+
+            # Prepare branches to draw
+            to_draw = []
             for bid, pts in enumerate(branches):
                 n_vis = visible_len.get(bid, 0)
                 if n_vis < 2:
                     continue
-                # Intensity depends on previous segment (chain)
-                seg_int = base_int
-                for i in range(1, n_vis):
-                    p0, p1 = pts[i - 1], pts[i]
-                    seg_int = seg_int * 0.88 + rng_draw.uniform(0, 0.08)
-                    seg_int = max(0.05, min(1.0, seg_int))
-                    _draw_segment_radial(
-                        out, p0, p1, thickness, seg_int, grayscale, noise_sigma_n, rng_draw
-                    )
-            if not grayscale:
-                for c in range(3):
-                    out[:, :, c] = np.clip(
-                        out[:, :, c].astype(np.float64), 0, 255
-                    ).astype(np.uint8)
 
-    # Global intensity noise (Rauschen)
+                # Extract points and convert to numpy for polylines
+                # Use only visible points
+                pts_vis = np.array(pts[:n_vis], dtype=np.int32)
+
+                # Base intensity: Main branch (0) is brighter
+                branch_int = 1.0 if bid == 0 else 0.6
+                to_draw.append((pts_vis, branch_int))
+
+            # Multi-pass rendering (Additive)
+            # Passes: (thickness_multiplier, opacity_multiplier)
+            # 1. Wide Glow (Outer)
+            # 2. Soft Glow (Inner)
+            # 3. Core (Sharp)
+            passes = [
+                (4.0, 0.15),
+                (1.5, 0.4),
+                (0.0, 1.0) # 0.0 thickness means 1px line or handled specifically
+            ]
+
+            base_intensity = 0.9 * exposure_scale * decay * flicker
+
+            for th_mult, op_mult in passes:
+                layer_th = max(1, int(thickness * th_mult))
+                if th_mult == 0.0:
+                    layer_th = 1
+
+                for pts_arr, branch_int in to_draw:
+                    final_int = base_intensity * branch_int * op_mult
+                    val = final_int * 255.0
+
+                    if grayscale:
+                        cv2.polylines(out_float, [pts_arr], False, float(val), layer_th, cv2.LINE_AA)
+                    else:
+                        # Blue-ish lightning color: (255, 200, 120) BGR
+                        color = (255.0 * val / 255.0, 200.0 * val / 255.0, 120.0 * val / 255.0)
+                        cv2.polylines(out_float, [pts_arr], False, color, layer_th, cv2.LINE_AA)
+
+    # Global sensor noise (Rauschen)
     noise_seed = (seed + int(t * 100)) & 0x7FFFFFFF
     sigma = max(0, min(25, noise_sigma)) * 0.5
     rng_np = np.random.default_rng(noise_seed)
+
     if grayscale:
-        noise = rng_np.normal(0, sigma, (h, w)).astype(np.float64)
+        noise = rng_np.normal(0, sigma, (h, w)).astype(np.float32)
     else:
-        noise = rng_np.normal(0, sigma * 0.8, (h, w, 3)).astype(np.float64)
-    out = np.clip(out.astype(np.float64) + noise, 0, 255).astype(np.uint8)
+        noise = rng_np.normal(0, sigma * 0.8, (h, w, 3)).astype(np.float32)
+
+    out_float += noise
+
+    # Clip to 8-bit
+    out = np.clip(out_float, 0, 255).astype(np.uint8)
     return out
 
 
