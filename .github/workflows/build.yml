@@ -2,6 +2,7 @@ name: Build BLITZ
 
 on:
   workflow_dispatch:
+  # optional: falls du doch mal per Tag auslösen willst
   push:
     tags:
       - 'build*'
@@ -9,19 +10,53 @@ on:
 jobs:
   windows:
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
       - name: Install uv
+        shell: pwsh
         run: pip install uv
+
       - name: Sync dependencies
+        shell: pwsh
         run: uv sync --dev
+
+      - name: Read version from pyproject.toml
+        id: ver
+        shell: pwsh
+        run: |
+          python - << 'PY'
+          import re, pathlib
+          p = pathlib.Path("pyproject.toml").read_text(encoding="utf-8")
+          m = re.search(r'(?m)^\s*version\s*=\s*"([^"]+)"\s*$', p)
+          if not m:
+            raise SystemExit("ERROR: Could not find [project].version in pyproject.toml")
+          print(f"::set-output name=version::{m.group(1)}")
+          PY
+
+      - name: Create release tag name
+        id: tag
+        shell: pwsh
+        run: |
+          # eindeutiger Tag pro Build (keine Kollisionen)
+          $v = "${{ steps.ver.outputs.version }}"
+          $t = "build-$v-${{ github.run_number }}"
+          echo "::set-output name=tag::$t"
+
       - name: Build with PyInstaller
+        shell: pwsh
         run: uv run pyinstaller BLITZ.spec --noconfirm --clean
+
       - name: Verify output
+        shell: pwsh
         run: |
           if (Test-Path dist/BLITZ.exe) {
             Write-Host "Build success: dist/BLITZ.exe found."
@@ -29,37 +64,32 @@ jobs:
             Write-Error "Build failed: dist/BLITZ.exe not found."
             exit 1
           }
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: BLITZ-Windows
           path: dist/BLITZ.exe
 
-  linux_prepare:
-    runs-on: ubuntu-20.04
+  release:
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # Release immer bei manual, optional auch bei build*-tags
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/build')
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
         with:
-          python-version: '3.12'
-      - name: Install uv
-        run: pip install uv
-      - name: Sync dependencies
-        run: uv sync --dev
-      - name: Build with PyInstaller
-        run: uv run pyinstaller BLITZ.spec --noconfirm --clean
-      - name: Verify output
-        run: |
-          if [ -f "dist/BLITZ" ]; then
-            echo "Build success: dist/BLITZ found."
-            chmod +x dist/BLITZ
-          else
-            echo "Build failed: dist/BLITZ not found."
-            exit 1
-          fi
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+          name: BLITZ-Windows
+          path: dist
+
+      - name: Publish Release (tag created automatically on this commit)
+        uses: softprops/action-gh-release@v2
         with:
-          name: BLITZ-Linux
-          path: dist/BLITZ
+          tag_name: ${{ needs.windows.outputs.tag }}
+          name: BLITZ ${{ needs.windows.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          files: dist/BLITZ.exe
+          fail_on_unmatched_files: true
