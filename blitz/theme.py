@@ -65,6 +65,9 @@ COLOR_FG = "#a9b1d6"
 COLOR_BG_DARK = "#2d2e3a"
 COLOR_BG_DARKER = "#1a1b26"
 
+# Light Theme Red
+COLOR_RED_LIGHT = "#c45c5c"
+
 # Status styles (for blocking_status label)
 STYLE_IDLE = f"background-color: {COLOR_BG_DARK}; color: {COLOR_FG};"
 STYLE_SCAN = f"background-color: {COLOR_ORANGE}; color: {COLOR_BG_DARKER};"
@@ -98,13 +101,33 @@ QPushButton {{
     background-color: {COLOR_BLUE};
     color: {COLOR_BG_DARKER};
     font-weight: bold;
+    border: 1px solid {COLOR_BLUE};
     border-radius: 4px;
 }}
 QPushButton:hover {{
     background-color: #8fb4ff;
+    border-color: #a3c1ff;
 }}
 QPushButton:pressed {{
     background-color: #5a8aeb;
+}}
+"""
+
+# Danger button (e.g. Reset, Disconnect) - Red Outline
+STYLE_BUTTON_DANGER = f"""
+QPushButton {{
+    background-color: transparent;
+    color: {COLOR_RED};
+    font-weight: bold;
+    border: 1px solid {COLOR_RED};
+    border-radius: 4px;
+}}
+QPushButton:hover {{
+    background-color: {COLOR_RED};
+    color: {COLOR_BG_DARKER};
+}}
+QPushButton:pressed {{
+    background-color: #d06f7b;
 }}
 """
 
@@ -160,14 +183,33 @@ QPushButton {
     background-color: #7aa2f7;
     color: white;
     font-weight: bold;
+    border: 1px solid #7aa2f7;
     border-radius: 4px;
 }
 QPushButton:hover {
     background-color: #8fb4ff;
+    border-color: #a3c1ff;
 }
 QPushButton:pressed {
     background-color: #5a8aeb;
 }
+"""
+
+STYLE_BUTTON_DANGER_LIGHT = f"""
+QPushButton {{
+    background-color: transparent;
+    color: {COLOR_RED_LIGHT};
+    font-weight: bold;
+    border: 1px solid {COLOR_RED_LIGHT};
+    border-radius: 4px;
+}}
+QPushButton:hover {{
+    background-color: {COLOR_RED_LIGHT};
+    color: white;
+}}
+QPushButton:pressed {{
+    background-color: #a84b4b;
+}}
 """
 
 _STYLES = {
@@ -178,6 +220,7 @@ _STYLES = {
         "heading": STYLE_HEADING,
         "heading_small": STYLE_HEADING_SMALL,
         "button_primary": STYLE_BUTTON_PRIMARY,
+        "button_danger": STYLE_BUTTON_DANGER,
         "color_red": COLOR_RED,
     },
     "light": {
@@ -187,7 +230,8 @@ _STYLES = {
         "heading": STYLE_HEADING_LIGHT,
         "heading_small": STYLE_HEADING_SMALL_LIGHT,
         "button_primary": STYLE_BUTTON_PRIMARY_LIGHT,
-        "color_red": "#c45c5c",
+        "button_danger": STYLE_BUTTON_DANGER_LIGHT,
+        "color_red": COLOR_RED_LIGHT,
     },
 }
 
