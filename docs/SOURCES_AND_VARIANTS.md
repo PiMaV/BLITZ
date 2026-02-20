@@ -181,10 +181,10 @@ class HasDialog(Protocol):
 
 ## 9. Echte Kamera (implementiert)
 
-- **Zweck:** Live-Stream von USB-Webcam. Rolling Buffer (8-128 Frames), Ausgabe als ImageData in den Viewer.
+- **Zweck:** Live-Stream von USB-Webcam. Rolling Buffer (8-128 Frames), Ausgabe als ImageData in den Viewer. Gleiche Ring-Logik wie Cam Mock: Index 0 = Ring-Start, letzter Index = Ring-Ende; beim Stopp wird der Ring-Zustand als finaler Snapshot uebergeben.
 - **UI:** Eigener Dialog (`RealCameraDialog`): Device (0-3), Slider (Exposure, Gain, Brightness, Contrast), Auto Exposure, FPS (10-60), Buffer, Grayscale; Start/Stop.
-- **Technik:** `cv2.VideoCapture` mit CAP_DSHOW unter Windows; BGR->RGB fuer Farbmodus; Throttling (20 Hz) zur Entlastung der UI.
-- **Pfade:** `blitz/data/live_camera.py` (Handler), `blitz/layout/dialogs.py` (RealCameraDialog), Button "Echte Kamera" im File-Tab.
+- **Technik:** `cv2.VideoCapture` mit CAP_DSHOW unter Windows; BGR->RGB; Worker emittiert beim Beenden einmal den aktuellen Ring als finalen Snapshot. Siehe `docs/LIVE_AND_MOCK.md`.
+- **Pfade:** `blitz/data/live_camera.py` (Handler, Worker), `blitz/layout/dialogs.py` (RealCameraDialog), Button "Echte Kamera" im File-Tab.
 
 ---
 

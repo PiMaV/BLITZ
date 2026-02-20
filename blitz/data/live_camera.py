@@ -117,8 +117,11 @@ class _CameraWorker(QObject):
                 self._buffer.pop(0)
             out = _frames_to_imagedata(np.stack(self._buffer), self._grayscale)
             self.frame_ready.emit(out)
-            # 20-30 Hz: Rolling Buffer, kein echtes Live, angepasste Anzeigerate
+            # 20-30 Hz: Rolling Buffer, angepasste Anzeigerate
             QThread.msleep(max(33, min(50, int(1000 / self._fps))))
+        if self._buffer:
+            final = _frames_to_imagedata(np.stack(self._buffer), self._grayscale)
+            self.frame_ready.emit(final)
         if self._cap:
             self._cap.release()
         self.stopped.emit()

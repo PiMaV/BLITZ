@@ -1159,16 +1159,15 @@ class RealCameraDialog(QDialog):
             self.slider_gain.valueChanged.disconnect(self._on_gain_changed)
         except (TypeError, RuntimeError):
             pass
-        # frame_ready trennen, damit waehrend Shutdown keine set_image-Calls
+        self._handler.stop()
+        if not self._handler.wait_stopped(4000):
+            from ..tools import log
+            log("[CAM] Timeout beim Stoppen", color="orange")
         try:
             if self._on_frame:
                 self._handler.frame_ready.disconnect(self._on_frame)
         except (TypeError, RuntimeError):
             pass
-        self._handler.stop()
-        if not self._handler.wait_stopped(4000):
-            from ..tools import log
-            log("[CAM] Timeout beim Stoppen", color="orange")
         self._handler = None
         if self._on_stop:
             self._on_stop()
