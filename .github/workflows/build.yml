@@ -1,0 +1,65 @@
+name: Build BLITZ
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'build*'
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install uv
+        run: pip install uv
+      - name: Sync dependencies
+        run: uv sync --dev
+      - name: Build with PyInstaller
+        run: uv run pyinstaller BLITZ.spec --noconfirm --clean
+      - name: Verify output
+        run: |
+          if (Test-Path dist/BLITZ.exe) {
+            Write-Host "Build success: dist/BLITZ.exe found."
+          } else {
+            Write-Error "Build failed: dist/BLITZ.exe not found."
+            exit 1
+          }
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BLITZ-Windows
+          path: dist/BLITZ.exe
+
+  linux_prepare:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install uv
+        run: pip install uv
+      - name: Sync dependencies
+        run: uv sync --dev
+      - name: Build with PyInstaller
+        run: uv run pyinstaller BLITZ.spec --noconfirm --clean
+      - name: Verify output
+        run: |
+          if [ -f "dist/BLITZ" ]; then
+            echo "Build success: dist/BLITZ found."
+            chmod +x dist/BLITZ
+          else
+            echo "Build failed: dist/BLITZ not found."
+            exit 1
+          fi
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BLITZ-Linux
+          path: dist/BLITZ
