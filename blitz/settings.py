@@ -17,9 +17,11 @@ _default_core_settings = {
 
     "default/multicore_size_threshold": 1.3 * (2**30),
     "default/multicore_files_threshold": 333,
+    "default/boot_bench_done": False,
     "default/load_8bit": False,
     "default/load_grayscale": True,
     "default/max_ram": 2.,
+    "default/load_dialog_mb": 500,
     "default/colormap": "plasma",
 
     "data/sync": False,
@@ -31,6 +33,7 @@ _default_core_settings = {
     "web/download_attempts": 3,
 
     "app/restart_exit_code": -12341234,
+    "app/theme": "dark",
 }
 
 _default_project_settings = {

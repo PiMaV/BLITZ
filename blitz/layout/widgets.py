@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import QSizePolicy, QWidget, QLineEdit
 
 from .viewer import ImageViewer
 from .. import settings
+from ..theme import get_plot_bg, get_timeline_line_color
 
 
 class TimePlot(pg.PlotWidget):
@@ -26,12 +27,12 @@ class TimePlot(pg.PlotWidget):
         image_viewer: pg.ImageView,
         **kargs,
     ) -> None:
-        super().__init__(parent, **kargs)
+        super().__init__(parent, background=get_plot_bg(), **kargs)
         self.hideAxis('left')
         self.addItem(image_viewer.timeLine)
         self.timeline = image_viewer.timeLine
         self.timeline.setMovable(False)
-        self.timeline.setPen(pg.mkPen((0, 200, 255), width=6))
+        self.timeline.setPen(pg.mkPen(get_timeline_line_color(), width=6))
         self.addItem(image_viewer.frameTicks)
         self.addItem(image_viewer.normRgn)
         self.old_roi_plot = image_viewer.ui.roiPlot
@@ -46,9 +47,10 @@ class TimePlot(pg.PlotWidget):
         sizePolicy.setHeightForWidth(self.sizePolicy().hasHeightForWidth())
         self.setSizePolicy(sizePolicy)
         self.setMinimumSize(QSize(0, 40))
+        _tl = get_timeline_line_color()
         self.norm_range = pg.LinearRegionItem(
-            brush=pg.mkBrush(80, 120, 180, 80),
-            pen=pg.mkPen((80, 120, 180), width=5),
+            brush=pg.mkBrush(*_tl, 80),
+            pen=pg.mkPen(_tl, width=5),
         )
         self.norm_range.setZValue(0)
         if hasattr(self.norm_range, "handleSize"):
@@ -56,8 +58,8 @@ class TimePlot(pg.PlotWidget):
         self.addItem(self.norm_range)
         self.norm_range.hide()
         self.crop_range = pg.LinearRegionItem(
-            brush=pg.mkBrush(80, 180, 80, 80),
-            pen=pg.mkPen((80, 180, 80), width=3),
+            brush=pg.mkBrush(158, 206, 106, 80),  # Tokyo green
+            pen=pg.mkPen((158, 206, 106), width=3),
         )
         if hasattr(self.crop_range, "handleSize"):
             self.crop_range.handleSize = 12
@@ -408,7 +410,7 @@ class ExtractionPlot(pg.PlotWidget):
             v_plot_viewbox.invertY()
         v_plot_item = pg.PlotItem(viewBox=v_plot_viewbox)
         v_plot_item.showGrid(x=True, y=True, alpha=0.4)
-        super().__init__(plotItem=v_plot_item, **kwargs)
+        super().__init__(plotItem=v_plot_item, background=get_plot_bg(), **kwargs)
 
         self._extractionline = ExtractionLine(viewer=viewer, vertical=vertical)
         self._extractionline.sigPositionChanged.connect(self.draw_line)

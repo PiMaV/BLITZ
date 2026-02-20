@@ -223,5 +223,8 @@ Wenn Docks immer offen sind, bringt das keinen Nutzen – dann laeuft draw_line 
 *   **Mechanism:** Numpy releases the GIL for these operations, allowing true parallelism. The array is split along the spatial height axis, processed in chunks, and concatenated.
 *   **Heuristic:** Threading is disabled for small arrays (<10 MB) or non-spatial reductions to avoid overhead.
 
+## Multicore Load (Images, ASCII)
+See [MULTICORE_AND_PROGRESS.md](MULTICORE_AND_PROGRESS.md) for discussion of: benchmarking multicore logic, configurable thresholds, and progress bar behaviour (incl. ASCII).
+
 ## Numba Candidates
 See [NUMBA_CANDIDATES.md](NUMBA_CANDIDATES.md) for a list of functions identified for future Numba optimization.

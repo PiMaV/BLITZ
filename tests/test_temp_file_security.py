@@ -67,7 +67,7 @@ def _install_mocks():
     sys.modules['blitz.data.tools'] = mock_module('blitz.data.tools')
     sys.modules['blitz.layout'] = mock_module('blitz.layout')
 
-    # blitz.data.web often pre-loaded with real PyQt5; force reload with mocks
+    # blitz.data.web often pre-loaded with real PyQt6; force reload with mocks
     sys.modules.pop('blitz.data.web', None)
 
     return orig

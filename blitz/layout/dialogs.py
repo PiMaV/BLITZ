@@ -3,10 +3,12 @@ from typing import Any, Optional
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                              QDoubleSpinBox, QFormLayout, QFrame, QHBoxLayout,
-                             QLabel, QPushButton, QSpinBox, QVBoxLayout, QWidget)
+                             QLabel, QPushButton, QSlider, QSpinBox, QVBoxLayout,
+                             QWidget)
 
 from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 
@@ -22,6 +24,7 @@ from ..data.load import (get_image_metadata, get_image_preview,
                          get_sample_bytes_per_pixel, get_sample_format,
                          get_sample_format_display, get_video_preview)
 from ..data.image import VideoMetaData
+from ..theme import get_dialog_preview_bg
 from ..tools import get_available_ram
 
 RAW_PREVIEW_MAX_CHARS = 80
@@ -74,6 +77,7 @@ class VideoLoadOptionsDialog(QDialog):
         initial_params: Optional[dict] = None,
     ):
         super().__init__(parent)
+        self.setWindowIcon(QIcon(":/icon/blitz.ico"))
         self.setWindowTitle("Video Loading Options")
         self._path = path
         self.metadata = metadata
@@ -180,7 +184,7 @@ class VideoLoadOptionsDialog(QDialog):
         preview_layout = QVBoxLayout(preview_frame)
         self.lbl_preview_status = QLabel("Loading preview...")
         preview_layout.addWidget(self.lbl_preview_status)
-        self._plot_widget = pg.PlotWidget(background=(80, 80, 80))
+        self._plot_widget = pg.PlotWidget(background=get_dialog_preview_bg())
         self._plot_widget.setMinimumSize(400, 360)
         self._plot_widget.setAspectLocked(False)
         self._plot_widget.hideAxis("left")
@@ -408,6 +412,7 @@ class ImageLoadOptionsDialog(QDialog):
         initial_params: Optional[dict] = None,
     ):
         super().__init__(parent)
+        self.setWindowIcon(QIcon(":/icon/blitz.ico"))
         self.setWindowTitle("Image Loading Options")
         self._path = path
         self.metadata = metadata
@@ -507,7 +512,7 @@ class ImageLoadOptionsDialog(QDialog):
         preview_layout = QVBoxLayout(preview_frame)
         self.lbl_preview_status = QLabel("Loading preview...")
         preview_layout.addWidget(self.lbl_preview_status)
-        self._plot_widget = pg.PlotWidget(background=(80, 80, 80))
+        self._plot_widget = pg.PlotWidget(background=get_dialog_preview_bg())
         self._plot_widget.setMinimumSize(400, 360)
         self._plot_widget.setAspectLocked(False)
         self._plot_widget.hideAxis("left")
@@ -704,6 +709,7 @@ class AsciiLoadOptionsDialog(QDialog):
         initial_params: Optional[dict] = None,
     ) -> None:
         super().__init__(parent)
+        self.setWindowIcon(QIcon(":/icon/blitz.ico"))
         self.setWindowTitle("ASCII Loading Options")
         self._path = path
         self.metadata = metadata
@@ -731,7 +737,7 @@ class AsciiLoadOptionsDialog(QDialog):
             self.chk_row_number.blockSignals(False)
         else:
             self.chk_8bit.setChecked(
-                self.metadata.get("convert_to_8_bit_suggest", True)
+                self.metadata.get("convert_to_8_bit_suggest", False)
             )
         self.cmb_preview_mode.currentTextChanged.connect(self._refresh_preview)
         self.chk_preview_norm.toggled.connect(self._refresh_preview)
@@ -816,14 +822,14 @@ class AsciiLoadOptionsDialog(QDialog):
         layout.addLayout(preview_opts)
 
         preview_frame = QFrame()
-        preview_frame.setFrameStyle(QFrame.StyledPanel)
+        preview_frame.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Sunken)
         preview_layout = QVBoxLayout(preview_frame)
         self.lbl_raw = QLabel("")
         self.lbl_raw.setWordWrap(False)
         self.lbl_raw.setStyleSheet("font-family: monospace; font-size: 10px;")
         self.lbl_raw.setMaximumHeight(70)
         preview_layout.addWidget(self.lbl_raw)
-        self._plot_widget = pg.PlotWidget(background=(80, 80, 80))
+        self._plot_widget = pg.PlotWidget(background=get_dialog_preview_bg())
         self._plot_widget.setMinimumSize(400, 300)
         self._plot_widget.setAspectLocked(False)
         self._plot_widget.hideAxis("left")
@@ -1005,3 +1011,173 @@ class AsciiLoadOptionsDialog(QDialog):
                 out["mask"] = (slice(y0, y1), slice(x0, x1))
                 out["mask_rel"] = (x0 / cols, y0 / rows, x1 / cols, y1 / rows)
         return out
+
+
+class RealCameraDialog(QDialog):
+    """Eigener Dialog fuer echte Kamera: Slider (Exposure, Gain, etc.), Start/Stop."""
+
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        on_frame: Optional[Any] = None,
+        on_stop: Optional[Any] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowIcon(QIcon(":/icon/blitz.ico"))
+        self.setWindowTitle("Echte Kamera")
+        self._on_frame = on_frame
+        self._on_stop = on_stop
+        self._handler: Any = None
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        from ..data.live_camera import RealCameraHandler
+
+        layout = QVBoxLayout(self)
+
+        layout.addWidget(QLabel("<b>Echte Kamera (cv2.VideoCapture)</b>"))
+
+        form = QFormLayout()
+
+        self.cmb_device = QComboBox()
+        self.cmb_device.addItems(["0", "1", "2", "3"])
+        self.cmb_device.setCurrentIndex(0)
+        self.cmb_device.setToolTip("Device ID (0 = default webcam, 1/2/3 = weitere Kameras)")
+        form.addRow("Device:", self.cmb_device)
+
+        def _slider_row(tooltip: str) -> tuple[QSlider, QLabel, QWidget]:
+            s = QSlider(Qt.Orientation.Horizontal)
+            s.setRange(0, 100)
+            s.setValue(50)
+            s.setToolTip(tooltip)
+            lbl = QLabel("50")
+            lbl.setFixedWidth(28)
+            s.valueChanged.connect(lambda v: lbl.setText(str(v)))
+            row = QHBoxLayout()
+            row.addWidget(s, 1)
+            row.addWidget(lbl)
+            w = QWidget()
+            w.setLayout(row)
+            return s, lbl, w
+
+        self.slider_exposure, self.lbl_exposure, exp_w = _slider_row(
+            "Belichtung (nicht alle Kameras unterstuetzen)"
+        )
+        form.addRow("Exposure:", exp_w)
+
+        self.slider_gain, _, gain_w = _slider_row("Verstaerkung")
+        form.addRow("Gain:", gain_w)
+
+        self.slider_brightness, _, bright_w = _slider_row("Helligkeit")
+        form.addRow("Brightness:", bright_w)
+
+        self.slider_contrast, _, contrast_w = _slider_row("Kontrast")
+        form.addRow("Contrast:", contrast_w)
+
+        self.chk_auto_exposure = QCheckBox("Auto Exposure")
+        self.chk_auto_exposure.setChecked(True)
+        self.chk_auto_exposure.setToolTip("Kamera steuert Belichtung selbst")
+        form.addRow("", self.chk_auto_exposure)
+
+        self.spin_fps = QSpinBox()
+        self.spin_fps.setRange(10, 60)
+        self.spin_fps.setValue(25)
+        self.spin_fps.setToolTip("Ziel-Framerate")
+        form.addRow("FPS:", self.spin_fps)
+
+        self.spin_buffer = QSpinBox()
+        self.spin_buffer.setRange(8, 128)
+        self.spin_buffer.setValue(32)
+        self.spin_buffer.setToolTip("Rolling buffer (Frames in Timeline)")
+        form.addRow("Buffer:", self.spin_buffer)
+
+        self.chk_grayscale = QCheckBox("Grayscale (Plasma)")
+        self.chk_grayscale.setChecked(True)
+        form.addRow("", self.chk_grayscale)
+
+        layout.addLayout(form)
+
+        btn_row = QHBoxLayout()
+        self.btn_start = QPushButton("Start")
+        self.btn_start.setToolTip("Kamera oeffnen, Stream in BLITZ Viewer")
+        self.btn_start.clicked.connect(lambda: self._start(RealCameraHandler))
+        btn_row.addWidget(self.btn_start)
+        self.btn_stop = QPushButton("Stop")
+        self.btn_stop.setEnabled(False)
+        self.btn_stop.clicked.connect(self._stop)
+        btn_row.addWidget(self.btn_stop)
+        layout.addLayout(btn_row)
+
+    def _start(self, HandlerClass) -> None:
+        if self._handler is not None:
+            return
+        device = self.cmb_device.currentIndex()
+        fps = float(self.spin_fps.value())
+        buf = self.spin_buffer.value()
+        gray = self.chk_grayscale.isChecked()
+        exp = self.slider_exposure.value() / 100.0
+        gain = self.slider_gain.value() / 100.0
+        bright = self.slider_brightness.value() / 100.0
+        contr = self.slider_contrast.value() / 100.0
+        auto_exp = self.chk_auto_exposure.isChecked()
+        self._handler = HandlerClass(
+            parent=self,
+            device_id=device,
+            fps=fps,
+            buffer_size=buf,
+            grayscale=gray,
+            exposure=exp,
+            gain=gain,
+            brightness=bright,
+            contrast=contr,
+            auto_exposure=auto_exp,
+        )
+        if self._on_frame:
+            self._handler.frame_ready.connect(self._on_frame)
+        self._handler.start()
+        self.btn_start.setEnabled(False)
+        self.btn_stop.setEnabled(True)
+        self.slider_exposure.valueChanged.connect(self._on_exposure_changed)
+        self.slider_gain.valueChanged.connect(self._on_gain_changed)
+
+    def _on_exposure_changed(self, v: int) -> None:
+        if self._handler:
+            self._handler.set_exposure(v / 100.0)
+
+    def _on_gain_changed(self, v: int) -> None:
+        if self._handler:
+            self._handler.set_gain(v / 100.0)
+
+    def _stop(self) -> None:
+        if self._handler is None:
+            return
+        try:
+            self.slider_exposure.valueChanged.disconnect(self._on_exposure_changed)
+        except (TypeError, RuntimeError):
+            pass
+        try:
+            self.slider_gain.valueChanged.disconnect(self._on_gain_changed)
+        except (TypeError, RuntimeError):
+            pass
+        # frame_ready trennen, damit waehrend Shutdown keine set_image-Calls
+        try:
+            if self._on_frame:
+                self._handler.frame_ready.disconnect(self._on_frame)
+        except (TypeError, RuntimeError):
+            pass
+        self._handler.stop()
+        if not self._handler.wait_stopped(4000):
+            from ..tools import log
+            log("[CAM] Timeout beim Stoppen", color="orange")
+        self._handler = None
+        if self._on_stop:
+            self._on_stop()
+        self.btn_start.setEnabled(True)
+        self.btn_stop.setEnabled(False)
+
+    def stop_stream(self) -> None:
+        self._stop()
+
+    def closeEvent(self, event) -> None:
+        self._stop()
+        super().closeEvent(event)

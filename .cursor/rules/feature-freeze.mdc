@@ -1,0 +1,10 @@
+---
+description: Feature freeze; all .md treated as shadow (draft)
+alwaysApply: true
+---
+
+# Feature Freeze
+
+**Status**: Feature freeze in effect.
+
+**All `.md` files**: Treated as **shadow** (draft / WIP). They may be outdated or incomplete; do not rely on them for current behaviour. Code and shipped behaviour are the source of truth.

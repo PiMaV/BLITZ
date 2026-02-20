@@ -15,6 +15,7 @@ from pyqtgraph.dockarea import Dock, DockArea
 from .. import __version__, settings
 from .. import resources  # noqa: F401  (import registers Qt resources)
 from ..data.ops import ReduceOperation
+from ..theme import get_style
 from ..tools import LoggingTextEdit, get_available_ram, setup_logger
 from .bench_sparklines import BenchSparklines
 from .viewer import ImageViewer
@@ -163,6 +164,18 @@ class UI_MainWindow(QWidget):
         self.action_restart = file_menu.addAction("Restart")
         self.menubar.addMenu(file_menu)
 
+        theme_menu = QMenu("Theme", self)
+        theme_menu.setToolTipsVisible(True)
+        self.action_theme_dark = theme_menu.addAction("Dark (Tokyo Night)")
+        self.action_theme_light = theme_menu.addAction("Light (Tokyo Day)")
+        theme_menu.setToolTip("Restart to apply")
+        _theme = settings.get("app/theme")
+        self.action_theme_dark.setCheckable(True)
+        self.action_theme_light.setCheckable(True)
+        self.action_theme_dark.setChecked(_theme == "dark")
+        self.action_theme_light.setChecked(_theme == "light")
+        self.menubar.addMenu(theme_menu)
+
         about_menu = QMenu("About", self)
         about_menu.setToolTipsVisible(True)
         self.action_link_inp = about_menu.addAction("INP Greifswald")
@@ -214,9 +227,7 @@ class UI_MainWindow(QWidget):
         self.blocking_status.setMinimumHeight(42)
         self.blocking_status.setFrameShape(QFrame.Shape.StyledPanel)
         self.blocking_status.setFrameShadow(QFrame.Shadow.Sunken)
-        self.blocking_status.setStyleSheet(
-            "background-color: rgb(45, 45, 55); color: rgb(120, 120, 130);"
-        )
+        self.blocking_status.setStyleSheet(get_style("idle"))
         self.blocking_status.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         lut_splitter = QSplitter(Qt.Orientation.Horizontal)
         lut_splitter.addWidget(lut_left)
@@ -243,32 +254,16 @@ class UI_MainWindow(QWidget):
     def setup_option_dock(self) -> None:
         self.option_tabwidget = QTabWidget()
         self.dock_option.addWidget(self.option_tabwidget)
-
-        style_heading = """QLabel {
-            background-color: rgb(50, 50, 78);
-            qproperty-alignment: AlignCenter;
-            border-bottom: 5px solid rgb(13, 0, 26);
-            font-size: 14pt;
-            font: bold;
-        }"""
-
-        style_heading_small = """QLabel {
-            background-color: rgb(60, 60, 100);
-            qproperty-alignment: AlignCenter;
-            font-size: 11pt;
-            font: bold;
-        }"""
-
-        style_options = (
+        self.option_tabwidget.setStyleSheet(
+            "QTabWidget::pane { border: 1px solid #3b4261; border-radius: 4px; } "
+            "QTabBar::tab:selected { color: #7aa2f7; font-weight: bold; } "
             "font-size: 9pt;"
         )
-
-        self.option_tabwidget.setStyleSheet(style_options)
 
         # --- File ---
         file_layout = QVBoxLayout()
         load_label = QLabel("Loading")
-        load_label.setStyleSheet(style_heading)
+        load_label.setStyleSheet(get_style("heading"))
         file_layout.addWidget(load_label)
         load_hlay = QHBoxLayout()
         self.checkbox_load_8bit = QCheckBox("8 bit")
@@ -302,7 +297,9 @@ class UI_MainWindow(QWidget):
         file_layout.addWidget(self.checkbox_video_dialog_always)
         self.spinbox_video_dialog_mb = QSpinBox()
         self.spinbox_video_dialog_mb.setRange(1, 10000)
-        self.spinbox_video_dialog_mb.setValue(500)
+        self.spinbox_video_dialog_mb.setValue(
+            int(settings.get("default/load_dialog_mb"))
+        )
         self.spinbox_video_dialog_mb.setPrefix("Load dialog above: ")
         self.spinbox_video_dialog_mb.setSuffix(" MB")
         self.spinbox_video_dialog_mb.setToolTip(
@@ -311,26 +308,27 @@ class UI_MainWindow(QWidget):
         file_layout.addWidget(self.spinbox_video_dialog_mb)
         self.checkbox_sync_file = QCheckBox("load/save project file")
         self.checkbox_sync_file.setChecked(False)
-        self.checkbox_sync_file.setStyleSheet("""
-            QCheckBox:checked {
-                color: rgb(250, 125, 125);
-            }
-        """)
+        self.checkbox_sync_file.setStyleSheet(
+            f"QCheckBox:checked {{ color: {get_style('color_red')}; }}"
+        )
         file_layout.addWidget(self.checkbox_sync_file)
         load_btn_lay = QHBoxLayout()
         self.button_open_file = QPushButton("Open File")
+        self.button_open_file.setStyleSheet(get_style("button_primary"))
         load_btn_lay.addWidget(self.button_open_file)
         self.button_open_folder = QPushButton("Open Folder")
+        self.button_open_folder.setStyleSheet(get_style("button_primary"))
         load_btn_lay.addWidget(self.button_open_folder)
         file_layout.addLayout(load_btn_lay)
         connect_label = QLabel("Network")
-        connect_label.setStyleSheet(style_heading)
+        connect_label.setStyleSheet(get_style("heading"))
         file_layout.addWidget(connect_label)
         address_label = QLabel("Address:")
         self.address_edit = QLineEdit()
         token_label = QLabel("Token:")
         self.token_edit = QLineEdit()
         self.button_connect = QPushButton("Connect")
+        self.button_connect.setStyleSheet(get_style("button_primary"))
         self.button_disconnect = QPushButton("Disconnect")
         self.button_disconnect.setEnabled(False)
         connect_lay = QGridLayout()
@@ -342,10 +340,19 @@ class UI_MainWindow(QWidget):
         connect_lay.addWidget(self.button_connect, 2, 0, 2, 1)
         connect_lay.addWidget(self.button_disconnect, 2, 1, 2, 1)
         file_layout.addLayout(connect_lay)
+        live_label = QLabel("LiveView")
+        live_label.setStyleSheet(get_style("heading"))
+        file_layout.addWidget(live_label)
+        self.button_mock_live = QPushButton("Winamp Mock Live")
+        self.button_mock_live.setToolTip("Open Winamp-style mock camera (stream from video file)")
+        file_layout.addWidget(self.button_mock_live)
+        self.button_real_camera = QPushButton("Echte Kamera")
+        self.button_real_camera.setToolTip("Open real camera dialog (USB webcam)")
+        file_layout.addWidget(self.button_real_camera)
         self.crop_section_widget = QWidget()
         crop_section_layout = QVBoxLayout(self.crop_section_widget)
         crop_label = QLabel("Crop")
-        crop_label.setStyleSheet(style_heading)
+        crop_label.setStyleSheet(get_style("heading"))
         crop_section_layout.addWidget(crop_label)
         self.button_crop = QPushButton("Apply Crop")
         crop_section_layout.addWidget(self.button_crop)
@@ -357,7 +364,7 @@ class UI_MainWindow(QWidget):
         # --- View ---
         view_layout = QVBoxLayout()
         mask_label = QLabel("View")
-        mask_label.setStyleSheet(style_heading)
+        mask_label.setStyleSheet(get_style("heading"))
         view_layout.addWidget(mask_label)
         viewchange_layout = QHBoxLayout()
         self.checkbox_flipx = QCheckBox("Flip x")
@@ -368,7 +375,7 @@ class UI_MainWindow(QWidget):
         viewchange_layout.addWidget(self.checkbox_transpose)
         view_layout.addLayout(viewchange_layout)
         mask_label = QLabel("Display Mask")
-        mask_label.setStyleSheet(style_heading)
+        mask_label.setStyleSheet(get_style("heading"))
         mask_label.setToolTip("Post-load mask: draw ROI or load binary image to exclude regions from display/analysis")
         view_layout.addWidget(mask_label)
         self.checkbox_mask = QCheckBox("Show")
@@ -385,7 +392,7 @@ class UI_MainWindow(QWidget):
         mask_holay.addWidget(self.button_image_mask, 1, 0, 1, 2)
         view_layout.addLayout(mask_holay)
         crosshair_label = QLabel("Crosshair")
-        crosshair_label.setStyleSheet(style_heading)
+        crosshair_label.setStyleSheet(get_style("heading"))
         view_layout.addWidget(crosshair_label)
         self.checkbox_crosshair = QCheckBox("Show")
         self.checkbox_crosshair.setChecked(True)
@@ -411,7 +418,7 @@ class UI_MainWindow(QWidget):
         view_layout.addLayout(width_holay)
 
         extract_label = QLabel("Extraction plots")
-        extract_label.setStyleSheet(style_heading_small)
+        extract_label.setStyleSheet(get_style("heading_small"))
         view_layout.addWidget(extract_label)
         self.checkbox_minmax_per_image = QCheckBox("Min/Max per image")
         self.checkbox_minmax_per_image.setChecked(False)
@@ -434,7 +441,7 @@ class UI_MainWindow(QWidget):
         view_layout.addSpacing(10)
 
         roi_label = QLabel("Timeline Plot")
-        roi_label.setStyleSheet(style_heading)
+        roi_label.setStyleSheet(get_style("heading"))
         view_layout.addWidget(roi_label)
         self.image_viewer.ui.roiBtn.setParent(None)
         self.image_viewer.ui.roiBtn = QCheckBox("ROI")
@@ -461,7 +468,7 @@ class UI_MainWindow(QWidget):
         # --- Ops: Subtract/Divide, Source Aggregate|File, Amount sliders ---
         ops_layout = QVBoxLayout()
         ops_label = QLabel("Ops")
-        ops_label.setStyleSheet(style_heading)
+        ops_label.setStyleSheet(get_style("heading"))
         ops_layout.addWidget(ops_label)
         self.button_ops_open_aggregate = QPushButton("Open Aggregate")
         self.button_ops_open_aggregate.setToolTip(
@@ -636,7 +643,7 @@ class UI_MainWindow(QWidget):
         # --- Tools ---
         tools_layout = QVBoxLayout()
         roi_label = QLabel("Measure Tool")
-        roi_label.setStyleSheet(style_heading)
+        roi_label.setStyleSheet(get_style("heading"))
         tools_layout.addWidget(roi_label)
         self.checkbox_measure_roi = QCheckBox("Show")
         tools_layout.addWidget(self.checkbox_measure_roi)
@@ -683,7 +690,7 @@ class UI_MainWindow(QWidget):
         # --- ROSEE ---
         rosee_layout = QVBoxLayout()
         label_rosee = QLabel("RoSEE")
-        label_rosee.setStyleSheet(style_heading)
+        label_rosee.setStyleSheet(get_style("heading"))
         rosee_layout.addWidget(label_rosee)
         self.checkbox_rosee_active = QCheckBox("Show RoSEE")
         self.checkbox_rosee_active.setChecked(False)
@@ -699,7 +706,7 @@ class UI_MainWindow(QWidget):
         self.spinbox_rosee_smoothing.setPrefix("Smoothing: ")
         rosee_layout.addWidget(self.spinbox_rosee_smoothing)
         self.label_rosee_plots = QLabel("Plots")
-        self.label_rosee_plots.setStyleSheet(style_heading_small)
+        self.label_rosee_plots.setStyleSheet(get_style("heading_small"))
         rosee_layout.addWidget(self.label_rosee_plots)
         self.checkbox_rosee_h = QCheckBox("horizontal")
         self.checkbox_rosee_v = QCheckBox("vertical")
@@ -744,7 +751,7 @@ class UI_MainWindow(QWidget):
         rosee_lines_hlay.addWidget(self.checkbox_rosee_show_lines)
         rosee_layout.addLayout(rosee_lines_hlay)
         self.label_rosee_image = QLabel("Image")
-        self.label_rosee_image.setStyleSheet(style_heading_small)
+        self.label_rosee_image.setStyleSheet(get_style("heading_small"))
         rosee_layout.addWidget(self.label_rosee_image)
         rosee_hlay2 = QHBoxLayout()
         self.checkbox_rosee_in_image_h = QCheckBox("horizontal")
@@ -773,7 +780,7 @@ class UI_MainWindow(QWidget):
         bench_layout = QVBoxLayout()
         bench_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         bench_label = QLabel("Bench")
-        bench_label.setStyleSheet(style_heading)
+        bench_label.setStyleSheet(get_style("heading"))
         bench_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         bench_layout.addWidget(bench_label)
         self.bench_sparklines = BenchSparklines()
@@ -787,7 +794,9 @@ class UI_MainWindow(QWidget):
         self.label_bench_cache = QLabel("Result cache: —")
         bench_layout.addWidget(self.label_bench_cache)
         self.label_bench_live = QLabel("")
-        self.label_bench_live.setStyleSheet("color: rgb(100, 200, 100); font-weight: bold;")
+        self.label_bench_live.setStyleSheet(
+            f"color: #9ece6a; font-weight: bold;"
+        )
         bench_layout.addWidget(self.label_bench_live)
         bench_layout.addStretch()
         self.create_option_tab(bench_layout, "Bench")

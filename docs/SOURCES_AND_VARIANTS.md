@@ -110,10 +110,8 @@ BLITZ wird in zwei Varianten ausgeliefert:
 ### Handler (bereits vorhanden)
 
 - **WebDataLoader:** WOLKE-Integration (Socket.IO + HTTP-Download)
-
-### Geplant fuer Standard
-
-- LiveView (Stream-Source)
+- **MockLiveHandler:** Generiert Lissajous-/Winamp-Viz als Live-Stream (kein Video)
+- **RealCameraHandler:** Echte USB-Webcam via cv2.VideoCapture (eigener Dialog mit Slidern)
 
 ### Bereits implementiert (Standard)
 
@@ -168,7 +166,24 @@ class HasDialog(Protocol):
 4. **Loader-Registry** – Grundgeruest fuer erweiterbare Loader
 5. **CSV-Konverter** – Standard, als erster Converter
 6. **Dual-Build-Setup** – Standard- und Full-EXE bauen koennen
-7. **LiveView** – separates Thema
+7. ~~LiveView~~ – Mock Live + Echte Kamera implementiert
+
+---
+
+## 8. Mock Live (implementiert)
+
+- **Zweck:** Testdaten-Generierung. MilkDrop-style Shader (Feedback, Warp, FFT-artig), Graustufen/Plasma.
+- **UI:** Winamp-styled Floating-Fenster; Play, Stop; FPS + Groesse waehlbar
+- **Pfade:** `blitz/data/live.py` (Generator), `blitz/layout/winamp_mock.py` (UI)
+
+---
+
+## 9. Echte Kamera (implementiert)
+
+- **Zweck:** Live-Stream von USB-Webcam. Rolling Buffer (8-128 Frames), Ausgabe als ImageData in den Viewer.
+- **UI:** Eigener Dialog (`RealCameraDialog`): Device (0-3), Slider (Exposure, Gain, Brightness, Contrast), Auto Exposure, FPS (10-60), Buffer, Grayscale; Start/Stop.
+- **Technik:** `cv2.VideoCapture` mit CAP_DSHOW unter Windows; BGR->RGB fuer Farbmodus; Throttling (20 Hz) zur Entlastung der UI.
+- **Pfade:** `blitz/data/live_camera.py` (Handler), `blitz/layout/dialogs.py` (RealCameraDialog), Button "Echte Kamera" im File-Tab.
 
 ---
 

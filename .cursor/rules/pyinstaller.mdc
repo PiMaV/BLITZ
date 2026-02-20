@@ -1,0 +1,15 @@
+---
+description: PyInstaller compatibility is PRIO 1 for all changes in this repo
+alwaysApply: true
+---
+
+# PyInstaller Compatibility (PRIO 1)
+
+All code added or changed in this repository MUST work when the app is packaged with PyInstaller.
+
+- Icons, Qt resources (`:/icon/...`): Must resolve in packaged build
+- File paths: Prefer `Path(__file__).resolve().parent` or PyInstaller-safe patterns
+- Imports: Ensure resources are registered before dialogs/widgets use them
+- No assumptions about CWD; use `sys._MEIPASS` when needed for bundled data
+
+When in doubt: test the packaged executable, not just `python -m blitz`.

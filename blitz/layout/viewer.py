@@ -10,6 +10,7 @@ from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 
 from .. import settings
 from ..data.load import DataLoader, ImageData
+from ..theme import get_viewer_bg, get_timeline_curve_color, get_timeline_curve_colors_rgbw
 from ..data.ops import ReduceOperation
 from ..tools import fit_text, format_pixel_value, log
 
@@ -41,7 +42,7 @@ class ImageViewer(pg.ImageView):
         self.square_roi_state = self.square_roi.getState()
         self._timeline_aggregation = "mean"
         self._timeline_show_bands = False
-        self.ui.graphicsView.setBackground(pg.mkBrush(20, 20, 20))
+        self.ui.graphicsView.setBackground(pg.mkBrush(*get_viewer_bg()))
 
         self.ui.roiBtn.setChecked(True)
         self.roiClicked()
@@ -147,23 +148,24 @@ class ImageViewer(pg.ImageView):
             xvals = (
                 np.arange(image.shape[0]) if in_agg else self.tVals
             )
+        curve_color = get_timeline_curve_color()
         if data_main.ndim == 1:
-            plots = [(xvals, data_main, 'w')]
+            plots = [(xvals, data_main, curve_color)]
             if self._timeline_show_bands and (in_agg or self.axes['t'] is not None) and data_min is not None:
                 plots.append((xvals, data_min, (100, 150, 100)))
                 plots.append((xvals, data_max, (150, 200, 150)))
         elif data_main.ndim == 2:
-            colors = 'w' if data_main.shape[1] == 1 else 'rgbw'
+            colors = (curve_color,) if data_main.shape[1] == 1 else get_timeline_curve_colors_rgbw()
             plots = []
             for i in range(data_main.shape[1]):
                 d = data_main[:, i]
-                plots.append((xvals, d, colors[i]))
+                plots.append((xvals, d, colors[i] if i < len(colors) else curve_color))
             if self._timeline_show_bands and (in_agg or self.axes['t'] is not None) and data_min is not None:
                 for i in range(data_min.shape[1]):
                     plots.append((xvals, data_min[:, i], (100, 150, 100)))
                     plots.append((xvals, data_max[:, i], (150, 200, 150)))
         else:
-            plots = [(xvals, data_main.squeeze(), 'w')]
+            plots = [(xvals, data_main.squeeze(), curve_color)]
         while len(plots) < len(self.roiCurves):
             c = self.roiCurves.pop()
             c.scene().removeItem(c)
@@ -450,11 +452,17 @@ class ImageViewer(pg.ImageView):
 
     def get_frame_info(self) -> tuple[int, int, str]:
         current_image = int(self.currentIndex)
-        name = fit_text(
-            self.data.meta[self.currentIndex].file_name,
-            max_length=settings.get("viewer/max_file_name_length"),
-        )
-        return current_image, self.image.shape[0]-1, name
+        meta = getattr(self.data, "meta", None) or []
+        if not meta:
+            name = "-"
+        else:
+            idx = max(0, min(current_image, len(meta) - 1))
+            name = fit_text(
+                meta[idx].file_name,
+                max_length=settings.get("viewer/max_file_name_length"),
+            )
+        n_frames = max(0, self.image.shape[0] - 1) if self.image is not None else 0
+        return current_image, n_frames, name
 
     def load_lut_config(self, lut: dict[str, Any]) -> None:
         self.ui.histogram.restoreState(lut)

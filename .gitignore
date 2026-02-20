@@ -8,6 +8,17 @@ __pycache__/
 
 # BLITZ related stuff:
 _cache.ini
+boot_bench_results.json
+profile_stats.txt
+*.prof
+
+# Generated test data (regenerate bei Bedarf: scripts/benchmark_multicore_load.py --generate N)
+/_af/
+/_asc_test/
+/_imgtest/
+/_it/
+/_t*.asc
+/_t*.dat
 
 # poetry
 #   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.

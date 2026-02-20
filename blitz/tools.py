@@ -1,3 +1,4 @@
+import sys
 from timeit import default_timer as clock
 from types import TracebackType
 from typing import Any, Optional, Self, Sequence
@@ -10,6 +11,7 @@ from PyQt6.QtWidgets import (QApplication, QDialog, QLabel, QProgressBar,
                              QTextEdit, QVBoxLayout)
 
 from . import settings
+from .theme import get_style
 
 PROGRESS_DIALOG_DELAY_MS = 1000
 BLOCKING_BAR_DELAY_MS = 500
@@ -66,7 +68,8 @@ class LoggingTextEdit(QTextEdit):
         cursor.movePosition(cursor.MoveOperation.End)
         format = QTextCharFormat()
         format.setFont(QFont("Courier New"))
-        format.setForeground(QColor(color))
+        qc = QColor(*color) if isinstance(color, tuple) else QColor(color)
+        format.setForeground(qc)
         format.setFontPointSize(settings.get("viewer/font_size_log"))
         cursor.mergeCharFormat(format)
         if message != "\n":
@@ -118,9 +121,7 @@ class LoadingManager:
         if self._blocking_label is not None and not self._blocking_shown:
             self._blocking_shown = True
             self._blocking_label.setText("BUSY")
-            self._blocking_label.setStyleSheet(
-                "background-color: rgb(180, 80, 140); color: white;"
-            )
+            self._blocking_label.setStyleSheet(get_style("busy"))
             if self._blocking_label.parent():
                 self._blocking_label.parent().update()
             for _ in range(3):
@@ -177,9 +178,7 @@ class LoadingManager:
             self._status_label.setText("")
         if self._blocking_label is not None and self._blocking_shown:
             self._blocking_label.setText("IDLE")
-            self._blocking_label.setStyleSheet(
-                "background-color: rgb(45, 45, 55); color: rgb(120, 120, 130);"
-            )
+            self._blocking_label.setStyleSheet(get_style("idle"))
         self._time_needed = clock() - self._start_time
         return False
 
@@ -202,6 +201,35 @@ def get_cpu_percent() -> float:
 def get_cpu_percore() -> list[float]:
     """CPU usage per core (0-100). Non-blocking."""
     return psutil.cpu_percent(interval=None, percpu=True)
+
+
+def get_cpu_freq_mhz() -> Optional[float]:
+    """Current CPU frequency in MHz, or None. On Windows often nominal only."""
+    try:
+        cf = psutil.cpu_freq()
+        return float(cf.current) if cf and cf.current else None
+    except Exception:
+        return None
+
+
+def get_sensors_temperatures() -> dict[str, list[Any]]:
+    """Hardware temperatures by sensor name. Empty dict on Windows (not supported by psutil)."""
+    if sys.platform == "win32":
+        return {}
+    try:
+        return psutil.sensors_temperatures() or {}
+    except Exception:
+        return {}
+
+
+def get_sensors_fans() -> dict[str, list[Any]]:
+    """Hardware fan speeds (RPM) by sensor name. Empty dict on Windows (not supported by psutil)."""
+    if sys.platform == "win32":
+        return {}
+    try:
+        return psutil.sensors_fans() or {}
+    except Exception:
+        return {}
 
 
 def get_disk_io_mbs() -> tuple[float, float]:

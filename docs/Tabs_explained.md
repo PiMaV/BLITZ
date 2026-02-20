@@ -28,6 +28,11 @@ Quickly configure how data is loaded to optimize performance based on your compu
 - **Subset-ratio**: Load a specified subset of the image set in an equidistant manner (e.g., Imageset = (1,3,5,...) or (1,4,7,...)).
 - **Max. RAM**: Define the maximum amount of RAM (in GB) that BLITZ can use for loading images.
 
+### LiveView
+
+- **Winamp Mock Live:** Generiert Lissajous-Visualisierung als Teststream (kein Video). FPS, Groesse, Buffer, Grayscale einstellbar.
+- **Echte Kamera:** USB-Webcam via cv2. Eigener Dialog: Device (0-3), Slider (Exposure, Gain, Helligkeit, Kontrast), Auto Exposure, FPS, Rolling Buffer (8-128 Frames), Grayscale. Stream laeuft in den Viewer, Timeline zeigt den Buffer.
+
 ### Network Options
 
 BLITZ can be integrated with **WOLKE**, a browser-based datacrawler for images. This allows for pre-selection of images based on metadata criteria. Use the IP and the generated Token to connect to the WOLKE server for optimal data flow.

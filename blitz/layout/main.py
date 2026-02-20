@@ -8,14 +8,17 @@ from PyQt6.QtWidgets import QApplication, QFileDialog, QMainWindow
 from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 
 from .. import settings
+from ..theme import get_style
 from ..data.image import ImageData
 from ..data.load import DataLoader, get_image_metadata, get_sample_format
 from ..data.web import WebDataLoader
 from ..tools import (LoadingManager, format_size_mb, get_available_ram,
                      get_cpu_percent, get_disk_io_mbs, get_used_ram, log)
 from ..data.converters import get_ascii_metadata, load_ascii
-from .dialogs import AsciiLoadOptionsDialog, ImageLoadOptionsDialog, VideoLoadOptionsDialog
+from .dialogs import (AsciiLoadOptionsDialog, ImageLoadOptionsDialog,
+                     RealCameraDialog, VideoLoadOptionsDialog)
 from .rosee import ROSEEAdapter
+from .winamp_mock import WinampMockLiveWidget
 from .tof import TOFAdapter
 from .ui import UI_MainWindow
 
@@ -41,6 +44,8 @@ class MainWindow(QMainWindow):
         self._image_session_defaults: dict = {}
         self._ascii_session_defaults: dict = {}
         self._image_load_dialog_shown: bool = False
+        self._winamp_mock: WinampMockLiveWidget | None = None
+        self._real_camera_dialog: RealCameraDialog | None = None
 
         self.tof_adapter = TOFAdapter(self.ui.roi_plot)
         self.rosee_adapter = ROSEEAdapter(
@@ -58,9 +63,17 @@ class MainWindow(QMainWindow):
 
         self.ui.checkbox_roi.setChecked(False)
         self.ui.checkbox_roi.setChecked(True)
-        log("Welcome to BLITZ", color="pink")
+        log("Welcome to BLITZ", color=(122, 162, 247))
+
+    def _set_theme_and_restart(self, theme: str) -> None:
+        settings.set("app/theme", theme)
+        restart()
 
     def closeEvent(self, event):
+        if self._winamp_mock:
+            self._winamp_mock.stop_stream()
+        if self._real_camera_dialog:
+            self._real_camera_dialog.stop_stream()
         self.save_settings()
         event.accept()
 
@@ -75,6 +88,12 @@ class MainWindow(QMainWindow):
         self.ui.action_load_tof.triggered.connect(self.browse_tof)
         self.ui.action_export.triggered.connect(self.export)
         self.ui.action_restart.triggered.connect(restart)
+        self.ui.action_theme_dark.triggered.connect(
+            lambda: self._set_theme_and_restart("dark")
+        )
+        self.ui.action_theme_light.triggered.connect(
+            lambda: self._set_theme_and_restart("light")
+        )
         self.ui.action_link_inp.triggered.connect(
             lambda: QDesktopServices.openUrl(URL_INP)  # type: ignore
         )
@@ -132,6 +151,8 @@ class MainWindow(QMainWindow):
         self.ui.button_disconnect.pressed.connect(
             lambda: self.end_web_connection(None)
         )
+        self.ui.button_mock_live.pressed.connect(self.show_winamp_mock)
+        self.ui.button_real_camera.pressed.connect(self.show_real_camera_dialog)
         self.ui.checkbox_flipx.clicked.connect(
             lambda: self.ui.image_viewer.manipulate("flip_x")
         )
@@ -439,6 +460,12 @@ class MainWindow(QMainWindow):
             self.ui.spinbox_max_ram.editingFinished,
             self.ui.spinbox_max_ram.value,
             self.ui.spinbox_max_ram.setValue,
+        )
+        settings.connect_sync(
+            "default/load_dialog_mb",
+            self.ui.spinbox_video_dialog_mb.editingFinished,
+            self.ui.spinbox_video_dialog_mb.value,
+            self.ui.spinbox_video_dialog_mb.setValue,
         )
 
         # very dirty workaround of getting the name of the user-chosen
@@ -997,7 +1024,7 @@ class MainWindow(QMainWindow):
         )
         if index == bench_idx:
             self._bench_live_tick = 0
-            self._bench_timer.start(1000)
+            self._bench_timer.start(200)  # 0.2 s
             self.update_bench()
         else:
             self._bench_timer.stop()
@@ -1182,6 +1209,65 @@ class MainWindow(QMainWindow):
             self.ui.button_disconnect.setEnabled(False)
             self._web_connection.deleteLater()
 
+    def show_winamp_mock(self) -> None:
+        """Open Mock Live: generates Lissajous viz, streams to viewer."""
+        from PyQt6.QtCore import Qt
+        if self._winamp_mock is None:
+            self._winamp_mock = WinampMockLiveWidget(self)
+            self._winamp_mock.setWindowFlags(
+                Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint
+            )
+            self._winamp_mock.set_frame_callback(self.ui.image_viewer.set_image)
+            self._winamp_mock.setWindowIcon(self.windowIcon())
+        self._winamp_mock.show()
+        self._winamp_mock.raise_()
+        self._winamp_mock.activateWindow()
+
+    def show_real_camera_dialog(self) -> None:
+        """Open Echte Kamera dialog: sliders, Start/Stop, streams to viewer."""
+        from PyQt6.QtCore import Qt
+        if self._real_camera_dialog is None:
+            self._camera_pending: ImageData | None = None
+            self._camera_apply_timer = QTimer(self)
+            self._camera_apply_timer.setSingleShot(True)
+
+            def _apply_camera_frame() -> None:
+                if self._camera_pending is not None:
+                    img = self._camera_pending
+                    self._camera_pending = None
+                    self.ui.image_viewer.set_image(img)
+                    self.ui.image_viewer.setCurrentIndex(img.n_images - 1)
+                if self._camera_pending is not None:
+                    self._camera_apply_timer.start(50)
+
+            def _on_camera_frame(img: ImageData) -> None:
+                self._camera_pending = img
+                if not self._camera_apply_timer.isActive():
+                    self._camera_apply_timer.start(50)
+
+            self._camera_apply_timer.timeout.connect(_apply_camera_frame)
+
+            def _camera_stop_cleanup() -> None:
+                self._camera_apply_timer.stop()
+                self._camera_pending = None
+
+            self._real_camera_dialog = RealCameraDialog(
+                self,
+                on_frame=_on_camera_frame,
+                on_stop=_camera_stop_cleanup,
+            )
+            self._real_camera_dialog.setWindowFlags(
+                Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint
+            )
+            self._real_camera_dialog.setWindowIcon(self.windowIcon())
+            self._real_camera_dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+            self._real_camera_dialog.destroyed.connect(
+                lambda: setattr(self, "_real_camera_dialog", None)
+            )
+        self._real_camera_dialog.show()
+        self._real_camera_dialog.raise_()
+        self._real_camera_dialog.activateWindow()
+
     def load(self, path: Optional[Path | str] = None) -> None:
         if path is None:
             return self.ui.image_viewer.load_data()
@@ -1191,13 +1277,21 @@ class MainWindow(QMainWindow):
         # Sofortiges Feedback bei Drop/Open (Scan von Ordnern kann laenger dauern)
         lbl = self.ui.blocking_status
         lbl.setText("SCAN")
-        lbl.setStyleSheet("background-color: rgb(140, 100, 60); color: white;")
+        lbl.setStyleSheet(get_style("scan"))
         QApplication.processEvents()
 
         try:
             project_file = path.parent / (path.name.split(".")[0] + ".blitz")
             if path.suffix == ".blitz":
                 self.load_project(path)
+            elif (
+                path.suffix.lower() in (".asc", ".dat")
+                or (path.is_dir() and any(
+                    f.suffix.lower() in (".asc", ".dat")
+                    for f in path.iterdir() if f.is_file()
+                ))
+            ):
+                self._load_ascii(path)
             elif self.ui.checkbox_sync_file.isChecked() and project_file.exists():
                 self.load_project(project_file)
             else:
@@ -1213,29 +1307,7 @@ class MainWindow(QMainWindow):
             # IDLE falls LoadingManager nicht aktiv (z.B. Dialog abgebrochen)
             if lbl.text() == "SCAN":
                 lbl.setText("IDLE")
-                lbl.setStyleSheet(
-                    "background-color: rgb(45, 45, 55); color: rgb(120, 120, 130);"
-                )
-        project_file = path.parent / (path.name.split(".")[0] + ".blitz")
-
-        if path.suffix == ".blitz":
-            self.load_project(path)
-        elif (
-            path.suffix.lower() in (".asc", ".dat")
-            or (path.is_dir() and any(f.suffix.lower() in (".asc", ".dat") for f in path.iterdir() if f.is_file()))
-        ):
-            self._load_ascii(path)
-        elif self.ui.checkbox_sync_file.isChecked() and project_file.exists():
-            self.load_project(project_file)
-        else:
-            self.load_images(path)
-            if self.ui.checkbox_sync_file.isChecked():
-                settings.create_project(
-                    path.parent / (path.name.split(".")[0] + ".blitz")
-                )
-                settings.set_project("path", path)
-                self.sync_project_preloading()
-                self.sync_project_postloading()
+                lbl.setStyleSheet(get_style("idle"))
 
     def load_project(self, path: Path) -> None:
         log(f"Loading '{path.name}' configuration file...",

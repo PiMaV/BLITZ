@@ -6,10 +6,12 @@ import pyqtgraph as pg
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
+from ..theme import get_plot_bg, PLOT_CPU_COLOR, PLOT_DISK_COLOR, PLOT_RAM_COLOR
+
 
 def _tiny_plot(parent: QWidget, color: tuple[int, int, int]) -> tuple[pg.PlotWidget, pg.PlotDataItem]:
-    """Sparkline-Plot (140x44)."""
-    pw = pg.PlotWidget(background=(35, 35, 45), parent=parent)
+    """Sparkline-Plot (140x44). Tokyo Night style."""
+    pw = pg.PlotWidget(background=get_plot_bg(), parent=parent)
     pw.setFixedSize(140, 44)
     pw.hideAxis("left")
     pw.hideAxis("bottom")
@@ -42,7 +44,7 @@ class BenchSparklines(QWidget):
         h1.setContentsMargins(0, 0, 0, 0)
         self.label_cpu = QLabel("CPU: —")
         self.label_cpu.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self._plot_cpu, self._curve_cpu = _tiny_plot(row1, (100, 100, 200))
+        self._plot_cpu, self._curve_cpu = _tiny_plot(row1, PLOT_CPU_COLOR)
         h1.addWidget(self.label_cpu)
         h1.addWidget(self._plot_cpu)
         layout.addWidget(row1)
@@ -55,7 +57,7 @@ class BenchSparklines(QWidget):
         h2.setContentsMargins(0, 0, 0, 0)
         self.label_ram = QLabel("RAM: —")
         self.label_ram.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self._plot_ram, self._curve_ram = _tiny_plot(row2, (100, 180, 100))
+        self._plot_ram, self._curve_ram = _tiny_plot(row2, PLOT_RAM_COLOR)
         h2.addWidget(self.label_ram)
         h2.addWidget(self._plot_ram)
         layout.addWidget(row2)
@@ -68,7 +70,7 @@ class BenchSparklines(QWidget):
         h3.setContentsMargins(0, 0, 0, 0)
         self.label_disk = QLabel("Disk: —")
         self.label_disk.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self._plot_disk, self._curve_disk = _tiny_plot(row3, (200, 150, 100))
+        self._plot_disk, self._curve_disk = _tiny_plot(row3, PLOT_DISK_COLOR)
         h3.addWidget(self.label_disk)
         h3.addWidget(self._plot_disk)
         layout.addWidget(row3)
@@ -81,14 +83,16 @@ class BenchSparklines(QWidget):
         disk_read_mbs: float,
         disk_write_mbs: float,
     ) -> None:
-        self.label_cpu.setText(f"CPU: {cpu_pct:.1f}%")
+        self._cpu.append(cpu_pct)
+        peak = max(self._cpu) if self._cpu else cpu_pct
+        peak_str = f" (peak {peak:.1f}%)" if peak > cpu_pct and peak > 5 else ""
+        self.label_cpu.setText(f"CPU: {cpu_pct:.1f}%{peak_str}")
         self.label_ram.setText(
             f"RAM: Used {ram_used_gb:.1f} | Free {ram_free_gb:.1f} GB"
         )
         self.label_disk.setText(
             f"Disk: R {disk_read_mbs:.2f} W {disk_write_mbs:.2f} MB/s"
         )
-        self._cpu.append(cpu_pct)
         self._ram.append(ram_free_gb)
         self._disk.append(disk_read_mbs + disk_write_mbs)
         n = len(self._cpu)

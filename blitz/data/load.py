@@ -364,7 +364,8 @@ class DataLoader:
         **kwargs,
     ) -> ImageData:
         if path is None:
-            return DataLoader.from_text("  Load data", 50, 100)
+            from ..theme import get_load_data_color
+            return DataLoader.from_text("  Load data", 50, 100, color=get_load_data_color())
 
         if path.is_dir():
             return self._load_folder(
@@ -489,10 +490,14 @@ class DataLoader:
         if use_multicore:
             if message_callback is not None:
                 message_callback("Loading in parallel (progress not available)...")
-            with Pool(cpu_count()) as pool:
+            n_workers = cpu_count()
+            # Chunking reduces pickle/IPC overhead (esp. on Windows spawn). ~4 batches per worker.
+            chunksize = max(1, n_content // (n_workers * 4))
+            with Pool(n_workers) as pool:
                 results = pool.starmap(
                     _safe_load_one,
                     [(load_function, f) for f in content],
+                    chunksize=chunksize,
                 )
             failed = [content[i].name for i, r in enumerate(results) if r is None]
             if failed:

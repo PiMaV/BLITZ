@@ -23,6 +23,7 @@
 
     "button_connect": "Connect to the given server address. Keeps listening until manually disconnected.",
     "button_disconnect": "Disconnect from the server.",
+    "button_mock_live": "Generate Winamp Lissajous viz, stream to viewer. No video file.",
 
     "checkbox_mask": "Shows a rectangular selection area. Resize and apply for masking all images.",
     "button_reset_mask": "Resets the mask and shows the original image.",

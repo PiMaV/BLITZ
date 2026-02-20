@@ -25,6 +25,7 @@
 
 ## Naechste Schritte (spaeter)
 
+- **Settings-Datei ueberdenken**: Format, Speicherort und Aufteilung (z.B. `settings.blitz` vs. plattformuebliche Config) neu bewerten; welche Werte Sinn machen und welche nicht (bereinigen/entfernen)
 - Entscheidung: Ein File vs. mehrere, Opt-in vs. Opt-out
 - Dokumentation des Speicherorts
 - Evtl. "Settings"-Button/Dialog mit Speicherort-Info

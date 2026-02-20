@@ -1,0 +1,14 @@
+---
+description: Language rules for code, comments, and docs
+alwaysApply: true
+---
+
+# Language Conventions
+
+**Code and comments**: Always English.
+
+**Top-level / README**: English.
+
+**TODOs, chat, WIP docs**: German allowed (e.g. unfinished docs, internal notes).
+
+**Final documentation**: Always English.

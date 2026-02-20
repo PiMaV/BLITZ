@@ -75,7 +75,8 @@ def get_ascii_metadata(path: Path, delimiter: str = "\t") -> dict | None:
     h, w = arr.shape[0], arr.shape[1]
     delim_name = next((k for k, v in DELIMITERS.items() if v == delimiter), "Tab")
     est = estimate_ascii_datatype(path, delimiter, first_col)
-    convert_8bit_suggest = est["dtype"] != "uint8"
+    # Nur vorschlagen wenn Daten in 8-bit passen (0–255); uint16 mit größerem max → Präzision behalten
+    convert_8bit_suggest = est["dtype"] == "uint16" and est["max"] <= 255
     return {
         "file_name": path.name,
         "size": (h, w),
