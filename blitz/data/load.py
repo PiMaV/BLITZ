@@ -1,6 +1,8 @@
 import json
 import os
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool
+
+from .._cpu import physical_cpu_count
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -10,6 +12,28 @@ from natsort import natsorted
 
 from .. import settings
 from ..tools import log
+
+
+def _config_key_from_sample(sample: np.ndarray) -> str:
+    """Map sample (h,w) + dtype to bench config key: 0.3MP_8b, 5MP_16b, etc."""
+    h, w = sample.shape[0], sample.shape[1]
+    mp = h * w / 1e6
+    bits = 8 * sample.dtype.itemsize
+    bits = 16 if bits > 8 else 8
+    mp_step = 0.3 if mp < 2.65 else 5
+    return f"{mp_step}MP_{bits}b"
+
+
+# Fixed thresholds: 1000 files OR 600 MB -> parallel load
+FILES_THRESH = 1000
+SIZE_THRESH_BYTES = 600 * 1024**2
+
+
+def _get_multicore_thresholds(
+    n_files: int, total_size_bytes: float, config_key: str | None
+) -> tuple[int, float]:
+    """Return (files_thresh, size_thresh). Hardcoded: 1000 files / 600 MB."""
+    return (FILES_THRESH, SIZE_THRESH_BYTES)
 
 
 def _safe_load_one(load_func, path: Path):
@@ -452,6 +476,7 @@ class DataLoader:
             total_size_estimate = len(content) * self.size_ratio**2 * (
                 sample.size if self.convert_to_8_bit else sample.nbytes
             )
+            config_key = _config_key_from_sample(sample)
             load_function = self._load_image
         elif DataLoader._is_array(content[0]):
             sample_result = _safe_load_one(self._load_single_array, content[0])
@@ -465,6 +490,7 @@ class DataLoader:
                     return DataLoader.from_text("All files corrupt", color=(255, 0, 0))
             sample, _ = sample_result
             total_size_estimate = sample.nbytes * len(content)
+            config_key = _config_key_from_sample(sample)
             load_function = self._load_single_array
         else:
             log("Error: Unknown file extension in folder", color="red")
@@ -473,6 +499,9 @@ class DataLoader:
                 color=(255, 0, 0),
             )
 
+        files_thresh, size_thresh = _get_multicore_thresholds(
+            len(content), total_size_estimate, config_key
+        )
         adjusted_ratio = adjust_ratio_for_memory(
             total_size_estimate, self.max_ram,
         )
@@ -483,14 +512,13 @@ class DataLoader:
 
         n_content = len(content)
         use_multicore = (
-            len(content) > settings.get("default/multicore_files_threshold")
-            or total_size_estimate
-            > settings.get("default/multicore_size_threshold")
+            len(content) > files_thresh
+            or total_size_estimate > size_thresh
         )
         if use_multicore:
             if message_callback is not None:
                 message_callback("Loading in parallel (progress not available)...")
-            n_workers = cpu_count()
+            n_workers = physical_cpu_count()
             # Chunking reduces pickle/IPC overhead (esp. on Windows spawn). ~4 batches per worker.
             chunksize = max(1, n_content // (n_workers * 4))
             with Pool(n_workers) as pool:
@@ -756,10 +784,13 @@ class DataLoader:
             )
 
         total_size_estimate = array[0].nbytes * array.shape[0]
-        if (array.shape[0] > settings.get("default/multicore_files_threshold")
-                or total_size_estimate >
-                    settings.get("default/multicore_size_threshold")):
-            with Pool(cpu_count()) as pool:
+        frame = array[0].squeeze()
+        cfg_key = _config_key_from_sample(frame) if frame.ndim >= 2 else None
+        files_t, size_t = _get_multicore_thresholds(
+            array.shape[0], total_size_estimate, cfg_key
+        )
+        if (array.shape[0] > files_t or total_size_estimate > size_t):
+            with Pool(physical_cpu_count()) as pool:
                 matrices = pool.starmap(
                     function_,
                     [(a, ) for a in array],

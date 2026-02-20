@@ -17,8 +17,7 @@
     "spinbox_load_size": "Adjust the relative size of each image.",
     "spinbox_load_subset": "Adjust the relative number of images loaded.",
     "spinbox_max_ram": "Set an upper bound for memory used by the application.",
-    "checkbox_video_dialog_always": "When checked: dialog opens for every load (video/image/folder). Otherwise: only when first load or above threshold.",
-    "spinbox_video_dialog_mb": "When 'Always show' is off: loads below this estimated size use session defaults. Above this size, the options dialog opens.",
+    "checkbox_video_dialog_always": "When checked: load options dialog opens for every load. When unchecked: last used settings are applied without asking (e.g. for repeated drag-and-drop).",
     "checkbox_sync_file": "When loading data, also loads the corresponding .blitz project file if it exists.\nAlso saves .blitz project files automatically when loading new data.\nThe file is created in the same folder as the dataset with the same name.",
 
     "button_connect": "Connect to the given server address. Keeps listening until manually disconnected.",

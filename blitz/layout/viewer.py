@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -70,6 +71,8 @@ class ImageViewer(pg.ImageView):
         self.setAcceptDrops(True)
         self._auto_colormap = True
         self._background_image: ImageData | None = None
+        self._last_set_image_time = 0.0
+        self._set_image_throttle_sec = 0.035  # ~28 FPS max redraw to avoid UI freeze at 30 FPS stream
         self.load_data()
 
     @property
@@ -256,7 +259,10 @@ class ImageViewer(pg.ImageView):
 
     def set_image(self, img: ImageData) -> None:
         self.data = img
-        self.update_image()
+        now = time.perf_counter()
+        if now - self._last_set_image_time >= self._set_image_throttle_sec:
+            self._last_set_image_time = now
+            self.update_image()
 
     def update_image(self) -> None:
         self.setImage(self.data.image)

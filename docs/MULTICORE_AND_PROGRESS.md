@@ -21,6 +21,8 @@
 ### Boot-Bench (einmalig)
 Beim ersten Start prueft BLITZ `boot_bench_done`. Falls False: Splash "Erstoptimierung (Multicore)...", Subprocess laeuft kurzen Bench (Temp-Bilder), setzt optimale Schwellen, dann `boot_bench_done=True`. Spaeter: GPU-Profiling wird ergaenzt.
 
+**Vergleich mit alten Ergebnissen (Previous run):** Derzeit **on hold**. Ergebnisse werden weiter mit Datum in `boot_bench_results/` gespeichert; die Anzeige/Vergleich mit einem vorherigen Lauf ist aus der UI entfernt und kann spaeter wieder aktiviert werden.
+
 ### Aufwand vs. Nutzen
 - Einmaliger Aufwand (~1–2 h): Script + Ausfuehrung.
 - Ergebnis: Evtl. Schwellen anpassen (z.B. 500 statt 333) oder bestaetigen.

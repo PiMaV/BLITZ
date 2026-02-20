@@ -1,6 +1,8 @@
 """ASCII Loader: tab/space/comma-separated numeric data (.asc, .dat) -> ImageData."""
 
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool
+
+from ..._cpu import physical_cpu_count
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -258,7 +260,7 @@ def load_ascii(
     if use_multicore:
         if message_callback:
             message_callback("Loading in parallel (progress not available)...")
-        with Pool(cpu_count()) as pool:
+        with Pool(physical_cpu_count()) as pool:
             results = pool.starmap(_load_single_ascii_file, args)
         if progress_callback:
             progress_callback(100)

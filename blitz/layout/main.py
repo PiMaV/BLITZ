@@ -43,7 +43,6 @@ class MainWindow(QMainWindow):
         self._video_session_defaults: dict = {}
         self._image_session_defaults: dict = {}
         self._ascii_session_defaults: dict = {}
-        self._image_load_dialog_shown: bool = False
         self._winamp_mock: WinampMockLiveWidget | None = None
         self._real_camera_dialog: RealCameraDialog | None = None
 
@@ -137,14 +136,6 @@ class MainWindow(QMainWindow):
         self.ui.button_export_lut.pressed.connect(self.save_lut)
 
         # option connections
-        def _update_video_dialog_spinbox():
-            self.ui.spinbox_video_dialog_mb.setEnabled(
-                not self.ui.checkbox_video_dialog_always.isChecked()
-            )
-        self.ui.checkbox_video_dialog_always.stateChanged.connect(
-            _update_video_dialog_spinbox
-        )
-        _update_video_dialog_spinbox()
         self.ui.button_open_file.pressed.connect(self.browse_file)
         self.ui.button_open_folder.pressed.connect(self.browse_folder)
         self.ui.button_connect.pressed.connect(self.start_web_connection)
@@ -462,10 +453,10 @@ class MainWindow(QMainWindow):
             self.ui.spinbox_max_ram.setValue,
         )
         settings.connect_sync(
-            "default/load_dialog_mb",
-            self.ui.spinbox_video_dialog_mb.editingFinished,
-            self.ui.spinbox_video_dialog_mb.value,
-            self.ui.spinbox_video_dialog_mb.setValue,
+            "default/show_load_dialog",
+            self.ui.checkbox_video_dialog_always.stateChanged,
+            self.ui.checkbox_video_dialog_always.isChecked,
+            self.ui.checkbox_video_dialog_always.setChecked,
         )
 
         # very dirty workaround of getting the name of the user-chosen
@@ -1217,7 +1208,10 @@ class MainWindow(QMainWindow):
             self._winamp_mock.setWindowFlags(
                 Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint
             )
-            self._winamp_mock.set_frame_callback(self.ui.image_viewer.set_image)
+            def _mock_frame_cb(img):
+                self.ui.image_viewer.set_image(img)
+                self.ui.image_viewer.setCurrentIndex(img.n_images - 1)
+            self._winamp_mock.set_frame_callback(_mock_frame_cb)
             self._winamp_mock.setWindowIcon(self.windowIcon())
         self._winamp_mock.show()
         self._winamp_mock.raise_()
@@ -1380,10 +1374,7 @@ class MainWindow(QMainWindow):
                     * (params["size_ratio"] ** 2)
                 )
 
-                show_dialog = (
-                    self.ui.checkbox_video_dialog_always.isChecked()
-                    or est_bytes > self.ui.spinbox_video_dialog_mb.value() * 1024 * 1024
-                )
+                show_dialog = self.ui.checkbox_video_dialog_always.isChecked()
                 if show_dialog:
                     dlg = VideoLoadOptionsDialog(
                         path, meta, parent=self,
@@ -1457,19 +1448,7 @@ class MainWindow(QMainWindow):
             try:
                 meta = get_image_metadata(path)
                 if meta is not None:
-                    h, w = meta["size"]
-                    n = meta["file_count"]
-                    channels = 1 if params["grayscale"] else 3
-                    est_bytes = (
-                        h * w * channels * n
-                        * (params["size_ratio"] ** 2)
-                    )
-                    show_dialog = (
-                        not self._image_load_dialog_shown
-                        or self.ui.checkbox_video_dialog_always.isChecked()
-                        or est_bytes
-                        > self.ui.spinbox_video_dialog_mb.value() * 1024 * 1024
-                    )
+                    show_dialog = self.ui.checkbox_video_dialog_always.isChecked()
                     if show_dialog:
                         dlg = ImageLoadOptionsDialog(
                             path, meta, parent=self,
@@ -1478,7 +1457,6 @@ class MainWindow(QMainWindow):
                         if dlg.exec():
                             user_params = dlg.get_params()
                             params.update(user_params)
-                            self._image_load_dialog_shown = True
                             self._image_session_defaults = {
                                 "size_ratio": user_params["size_ratio"],
                                 "grayscale": user_params["grayscale"],

@@ -170,11 +170,12 @@ class HasDialog(Protocol):
 
 ---
 
-## 8. Mock Live (implementiert)
+## 8. Mock Live / Cam Mock (implementiert)
 
-- **Zweck:** Testdaten-Generierung. MilkDrop-style Shader (Feedback, Warp, FFT-artig), Graustufen/Plasma.
-- **UI:** Winamp-styled Floating-Fenster; Play, Stop; FPS + Groesse waehlbar
-- **Pfade:** `blitz/data/live.py` (Generator), `blitz/layout/winamp_mock.py` (UI)
+- **Zweck:** Simulierte Kamera (Lissajous, spaeter z. B. Blitz). FPS bis 120, Exposure, Aufloesung, Buffer (MB).
+- **UI:** Cam Mock – Winamp-styled Floating-Fenster; Play, Stop; Variant, FPS, Exposure, Resolution, Buffer (MB), Grayscale.
+- **Technik:** Ring-Buffer im Handler; Worker schreibt, Observer (BLITZ) zieht per Timer. Anzeige auf max. ~50 MB begrenzt (Display-Cap), damit hohe FPS/Aufloesung die UI nicht blockieren. Siehe `docs/LIVE_AND_MOCK.md` (Handshake, Verbindung Mock ↔ BLITZ).
+- **Pfade:** `blitz/data/live.py` (Handler, Worker, buffer_frames_from_mb), `blitz/layout/winamp_mock.py` (UI)
 
 ---
 
@@ -191,3 +192,4 @@ class HasDialog(Protocol):
 
 - `docs/ARCHITECTURE.md` – allgemeine Code-Architektur
 - `docs/LOADING.md` – Load-Flow, Dialoge, Session-Defaults
+- `docs/LIVE_AND_MOCK.md` – Live-Quellen, Handshake Mock/Kamera ↔ BLITZ, Ring-Buffer, Display-Cap

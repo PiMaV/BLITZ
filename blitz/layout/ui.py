@@ -289,23 +289,14 @@ class UI_MainWindow(QWidget):
         self.spinbox_max_ram.setPrefix("max. RAM: ")
         self.spinbox_max_ram.setRange(.1, .8 * get_available_ram())
         file_layout.addWidget(self.spinbox_max_ram)
-        self.checkbox_video_dialog_always = QCheckBox("Always show load options dialog")
-        self.checkbox_video_dialog_always.setChecked(False)
+        self.checkbox_video_dialog_always = QCheckBox("Show load options dialog")
+        self.checkbox_video_dialog_always.setChecked(
+            bool(settings.get("default/show_load_dialog"))
+        )
         self.checkbox_video_dialog_always.setToolTip(
-            "When checked: dialog opens for every load (video/image/folder). Otherwise: only when first load or above threshold."
+            "When checked: load options dialog opens for every load. When unchecked: last used settings are applied without asking (e.g. for repeated drag-and-drop)."
         )
         file_layout.addWidget(self.checkbox_video_dialog_always)
-        self.spinbox_video_dialog_mb = QSpinBox()
-        self.spinbox_video_dialog_mb.setRange(1, 10000)
-        self.spinbox_video_dialog_mb.setValue(
-            int(settings.get("default/load_dialog_mb"))
-        )
-        self.spinbox_video_dialog_mb.setPrefix("Load dialog above: ")
-        self.spinbox_video_dialog_mb.setSuffix(" MB")
-        self.spinbox_video_dialog_mb.setToolTip(
-            "When 'Always show' is off: loads below this estimated size use session defaults. Above this size, the options dialog opens."
-        )
-        file_layout.addWidget(self.spinbox_video_dialog_mb)
         self.checkbox_sync_file = QCheckBox("load/save project file")
         self.checkbox_sync_file.setChecked(False)
         self.checkbox_sync_file.setStyleSheet(

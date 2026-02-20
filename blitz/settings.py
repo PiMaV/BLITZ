@@ -15,13 +15,13 @@ _default_core_settings = {
     "viewer/max_file_name_length": 40,
     "viewer/intersection_point_size": 10,
 
-    "default/multicore_size_threshold": 1.3 * (2**30),
-    "default/multicore_files_threshold": 333,
-    "default/boot_bench_done": False,
+    "default/multicore_size_threshold": 600 * (1024**2),
+    "default/multicore_files_threshold": 1000,
+    "default/first_start_welcome_shown": False,
     "default/load_8bit": False,
     "default/load_grayscale": True,
     "default/max_ram": 2.,
-    "default/load_dialog_mb": 500,
+    "default/show_load_dialog": False,
     "default/colormap": "plasma",
 
     "data/sync": False,

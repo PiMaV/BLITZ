@@ -29,9 +29,10 @@ class _ReduceOperation(ABC):
         if x.ndim < 2 or x.nbytes < 10 * 1024 * 1024:
             return self._reduce(x)
 
-        # Use CPU count but cap at 8 to avoid diminishing returns
+        # Use physical cores but cap at 8 to avoid diminishing returns
         try:
-            n_workers = min(multiprocessing.cpu_count(), 8)
+            from .._cpu import physical_cpu_count
+            n_workers = min(physical_cpu_count(), 8)
         except NotImplementedError:
             n_workers = 4
 
