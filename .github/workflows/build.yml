@@ -33,14 +33,12 @@ jobs:
         id: ver
         shell: pwsh
         run: |
-          python - << 'PY'
-          import re, pathlib
-          p = pathlib.Path("pyproject.toml").read_text(encoding="utf-8")
-          m = re.search(r'(?m)^\s*version\s*=\s*"([^"]+)"\s*$', p)
-          if not m:
-            raise SystemExit("ERROR: Could not find [project].version in pyproject.toml")
-          print(f"::set-output name=version::{m.group(1)}")
-          PY
+          $p = Get-Content -Raw -Encoding UTF8 pyproject.toml
+          # optional: grob auf [project]-Block einschränken (reicht i.d.R. auch ohne)
+          $m = [regex]::Match($p, '(?m)^\s*version\s*=\s*"([^"]+)"\s*$')
+          if (-not $m.Success) { throw "ERROR: Could not find [project].version in pyproject.toml" }
+          $v = $m.Groups[1].Value
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Create release tag name
         id: tag
