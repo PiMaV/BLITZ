@@ -5,10 +5,10 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-                             QDoubleSpinBox, QFormLayout, QFrame, QHBoxLayout,
-                             QLabel, QPushButton, QSlider, QSpinBox, QVBoxLayout,
-                             QWidget)
+from PyQt6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QDialog,
+                             QDialogButtonBox, QDoubleSpinBox, QFormLayout, QFrame,
+                             QHBoxLayout, QLabel, QProgressBar, QPushButton,
+                             QRadioButton, QSlider, QSpinBox, QVBoxLayout, QWidget)
 
 from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 
@@ -1014,7 +1014,7 @@ class AsciiLoadOptionsDialog(QDialog):
 
 
 class RealCameraDialog(QDialog):
-    """Minimal webcam dialog: Device, Grayscale, Buffer. Tuning (Exposure, FPS) extern spaeter."""
+    """Webcam dialog with Buffer, Resolution and FPS control."""
 
     def __init__(
         self,
@@ -1029,39 +1029,79 @@ class RealCameraDialog(QDialog):
         self._on_stop = on_stop
         self._handler: Any = None
         self._setup_ui()
+        self._update_estimates()
 
     def _setup_ui(self) -> None:
-        from ..data.live_camera import RealCameraHandler
-
         layout = QVBoxLayout(self)
-
         layout.addWidget(QLabel("<b>Webcam (cv2.VideoCapture)</b>"))
-        qd = QLabel("Quick & Dirty. Exposure/FPS/Resolution: externer Streamer spaeter.")
-        qd.setStyleSheet("color: #888; font-size: 8pt;")
-        qd.setWordWrap(True)
-        qd.setToolTip("Minimal: nur Device, Grayscale, Buffer. Tuning (Exposure, FPS, etc.) kommt im externen Streamer.")
-        layout.addWidget(qd)
 
         form = QFormLayout()
 
+        # Device
         self.cmb_device = QComboBox()
         self.cmb_device.addItems(["0", "1"])
         self.cmb_device.setCurrentIndex(0)
         self.cmb_device.setToolTip("0 = default webcam, 1 = second camera.")
         form.addRow("Device:", self.cmb_device)
 
-        self.chk_grayscale = QCheckBox("Grayscale (Plasma)")
+        # Resolution
+        self.cmb_res = QComboBox()
+        self.cmb_res.addItems(["640x480", "800x600", "1024x768", "1280x720", "1920x1080"])
+        self.cmb_res.setCurrentText("640x480")
+        form.addRow("Resolution:", self.cmb_res)
+
+        # FPS
+        self.spin_fps = QSpinBox()
+        self.spin_fps.setRange(1, 120)
+        self.spin_fps.setValue(30)
+        self.spin_fps.setSuffix(" fps")
+        form.addRow("Target FPS:", self.spin_fps)
+
+        # Grayscale
+        self.chk_grayscale = QCheckBox("Grayscale (1 Byte/px)")
         self.chk_grayscale.setChecked(True)
         form.addRow("", self.chk_grayscale)
 
-        self.spin_buffer = QSpinBox()
-        self.spin_buffer.setRange(8, 128)
-        self.spin_buffer.setValue(32)
-        self.spin_buffer.setToolTip("Frames in ring; nach Stop siehst du so viele Frames in der Timeline.")
-        form.addRow("Buffer:", self.spin_buffer)
-
         layout.addLayout(form)
 
+        # Buffer Settings Group
+        grp_buffer = QFrame()
+        grp_buffer.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
+        buf_layout = QVBoxLayout(grp_buffer)
+        buf_layout.addWidget(QLabel("<b>Buffer Settings</b>"))
+
+        # Mode: Frames vs Seconds
+        mode_layout = QHBoxLayout()
+        self.radio_frames = QRadioButton("Frames")
+        self.radio_frames.setChecked(True)
+        self.radio_seconds = QRadioButton("Seconds")
+        mode_layout.addWidget(self.radio_frames)
+        mode_layout.addWidget(self.radio_seconds)
+        mode_layout.addStretch()
+        buf_layout.addLayout(mode_layout)
+
+        # Value
+        self.spin_buffer_val = QSpinBox()
+        self.spin_buffer_val.setRange(1, 10000)
+        self.spin_buffer_val.setValue(64)
+        buf_layout.addWidget(self.spin_buffer_val)
+
+        # RAM Estimate
+        self.lbl_ram_est = QLabel("Est. RAM: ...")
+        self.lbl_ram_est.setStyleSheet("color: #888; font-size: 9pt;")
+        buf_layout.addWidget(self.lbl_ram_est)
+
+        layout.addWidget(grp_buffer)
+
+        # Buffer Status
+        layout.addWidget(QLabel("Buffer Status:"))
+        self.progress_buffer = QProgressBar()
+        self.progress_buffer.setRange(0, 100)
+        self.progress_buffer.setValue(0)
+        self.progress_buffer.setFormat("%v / %m Frames")
+        layout.addWidget(self.progress_buffer)
+
+        # Buttons
         btn_row = QHBoxLayout()
         self.btn_toggle = QPushButton("Start")
         self.btn_toggle.setToolTip("Start or stop camera stream")
@@ -1073,6 +1113,84 @@ class RealCameraDialog(QDialog):
         btn_row.addWidget(self.btn_close)
         layout.addLayout(btn_row)
 
+        # Connections
+        self.cmb_res.currentTextChanged.connect(self._update_estimates)
+        self.spin_fps.valueChanged.connect(self._update_estimates)
+        self.chk_grayscale.toggled.connect(self._update_estimates)
+        self.spin_buffer_val.valueChanged.connect(self._update_estimates)
+        self.radio_frames.toggled.connect(self._on_mode_changed)
+        self.radio_seconds.toggled.connect(self._on_mode_changed)
+
+    def _on_mode_changed(self, checked: bool) -> None:
+        """Handle switching between frames and seconds mode with value conversion."""
+        if not checked:
+            return
+
+        val = self.spin_buffer_val.value()
+        fps = max(1, self.spin_fps.value())
+
+        # Block signals to prevent recursive update during conversion
+        self.spin_buffer_val.blockSignals(True)
+
+        if self.radio_seconds.isChecked():
+            # Switched to Seconds (was Frames)
+            # Example: 60 frames @ 30fps -> 2 seconds
+            new_val = max(1, int(val / fps))
+        else:
+            # Switched to Frames (was Seconds)
+            # Example: 2 seconds @ 30fps -> 60 frames
+            new_val = int(val * fps)
+
+        self.spin_buffer_val.setValue(new_val)
+        self.spin_buffer_val.blockSignals(False)
+
+        # Update estimates and suffixes
+        self._update_estimates()
+
+    def _update_estimates(self) -> None:
+        """Calculate and display estimated RAM usage."""
+        # 1. Resolution
+        res_txt = self.cmb_res.currentText()
+        if "x" in res_txt:
+            w_s, h_s = res_txt.split("x")
+            w, h = int(w_s), int(h_s)
+        else:
+            w, h = 640, 480
+
+        # 2. Frames
+        val = self.spin_buffer_val.value()
+        fps = self.spin_fps.value()
+        if self.radio_seconds.isChecked():
+            # If in seconds mode, calculate frames
+            frames = int(val * fps)
+            suffix = " s"
+        else:
+            frames = val
+            suffix = " frames"
+
+        # Update spinbox suffix to match mode
+        if self.spin_buffer_val.suffix() != suffix:
+            self.spin_buffer_val.setSuffix(suffix)
+
+        # 3. Channels
+        channels = 1 if self.chk_grayscale.isChecked() else 3
+
+        # 4. Calculation
+        total_bytes = w * h * channels * frames
+        mb = total_bytes / (1024**2)
+        gb = total_bytes / (1024**3)
+
+        color = "green"
+        avail = get_available_ram()
+        if gb > avail * 0.9:
+            color = "red"
+        elif gb > avail * 0.7:
+            color = "orange"
+
+        self.lbl_ram_est.setText(
+            f"Frames: {frames} | Est. RAM: <font color='{color}'><b>{mb:.0f} MB ({gb:.2f} GB)</b></font>"
+        )
+
     def _on_toggle_clicked(self) -> None:
         from ..data.live_camera import RealCameraHandler
         if self._handler is None:
@@ -1083,16 +1201,34 @@ class RealCameraDialog(QDialog):
     def _start(self, HandlerClass) -> None:
         if self._handler is not None:
             return
+
+        # Parse params
+        res_txt = self.cmb_res.currentText()
+        if "x" in res_txt:
+            w_s, h_s = res_txt.split("x")
+            w, h = int(w_s), int(h_s)
+        else:
+            w, h = 640, 480
+
+        fps = self.spin_fps.value()
+
+        val = self.spin_buffer_val.value()
+        if self.radio_seconds.isChecked():
+            frames = int(val * fps)
+        else:
+            frames = val
+        frames = max(1, frames)
+
         device = self.cmb_device.currentIndex()
-        buf = self.spin_buffer.value()
         gray = self.chk_grayscale.isChecked()
+
         self._handler = HandlerClass(
             parent=self,
             device_id=device,
-            width=640,
-            height=480,
-            fps=0.0,
-            buffer_size=buf,
+            width=w,
+            height=h,
+            fps=float(fps),
+            buffer_size=frames,
             grayscale=gray,
             exposure=0.5,
             gain=0.5,
@@ -1103,6 +1239,9 @@ class RealCameraDialog(QDialog):
         )
         if self._on_frame:
             self._handler.frame_ready.connect(self._on_frame)
+
+        self._handler.buffer_status.connect(self._on_buffer_status)
+
         self._handler.start()
         self.btn_toggle.setText("Stop")
         self._set_stream_controls_enabled(False)
@@ -1117,6 +1256,7 @@ class RealCameraDialog(QDialog):
         try:
             if self._on_frame:
                 self._handler.frame_ready.disconnect(self._on_frame)
+            self._handler.buffer_status.disconnect(self._on_buffer_status)
         except (TypeError, RuntimeError):
             pass
         self._handler = None
@@ -1125,10 +1265,18 @@ class RealCameraDialog(QDialog):
         self.btn_toggle.setText("Start")
         self._set_stream_controls_enabled(True)
 
+    def _on_buffer_status(self, current: int, max_val: int) -> None:
+        self.progress_buffer.setMaximum(max_val)
+        self.progress_buffer.setValue(current)
+
     def _set_stream_controls_enabled(self, enabled: bool) -> None:
         self.btn_toggle.setEnabled(True)
         self.cmb_device.setEnabled(enabled)
-        self.spin_buffer.setEnabled(enabled)
+        self.cmb_res.setEnabled(enabled)
+        self.spin_fps.setEnabled(enabled)
+        self.spin_buffer_val.setEnabled(enabled)
+        self.radio_frames.setEnabled(enabled)
+        self.radio_seconds.setEnabled(enabled)
         self.chk_grayscale.setEnabled(enabled)
 
     def stop_stream(self) -> None:
