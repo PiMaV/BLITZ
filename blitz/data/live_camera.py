@@ -50,6 +50,7 @@ class _CameraWorker(QObject):
     """Reads frames from cv2.VideoCapture, emits at target FPS."""
 
     frame_ready = pyqtSignal(object)
+    buffer_status = pyqtSignal(int, int)  # current, max
     stopped = pyqtSignal()
 
     def __init__(
@@ -125,6 +126,9 @@ class _CameraWorker(QObject):
             self._buffer.append(f.copy())
             if len(self._buffer) > self._buffer_size:
                 self._buffer.pop(0)
+
+            self.buffer_status.emit(len(self._buffer), self._buffer_size)
+
             if self._send_live_only and self._buffer:
                 out = _frames_to_imagedata(
                     np.stack([self._buffer[-1]]), self._grayscale
@@ -166,6 +170,7 @@ class RealCameraHandler(QObject):
     """Streams from real camera. Supports exposure, gain, etc. (camera-dependent)."""
 
     frame_ready = pyqtSignal(object)
+    buffer_status = pyqtSignal(int, int)  # current, max
     stopped = pyqtSignal()
 
     def __init__(
@@ -220,6 +225,7 @@ class RealCameraHandler(QObject):
         )
         self._worker.moveToThread(self._thread)
         self._worker.frame_ready.connect(self.frame_ready.emit)
+        self._worker.buffer_status.connect(self.buffer_status.emit)
         self._worker.stopped.connect(self._on_worker_stopped)
         self._thread.started.connect(self._worker.run)
         self._thread.start()
