@@ -209,6 +209,12 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_crop_range_end.valueChanged.connect(
             self._crop_index_to_frame
         )
+        self.ui.spinbox_crop_range_start.valueChanged.connect(
+            self._update_full_range_button_style
+        )
+        self.ui.spinbox_crop_range_end.valueChanged.connect(
+            self._update_full_range_button_style
+        )
         self.ui.spinbox_crop_range_start.editingFinished.connect(
             self._on_selection_changed
         )
@@ -329,6 +335,7 @@ class MainWindow(QMainWindow):
             self.update_isocurves
         )
         self.ui.image_viewer.image_changed.connect(self.update_bench)
+        self.ui.image_viewer.image_changed.connect(self._update_selection_visibility)
         self.ui.image_viewer.image_size_changed.connect(self.update_bench)
         self._bench_timer = QTimer(self)
         self._bench_timer.timeout.connect(self.update_bench)
@@ -359,11 +366,12 @@ class MainWindow(QMainWindow):
             self.ui.v_plot.draw_line()
 
     def _on_timeline_tab_changed(self, index: int) -> None:
-        """Tab-Wechsel = Modus: Frame->Single, Agg->Aggregated."""
+        """Tab-Wechsel = Modus: Frame->Single, Agg->Aggregated. Tab ist die Quelle."""
         if index == 0:
             self.ui.radio_time_series.setChecked(True)
         else:
             self.ui.radio_aggregated.setChecked(True)
+            self.reset_selection_range()
 
     def _on_timeline_options_changed(self) -> None:
         """Frame-Tab: Upper/lower band + Mean/Median fuer Timeline-Kurve."""
@@ -412,6 +420,7 @@ class MainWindow(QMainWindow):
         self.ui.range_section_widget.setEnabled(needs_range)
         if needs_range:
             self.ui.roi_plot.crop_range.show()
+            self._update_full_range_button_style()
         else:
             self.ui.roi_plot.crop_range.hide()
 
@@ -590,6 +599,7 @@ class MainWindow(QMainWindow):
         """Switch to Aggregate tab so user can configure range and reduce."""
         self.ui.timeline_tabwidget.setCurrentIndex(1)
         self.ui.radio_aggregated.setChecked(True)
+        self.reset_selection_range()
 
     def _on_crop_range_for_ops(self) -> None:
         """Crop range changed -> update Ops if Aggregate is used."""
@@ -725,6 +735,7 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_selection_window.setValue(w)
         self.ui.spinbox_selection_window.blockSignals(False)
         self._update_window_const_bounds()
+        self._update_full_range_button_style()
 
     def _sync_current_frame_spinbox(self) -> None:
         """Timeline/Cursor -> Idx-Spinbox."""
@@ -853,7 +864,27 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_crop_range_end.blockSignals(False)
         self.ui.spinbox_selection_window.blockSignals(False)
         self.ui.roi_plot.crop_range.setRegion((0, n - 1))
+        self._update_full_range_button_style()
         self._on_selection_changed()
+
+    def _update_full_range_button_style(self) -> None:
+        """Full Range button: highlighted when range is [0, n-1], default otherwise."""
+        data = getattr(self.ui.image_viewer, "data", None)
+        n = max(1, data.n_images) if data else 1
+        n_max = max(0, n - 1)
+        s = self.ui.spinbox_crop_range_start.value()
+        e = self.ui.spinbox_crop_range_end.value()
+        is_full = s == 0 and e == n_max
+        btn = self.ui.button_reset_range
+        if is_full:
+            btn.setStyleSheet(
+                "QPushButton { background-color: #2d6a4f; color: white; "
+                "font-weight: bold; }"
+            )
+            btn.setToolTip("Full Range (active)")
+        else:
+            btn.setStyleSheet("")
+            btn.setToolTip("Reset selection to full range [0, " + str(n_max) + "]")
 
     def update_crop_range(self) -> None:
         self.ui.roi_plot.crop_range.setRegion(
