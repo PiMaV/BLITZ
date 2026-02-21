@@ -7,6 +7,7 @@ import pyqtgraph as pg
 # from .. import settings
 from ..tools import log
 from . import ops
+from . import filters
 from .tools import ensure_4d
 
 
@@ -48,7 +49,7 @@ class ImageData:
         self._flipped_x = False
         self._flipped_y = False
         self._redop: ops.ReduceOperation | str | None = None
-        self._ops_pipeline: dict | None = None  # {subtract, divide} steps
+        self._ops_pipeline: list[dict] | None = None  # List of filter steps
         self._agg_bounds: tuple[int, int] | None = None  # Non-destructive agg range
         self._result_cache: dict[tuple[object, object], np.ndarray] = {}  # (op, bounds) -> result
         self._bench_cache_hits: int = 0  # For Bench tab
@@ -74,38 +75,102 @@ class ImageData:
         return None
 
     def _apply_ops_pipeline(self, image: np.ndarray) -> np.ndarray:
-        """Apply subtract and divide steps. Returns float32 array."""
+        """Apply pipeline steps sequentially. Returns float32 array."""
         pipeline = self._ops_pipeline
         if not pipeline:
             return image.astype(np.float32) if image.dtype != np.float32 else image
+
+        # Ensure we work on float32 copy
         image = image.astype(np.float32)
-        eps = 1e-10
-        for op_name in ("subtract", "divide"):
-            step = pipeline.get(op_name)
-            if not step:
+
+        for step in pipeline:
+            type_ = step.get("type")
+            if not type_:
                 continue
-            ref = self._compute_ref(step, image)
-            if ref is None:
-                continue
-            amount = np.float32(step.get("amount", 1.0))
-            if amount <= 0:
-                continue
-            if op_name == "subtract":
-                ref_scaled = amount * ref
-                if ref.shape[0] == 1:
-                    image -= ref_scaled
-                else:
-                    image = image[: ref.shape[0]]
-                    image -= ref_scaled
-            else:  # divide: blend denominator towards 1 when amount<1
-                denom = amount * ref + (np.float32(1.0) - amount)
-                denom = np.where(denom != 0, denom, np.float32(np.nan))
-                if ref.shape[0] == 1:
-                    image /= denom
-                else:
-                    image = image[: ref.shape[0]]
-                    image /= denom
-                np.nan_to_num(image, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+
+            # Arithmetic Ops (Subtract, Divide)
+            if type_ in ("subtract", "divide"):
+                ref = self._compute_ref(step, image)
+                if ref is None:
+                    continue
+                amount = np.float32(step.get("amount", 1.0))
+                if amount <= 0:
+                    continue
+
+                if type_ == "subtract":
+                    ref_scaled = amount * ref
+                    if ref.shape[0] == 1:
+                        image -= ref_scaled
+                    else:
+                        image = image[: ref.shape[0]]
+                        image -= ref_scaled
+                else:  # divide
+                    denom = amount * ref + (np.float32(1.0) - amount)
+                    denom = np.where(denom != 0, denom, np.float32(np.nan))
+                    if ref.shape[0] == 1:
+                        image /= denom
+                    else:
+                        image = image[: ref.shape[0]]
+                        image /= denom
+                    np.nan_to_num(image, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+
+            # Filters
+            elif type_ == "median":
+                ksize = int(step.get("ksize", 3))
+                # Apply per frame
+                for i in range(image.shape[0]):
+                    image[i] = filters.median(image[i], ksize)
+
+            elif type_ == "min":
+                ksize = int(step.get("ksize", 3))
+                for i in range(image.shape[0]):
+                    image[i] = filters.min_filter(image[i], ksize)
+
+            elif type_ == "max":
+                ksize = int(step.get("ksize", 3))
+                for i in range(image.shape[0]):
+                    image[i] = filters.max_filter(image[i], ksize)
+
+            elif type_ == "gaussian_blur":
+                sigma = float(step.get("sigma", 1.0))
+                for i in range(image.shape[0]):
+                    image[i] = filters.gaussian_blur(image[i], sigma)
+
+            elif type_ == "highpass":
+                sigma = float(step.get("sigma", 1.0))
+                for i in range(image.shape[0]):
+                    image[i] = filters.highpass(image[i], sigma)
+
+            elif type_ == "clahe":
+                clip = float(step.get("clip_limit", 2.0))
+                grid = int(step.get("tile_grid_size", 8))
+                for i in range(image.shape[0]):
+                    image[i] = filters.clahe(image[i], clip, grid)
+
+            elif type_ == "local_normalize_mean":
+                ksize = int(step.get("ksize", 15))
+                for i in range(image.shape[0]):
+                    image[i] = filters.local_normalize_mean(image[i], ksize)
+
+            elif type_ == "threshold_binary":
+                thresh = float(step.get("thresh", 0.5))
+                maxval = float(step.get("maxval", 1.0))
+                # If image is normalized 0-1 or raw counts, threshold depends on context
+                # Assuming user provides threshold in relevant units
+                for i in range(image.shape[0]):
+                    image[i] = filters.threshold_binary(image[i], thresh, maxval)
+
+            elif type_ == "clip_values":
+                min_val = float(step.get("min_val", 0.0))
+                max_val = float(step.get("max_val", 1.0))
+                image = filters.clip_values(image, min_val, max_val)
+
+            elif type_ == "histogram_clipping":
+                min_p = float(step.get("min_percentile", 1.0))
+                max_p = float(step.get("max_percentile", 99.0))
+                for i in range(image.shape[0]):
+                    image[i] = filters.histogram_clipping(image[i], min_p, max_p)
+
         return image
 
     def _invalidate_result(self) -> None:
@@ -208,8 +273,20 @@ class ImageData:
         self._redop = operation
         self._agg_bounds = bounds
 
-    def set_ops_pipeline(self, config: dict | None) -> None:
-        """Set ops pipeline. config: {subtract:{source,bounds?,method?,reference?,amount}, divide:{...}}."""
+    def set_ops_pipeline(self, config: list[dict] | None) -> None:
+        """Set ops pipeline. config: list of filter steps."""
+        # Convert legacy dict to list if needed (for backward compatibility if I was being careful, but let's assume strict update)
+        if isinstance(config, dict):
+            # Try to convert old format to new list format
+            new_config = []
+            if sub := config.get("subtract"):
+                sub["type"] = "subtract"
+                new_config.append(sub)
+            if div := config.get("divide"):
+                div["type"] = "divide"
+                new_config.append(div)
+            config = new_config
+
         if self._ops_pipeline != config:
             self._invalidate_result()
         self._ops_pipeline = config
