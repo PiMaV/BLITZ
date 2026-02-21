@@ -170,6 +170,50 @@ QPushButton:pressed {
 }
 """
 
+STYLE_TOGGLE_SWITCH = """
+QCheckBox {
+    font-size: 14pt;
+    font-weight: bold;
+    color: #7aa2f7;
+    spacing: 12px;
+    padding: 12px;
+    border: 1px solid #3b4261;
+    border-radius: 8px;
+    background-color: #1f2335;
+    margin-bottom: 8px;
+}
+QCheckBox::indicator {
+    width: 24px;
+    height: 24px;
+}
+QCheckBox:hover {
+    border-color: #7aa2f7;
+    background-color: #24283b;
+}
+"""
+
+STYLE_TOGGLE_SWITCH_LIGHT = """
+QCheckBox {
+    font-size: 14pt;
+    font-weight: bold;
+    color: #565f89;
+    spacing: 12px;
+    padding: 12px;
+    border: 1px solid #9aa5ce;
+    border-radius: 8px;
+    background-color: #e0e2e8;
+    margin-bottom: 8px;
+}
+QCheckBox::indicator {
+    width: 24px;
+    height: 24px;
+}
+QCheckBox:hover {
+    border-color: #7aa2f7;
+    background-color: #c0caf5;
+}
+"""
+
 _STYLES = {
     "dark": {
         "idle": STYLE_IDLE,
@@ -178,6 +222,7 @@ _STYLES = {
         "heading": STYLE_HEADING,
         "heading_small": STYLE_HEADING_SMALL,
         "button_primary": STYLE_BUTTON_PRIMARY,
+        "toggle_switch": STYLE_TOGGLE_SWITCH,
         "color_red": COLOR_RED,
     },
     "light": {
@@ -187,6 +232,7 @@ _STYLES = {
         "heading": STYLE_HEADING_LIGHT,
         "heading_small": STYLE_HEADING_SMALL_LIGHT,
         "button_primary": STYLE_BUTTON_PRIMARY_LIGHT,
+        "toggle_switch": STYLE_TOGGLE_SWITCH_LIGHT,
         "color_red": "#c45c5c",
     },
 }
