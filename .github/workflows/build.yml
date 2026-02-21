@@ -35,7 +35,7 @@ jobs:
         run: |
           $p = Get-Content -Raw -Encoding UTF8 pyproject.toml
           # optional: grob auf [project]-Block einschränken (reicht i.d.R. auch ohne)
-          $m = [regex]::Match($p, '(?m)^\s*version\s*=\s*"([^"]+)"\s*$')
+          $m = [regex]::Match($p, '(?ms)^\[project\]\s.*?^\s*version\s*=\s*"([^"]+)"\s*$', 'Multiline')
           if (-not $m.Success) { throw "ERROR: Could not find [project].version in pyproject.toml" }
           $v = $m.Groups[1].Value
           "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
@@ -44,10 +44,9 @@ jobs:
         id: tag
         shell: pwsh
         run: |
-          # eindeutiger Tag pro Build (keine Kollisionen)
           $v = "${{ steps.ver.outputs.version }}"
           $t = "build-$v-${{ github.run_number }}"
-          echo "::set-output name=tag::$t"
+          "tag=$t" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Build with PyInstaller
         shell: pwsh
@@ -82,6 +81,25 @@ jobs:
         with:
           name: BLITZ-Windows
           path: dist
+
+      - name: Create tag (manual run only)
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          tag="${{ needs.windows.outputs.tag }}"
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git fetch --tags origin
+
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "ERROR: tag $tag already exists" >&2
+            exit 1
+          fi
+
+          git tag "$tag" "${{ github.sha }}"
+          git push origin "$tag"
 
       - name: Publish Release (tag created automatically on this commit)
         uses: softprops/action-gh-release@v2

@@ -227,17 +227,24 @@ class ImageViewer(pg.ImageView):
             self.auto_colormap()
         else:
             super().autoLevels()
+            self._ensure_finite_levels(self.image)
 
     def auto_colormap(self) -> None:
-        if (min_ := self.image.min()) < 0 < (max_ := self.image.max()):
-            max_ = max(abs(min_), max_)
-            min_ = - max_
+        with np.errstate(invalid="ignore", over="ignore"):
+            min_ = float(np.nanmin(self.image))
+            max_ = float(np.nanmax(self.image))
+        if not np.isfinite(min_):
+            min_ = -1.0
+        if not np.isfinite(max_) or max_ <= min_:
+            max_ = min_ + 1.0
+        if min_ < 0 < max_:
+            r = max(abs(min_), max_)
+            min_, max_ = -r, r
             self.ui.histogram.gradient.restoreState(Gradients['bipolar'])
-            self.setLevels(min=min_, max=max_)
-            self.ui.histogram.setHistogramRange(min_, max_)
         else:
             self.ui.histogram.gradient.restoreState(Gradients['plasma'])
-            super().autoLevels()
+        self.setLevels(min=min_, max=max_)
+        self.ui.histogram.setHistogramRange(min_, max_)
 
     def load_data(
         self,
@@ -271,9 +278,23 @@ class ImageViewer(pg.ImageView):
         if live_update:
             self.setImage(self.data.image, skip_roi_init=True)
         else:
-            self.setImage(self.data.image)
+            img = self.data.image
+            self.setImage(img, autoRange=False, autoLevels=False)
+            self._ensure_finite_levels(img)
             self.autoRange()
         self.image_size_changed.emit()
+
+    def _ensure_finite_levels(self, img: np.ndarray) -> None:
+        """Set finite min/max levels to avoid ViewBox overflow in cast (inf/nan)."""
+        with np.errstate(invalid="ignore", over="ignore"):
+            mn = float(np.nanmin(img))
+            mx = float(np.nanmax(img))
+        if not np.isfinite(mn):
+            mn = 0.0
+        if not np.isfinite(mx) or mx <= mn:
+            mx = mn + 1.0
+        self.setLevels(min=mn, max=mx)
+        self.ui.histogram.setHistogramRange(mn, mx)
 
     def load_background_file(self, path: Path) -> bool:
         self._background_image = DataLoader().load(path)
@@ -343,12 +364,28 @@ class ImageViewer(pg.ImageView):
 
     def unravel(self) -> None:
         self.data.unravel()
-        self.update_image()
+        # Set timeline/ROI bounds before setImage so any internal update sees finite range.
+        n = max(1, self.data.n_images)
+        x_max = float(n - 1)
+        self.timeLine.setBounds([0.0, x_max])
+        self.ui.roiPlot.setXRange(0.0, x_max, padding=0)
+        img = self.data.image
+        # Finite levels before/after setImage so ViewBox/histogram never see inf -> overflow in cast.
+        with np.errstate(invalid="ignore", over="ignore"):
+            mn = float(np.nanmin(img))
+            mx = float(np.nanmax(img))
+        if not np.isfinite(mn):
+            mn = 0.0
+        if not np.isfinite(mx) or mx <= mn:
+            mx = mn + 1.0
         self.setImage(
-            self.data.image,
+            img,
             autoRange=False,
             autoLevels=False,
         )
+        self.setLevels(min=mn, max=mx)
+        self.ui.histogram.setHistogramRange(mn, mx)
+        self.image_size_changed.emit()
 
     def reduce(
         self,
