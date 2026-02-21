@@ -7,7 +7,7 @@
 
 cropping Time vs. Mask
 
-
+Evtl. sollten wir für aggragate und Frame 2 verschiedene Timelines vorsehen; es ist immer recht schiweirig und nicht intuitv das man von aggragate immer est noch in Frames wechsel muss; irgendwie will man einfach direkt in die Timeline klicken...
 ---
 running mean hat irgendwie auch noch probleme
 

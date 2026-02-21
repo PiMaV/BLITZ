@@ -227,17 +227,24 @@ class ImageViewer(pg.ImageView):
             self.auto_colormap()
         else:
             super().autoLevels()
+            self._ensure_finite_levels(self.image)
 
     def auto_colormap(self) -> None:
-        if (min_ := self.image.min()) < 0 < (max_ := self.image.max()):
-            max_ = max(abs(min_), max_)
-            min_ = - max_
+        with np.errstate(invalid="ignore", over="ignore"):
+            min_ = float(np.nanmin(self.image))
+            max_ = float(np.nanmax(self.image))
+        if not np.isfinite(min_):
+            min_ = -1.0
+        if not np.isfinite(max_) or max_ <= min_:
+            max_ = min_ + 1.0
+        if min_ < 0 < max_:
+            r = max(abs(min_), max_)
+            min_, max_ = -r, r
             self.ui.histogram.gradient.restoreState(Gradients['bipolar'])
-            self.setLevels(min=min_, max=max_)
-            self.ui.histogram.setHistogramRange(min_, max_)
         else:
             self.ui.histogram.gradient.restoreState(Gradients['plasma'])
-            super().autoLevels()
+        self.setLevels(min=min_, max=max_)
+        self.ui.histogram.setHistogramRange(min_, max_)
 
     def load_data(
         self,

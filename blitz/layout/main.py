@@ -45,6 +45,7 @@ class MainWindow(QMainWindow):
         self._ascii_session_defaults: dict = {}
         self._winamp_mock: WinampMockLiveWidget | None = None
         self._real_camera_dialog: RealCameraDialog | None = None
+        self._aggregate_first_open: bool = True
 
         self.tof_adapter = TOFAdapter(self.ui.roi_plot)
         self.rosee_adapter = ROSEEAdapter(
@@ -371,7 +372,16 @@ class MainWindow(QMainWindow):
             self.ui.radio_time_series.setChecked(True)
         else:
             self.ui.radio_aggregated.setChecked(True)
-            self.reset_selection_range()
+            # Nur beim ersten Mal und bei leerem Reduce-Cache: Full Range setzen.
+            data = getattr(self.ui.image_viewer, "data", None)
+            cache_empty = (
+                data is not None
+                and getattr(data, "_redop", None) is None
+                and len(getattr(data, "_result_cache", {})) == 0
+            )
+            if getattr(self, "_aggregate_first_open", True) and cache_empty:
+                self.reset_selection_range()
+                self._aggregate_first_open = False
 
     def _on_timeline_options_changed(self) -> None:
         """Frame-Tab: Upper/lower band + Mean/Median fuer Timeline-Kurve."""
@@ -599,7 +609,6 @@ class MainWindow(QMainWindow):
         """Switch to Aggregate tab so user can configure range and reduce."""
         self.ui.timeline_tabwidget.setCurrentIndex(1)
         self.ui.radio_aggregated.setChecked(True)
-        self.reset_selection_range()
 
     def _on_crop_range_for_ops(self) -> None:
         """Crop range changed -> update Ops if Aggregate is used."""
@@ -629,6 +638,7 @@ class MainWindow(QMainWindow):
                 w.blockSignals(False)
 
     def _reset_options_body(self) -> None:
+        self._aggregate_first_open = True
         self.ui.combobox_reduce.setCurrentIndex(0)
         self.ui.timeline_tabwidget.setCurrentIndex(0)
         self.ui.radio_time_series.setChecked(True)
