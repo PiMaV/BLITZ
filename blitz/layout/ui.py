@@ -571,6 +571,11 @@ class UI_MainWindow(QWidget):
         self.timeline_tabwidget = QTabWidget()
         self.timeline_tabwidget.addTab(frame_tab, "Frame")
         self.timeline_tabwidget.addTab(agg_tab, "Aggregate")
+        self.timeline_tabwidget.setStyleSheet(
+            "QTabBar::tab { min-width: 72px; padding: 6px 12px; font-size: 10pt; } "
+            "QTabBar::tab:selected { font-weight: bold; background: #3b4261; "
+            "border-radius: 3px 3px 0 0; } "
+        )
 
         self.selection_panel = QWidget()
         sel_layout = QVBoxLayout(self.selection_panel)

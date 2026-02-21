@@ -1117,7 +1117,7 @@ class RealCameraDialog(QDialog):
         try:
             if self._on_frame:
                 self._handler.frame_ready.disconnect(self._on_frame)
-        except (TypeError, RuntimeError):
+        except Exception:
             pass
         self._handler = None
         if self._on_stop:
