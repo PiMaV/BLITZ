@@ -136,8 +136,6 @@ class MainWindow(QMainWindow):
         self.ui.button_export_lut.pressed.connect(self.save_lut)
 
         # option connections
-        self.ui.button_open_file.pressed.connect(self.browse_file)
-        self.ui.button_open_folder.pressed.connect(self.browse_folder)
         self.ui.button_connect.pressed.connect(self.start_web_connection)
         self.ui.button_disconnect.pressed.connect(
             lambda: self.end_web_connection(None)
