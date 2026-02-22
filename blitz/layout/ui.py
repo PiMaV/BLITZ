@@ -2,13 +2,13 @@ import json
 
 import pyqtgraph as pg
 from PyQt6.QtCore import QFile, Qt, QTimer
-from PyQt6.QtGui import QAction, QFont, QIcon
+from PyQt6.QtGui import QFont, QIcon
 from PyQt6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox,
                              QFrame, QGridLayout, QGroupBox, QHBoxLayout,
                              QLabel, QLayout, QLineEdit, QMenu, QMenuBar,
                              QPushButton, QRadioButton, QScrollArea,
                              QSizePolicy, QSlider, QSplitter, QSpinBox,
-                             QStatusBar, QStyle, QTabWidget, QVBoxLayout,
+                             QStatusBar, QTabWidget, QVBoxLayout,
                              QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
 
@@ -583,7 +583,6 @@ class UI_MainWindow(QWidget):
         sel_layout.addWidget(self.timeline_tabwidget)
         w = max(800, self.width())
         border_size = int(0.25 * w / 2)
-        image_viewer_size = int(0.75 * w)
         self.selection_panel.setMinimumWidth(max(120, border_size))
         self.timeline_splitter.addWidget(self.selection_panel)
 
@@ -741,6 +740,48 @@ class UI_MainWindow(QWidget):
         rosee_layout.addStretch()
         self.create_option_tab(rosee_layout, "RoSEE")
 
+        # --- PCA ---
+        pca_layout = QVBoxLayout()
+        pca_heading = QLabel("PCA")
+        pca_heading.setStyleSheet(get_style("heading"))
+        pca_layout.addWidget(pca_heading)
+
+        self.button_pca_calc = QPushButton("Calculate PCA")
+        self.button_pca_calc.setToolTip("Compute Principal Component Analysis (SVD). May take time.")
+        pca_layout.addWidget(self.button_pca_calc)
+
+        self.label_pca_status = QLabel("Not calculated")
+        self.label_pca_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pca_layout.addWidget(self.label_pca_status)
+
+        hline = QFrame()
+        hline.setFrameShape(QFrame.Shape.HLine)
+        hline.setFrameShadow(QFrame.Shadow.Sunken)
+        pca_layout.addWidget(hline)
+
+        pca_view_layout = QHBoxLayout()
+        self.spinbox_pcacomp = QSpinBox()
+        self.spinbox_pcacomp.setPrefix("Components: ")
+        self.spinbox_pcacomp.setMinimum(1)
+        self.spinbox_pcacomp.setMaximum(100)
+        self.spinbox_pcacomp.setEnabled(False)
+        pca_view_layout.addWidget(self.spinbox_pcacomp)
+
+        self.combobox_pca = QComboBox()
+        self.combobox_pca.addItem("Reconstruction")
+        self.combobox_pca.addItem("Components")
+        self.combobox_pca.setEnabled(False)
+        pca_view_layout.addWidget(self.combobox_pca)
+        pca_layout.addLayout(pca_view_layout)
+
+        self.button_pca_show = QPushButton("Show")
+        self.button_pca_show.setCheckable(True)
+        self.button_pca_show.setEnabled(False)
+        pca_layout.addWidget(self.button_pca_show)
+
+        pca_layout.addStretch()
+        self.create_option_tab(pca_layout, "PCA")
+
         # --- Bench ---
         bench_layout = QVBoxLayout()
         bench_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -760,7 +801,7 @@ class UI_MainWindow(QWidget):
         bench_layout.addWidget(self.label_bench_cache)
         self.label_bench_live = QLabel("")
         self.label_bench_live.setStyleSheet(
-            f"color: #9ece6a; font-weight: bold;"
+            "color: #9ece6a; font-weight: bold;"
         )
         bench_layout.addWidget(self.label_bench_live)
         bench_layout.addStretch()
