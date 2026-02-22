@@ -1,92 +1,55 @@
-# Markdown State Overview (for Cleanup)
+# Documentation Index
 
-Reference for the next MD reorganisation step. All paths relative to repo root.
+Overview of all documentation files in this repository.
 
----
-
-## Root-Level (5 files)
+## Start Here
 
 | File | Purpose |
 |------|---------|
-| `README.md` | Main project readme. Links: docs/walkthrough.md, docs/Tabs_explained.md, docker/README.md |
-| `TODO.md` | Project TODO list. References: docs/TIMELINE_AGGREGATION.md, docs/SOURCES_AND_VARIANTS.md, docs/SETTINGS.md, docs/OPTIMIZATION.md |
-| `CONTRIBUTORS.md` | List of contributors |
-| `pyinstaller_command.md` | Short CLI snippets for uv + PyInstaller (dev/build notes) |
+| [`README.md`](../README.md) | Main project overview, installation, and quick links. |
+| [`docs/walkthrough.md`](walkthrough.md) | Quick Start Guide with screenshots. |
+| [`docs/Tabs_explained.md`](Tabs_explained.md) | **Features & Tabs:** Comprehensive user guide for all UI elements. |
+| [`docs/MISSING_FEATURES.md`](MISSING_FEATURES.md) | **Missing/Hidden:** Overview of features not present in this build (e.g. crop widget, OMERO). |
 
----
-
-## docker/ (1 file)
+## Architecture & Design
 
 | File | Purpose |
 |------|---------|
-| `docker/README.md` | Docker setup and usage (moved from root DOCKER.md) |
+| [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) | High-level code structure, data/UI separation. |
+| [`docs/SOURCES_AND_VARIANTS.md`](SOURCES_AND_VARIANTS.md) | Standard vs. Full build explanation, Loader/Handler architecture. |
+| [`docs/LOADING.md`](LOADING.md) | Detailed flow of data loading, dialogs, and session defaults. |
+| [`docs/UNRAVEL_AND_STORES.md`](UNRAVEL_AND_STORES.md) | Technical details on internal data storage (Raw/Result stores). |
 
----
-
-## docs/ (18 files)
-
-### Architecture & Design
-
-| File | Purpose |
-|------|---------|
-| `ARCHITECTURE.md` | Code structure, data/UI layers. Links: SOURCES_AND_VARIANTS.md, TIMELINE_AGGREGATION.md |
-| `SOURCES_AND_VARIANTS.md` | Build variants (Standard/Full), Loader/Converter/Handler. Links: ARCHITECTURE.md, LOADING.md, LIVE_AND_MOCK.md |
-
-### Build & CI
+## Feature Deep Dives
 
 | File | Purpose |
 |------|---------|
-| `build_workflow.md` | GitHub Actions build triggers, artifacts, local build/ and dist/ |
+| [`docs/TIMELINE_AGGREGATION.md`](TIMELINE_AGGREGATION.md) | Details on the Timeline panel and aggregation modes. |
+| [`docs/Extraction_Envelopes.md`](Extraction_Envelopes.md) | Explanation of the H/V extraction plot envelopes. |
+| [`docs/LIVE_AND_MOCK.md`](LIVE_AND_MOCK.md) | Technical details on Live Sources (Ring Buffer, Camera, Lissajous). |
+| [`docs/SETTINGS.md`](SETTINGS.md) | Discussion on settings and project storage strategy. |
+| [`docs/MONITORING_AND_SENSORS.md`](MONITORING_AND_SENSORS.md) | CPU/RAM/Disk monitoring via `psutil`. |
 
-### Features & UX
-
-| File | Purpose |
-|------|---------|
-| `walkthrough.md` | Quick Start – basic usage with screenshots |
-| `Tabs_explained.md` | Core functionalities – all tab options explained |
-| `LOADING.md` | Load flow, dialogs, session defaults |
-| `TIMELINE_AGGREGATION.md` | Timeline panel, Aggregate mode |
-| `Extraction_Envelopes.md` | H/V extraction plot envelopes |
-| `LIVE_AND_MOCK.md` | Live sources (Cam Mock, Webcam), ring-buffer |
-| `SETTINGS.md` | Settings and project storage strategy (discussed, deferred) |
-
-### Performance & Benchmarks
+## Performance & Optimization
 
 | File | Purpose |
 |------|---------|
-| `OPTIMIZATION.md` | Performance analysis, bottlenecks. Links: MULTICORE_AND_PROGRESS.md, NUMBA_CANDIDATES.md, AUTOGRAD_POTENTIAL.md |
-| `MULTICORE_AND_PROGRESS.md` | Multicore loading benchmarks, progress bar |
-| `NUMBA_CANDIDATES.md` | Numba optimization candidates |
-| `AUTOGRAD_POTENTIAL.md` | Lightweight autograd concept |
-| `BENCHMARK_LOGIC.md` | boot_bench thresholds, parallel vs sequential |
+| [`docs/OPTIMIZATION.md`](OPTIMIZATION.md) | **Main Report:** Current bottlenecks, Numba usage, video loading strategies. |
+| [`docs/BENCHMARK_LOGIC.md`](BENCHMARK_LOGIC.md) | Logic behind benchmarking and parallel vs sequential decisions. |
+| [`docs/MULTICORE_AND_PROGRESS.md`](MULTICORE_AND_PROGRESS.md) | Multicore loading benchmarks and progress bar implementation. |
+| [`docs/NUMBA_CANDIDATES.md`](NUMBA_CANDIDATES.md) | List of functions identified for JIT acceleration. |
 
-### Internal / Technical
+## Concepts & Future Work
 
 | File | Purpose |
 |------|---------|
-| `UNRAVEL_AND_STORES.md` | unravel(), Raw/Result store semantics |
-| `MONITORING_AND_SENSORS.md` | CPU/RAM/disk monitoring, psutil |
+| [`docs/AUTOGRAD_POTENTIAL.md`](AUTOGRAD_POTENTIAL.md) | Concept for a lightweight autograd engine for parameter tuning. |
+| [`TODO.md`](../TODO.md) | Active development tasks and known issues. |
 
----
+## Build & CI
 
-## Link Graph (inbound references)
-
-```
-README.md        → walkthrough.md, Tabs_explained.md, docker/README.md
-TODO.md          → TIMELINE_AGGREGATION, SOURCES_AND_VARIANTS, SETTINGS, OPTIMIZATION
-ARCHITECTURE.md  → SOURCES_AND_VARIANTS, TIMELINE_AGGREGATION
-SOURCES_AND_VARIANTS → ARCHITECTURE, LOADING, LIVE_AND_MOCK
-OPTIMIZATION.md  → MULTICORE_AND_PROGRESS, NUMBA_CANDIDATES, AUTOGRAD_POTENTIAL
-```
-
----
-
-## Suggested Groupings (for next step)
-
-- **docs/build/** – build_workflow.md, pyinstaller_command.md (from root)
-- **docs/architecture/** – ARCHITECTURE.md, SOURCES_AND_VARIANTS.md
-- **docs/features/** – walkthrough, Tabs_explained, LOADING, TIMELINE_AGGREGATION, Extraction_Envelopes, LIVE_AND_MOCK, SETTINGS
-- **docs/optimization/** – OPTIMIZATION, MULTICORE_AND_PROGRESS, NUMBA_CANDIDATES, AUTOGRAD_POTENTIAL, BENCHMARK_LOGIC
-- **docs/internal/** – UNRAVEL_AND_STORES, MONITORING_AND_SENSORS
-
-Root: README.md, TODO.md, CONTRIBUTORS.md remain at top level.
+| File | Purpose |
+|------|---------|
+| [`docs/build_workflow.md`](build_workflow.md) | GitHub Actions workflow explanation. |
+| [`pyinstaller_command.md`](../pyinstaller_command.md) | Developer notes for building the executable. |
+| [`docker/README.md`](../docker/README.md) | Docker deployment instructions. |

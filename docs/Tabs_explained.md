@@ -1,176 +1,193 @@
-# Tab Options Explained
+# Features & Tabs Explained
 
-Detailed explanation of all TAB options.
+A comprehensive guide to BLITZ's tabs and core features.
 
 ## Table of Contents
 
-- [File](#file) — Optimize hardware resource use, loading time, and UI responsiveness.
-- [View](#view) — Manipulate raw images and change GUI behavior.
-- [Time](#time) — Temporal manipulations.
-- [Tools](#tools) — Measuring tools.
-- [RoSEE](#rosee) — "Robust and Simple Event Extraction."
+- [File Tab](#file-tab)
+- [View Tab](#view-tab)
+- [Ops Tab](#ops-tab)
+- [Tools Tab](#tools-tab)
+- [RoSEE Tab](#rosee-tab)
+- [PCA Tab](#pca-tab)
+- [Bench Tab](#bench-tab)
+- [Stream Tab](#stream-tab)
+- [Timeline Panel](#timeline-panel)
 
+---
 
-## File
+## File Tab
 
-<img src="images/tabs/file.png" alt="Loading Data" width="250" align="right" style="margin-left: 10px; border: 1px solid #ddd; padding: 3px;"/>
+Start here to load your data.
 
+### Loading Data
+- **Buttons:** `Load File` and `Load Folder` open standard system dialogs.
+- **Drag & Drop:** You can drag files or folders directly into the viewer area.
 
-You can load data by pressing the `Open File` or `Open Folder` button or by dragging and dropping a file or folder into the center part of the application.
+### Import Settings
+These settings control how data is processed *during* loading.
+- **Show load options dialog:** If checked, a dialog appears for every load operation (video/folder), allowing you to tweak parameters. If unchecked, the last used settings are applied automatically.
+- **8 bit:** Converts high-bit-depth images (12/16-bit) to 8-bit to save RAM.
+- **Grayscale:** Converts color images to grayscale (luminance) to save RAM and speed up processing.
+- **Size ratio:** Downscales images (e.g., 0.5 = 50% width/height). Useful for massive datasets.
+- **Subset ratio:** Loads only a fraction of frames (e.g., 0.1 = every 10th frame).
+- **Max. RAM:** Limits the memory buffer for loading.
 
-#### Loading Options
+### Hidden Features
+- **Crop:** A destructive crop widget exists in the code but is currently hidden to prevent accidental data loss. Use the *Subset* or *Size ratio* for downsampling instead.
 
-Quickly configure how data is loaded to optimize performance based on your computer's capabilities. For example, when handling 40,000 images, it’s advisable to start with a subset (e.g., 0.01) and gradually increase it. Additionally, consider initially loading images in grayscale for quick screening and later switching to color for detailed analysis. These choices help to manage BLITZ's hardware load efficiently.
+---
 
-- **8-bit**: Convert images to 8-bit color depth during loading.
-- **Grayscale**: Convert images to grayscale during loading.
-- **Size-ratio**: Resize images to a specified ratio during loading (useful for reducing the footprint in RAM, ideal for screening many images).
-- **Subset-ratio**: Load a specified subset of the image set in an equidistant manner (e.g., Imageset = (1,3,5,...) or (1,4,7,...)).
-- **Max. RAM**: Define the maximum amount of RAM (in GB) that BLITZ can use for loading images.
+## View Tab
 
-### LiveView
+Controls for visualization and non-destructive image manipulation.
 
-- **Winamp Mock Live:** Generiert Lissajous-Visualisierung als Teststream (kein Video). FPS, Groesse, Buffer, Grayscale einstellbar.
-- **Webcam:** USB-Webcam via cv2. Eigener Dialog: Device (0–1), Slider (Exposure, Gain, Helligkeit, Kontrast), Auto Exposure, gemessene Capture-FPS, Rolling Buffer (1–10000 Frames oder Sekunden), Grayscale. Display-Throttle 10 FPS. Stream laeuft in den Viewer, Timeline zeigt den Buffer.
+### View
+- **Flip x / Flip y:** Mirrors the image.
+- **Transpose:** Swaps X/Y axes (90-degree rotation + flip).
 
-### Network Options
-
-BLITZ can be integrated with **WOLKE**, a browser-based datacrawler for images. This allows for pre-selection of images based on metadata criteria. Use the IP and the generated Token to connect to the WOLKE server for optimal data flow.
-
-### Additional Remarks
-
-- When a folder is loaded, BLITZ inspects all files and loads those with the most frequent file suffix.
-- For `.npy` files, the array shapes can be `(N, m, n)`, `(m, n)`, or `(N, m, n, 3)` for color images, where `N` is the number of images and `m, n` are the image dimensions. The _grayscale_ option determines how 3-dimensional arrays are processed.
-- For video files, BLITZ will determine the frame extraction frequency based on parameters such as _8-bit_, _Subset-ratio_, _Size-ratio_, and _Max. RAM_ settings.
-
-Each option allows for flexible and efficient management of large datasets, ensuring that your hardware resources are optimized for performance and responsiveness.
-
-## View
-
-<img src="images/tabs/view.png" alt="Viewing Options" width="250" align="right" style="margin-left: 10px; border: 1px solid #ddd; padding: 3px;"/>
-
-#### Image Manipulation
-
-- **Flip x**: Flip the image along the x-axis.
-- **Flip y**: Flip the image along the y-axis.
-- **Transpose**: Swap the rows and columns of the image matrix. (Mathematically this is a rotation of 90 degress plus flipping)
-
-### Mask
-
-Control the masking options for your images. Images will be kept in RAM, but calculations will be done only for the non-masked region. This improves speed.
-
-#### Checkbox:
-
-- **Show**: Show the mask on the image. Use the handles to alter the mask.
-
-#### Buttons:
-
-- **Apply**: Apply the current mask to the image.
-- **Load binary image**: Select a binary image of the same size as the current data to mask all pixels where the binary image has value 1.
-- **Reset**: Reset the mask and show the original image.
+### Display Mask
+Define regions to exclude from analysis and display.
+- **Show:** Toggles the mask overlay.
+- **Apply:** Activates the mask (pixels outside the mask are ignored in calculations).
+- **Load binary image:** Loads a black/white image to use as a mask.
+- **Reset:** Clears the mask.
 
 ### Crosshair
+- **Show:** Displays a crosshair cursor.
+- **Show Markings:** Indicates the crosshair position on the H/V extraction plots.
+- **Line width (H/V):** Sets the thickness of the lines used for the H/V extraction plots (averaging over N pixels).
 
-Settings for displaying the crosshair on the image.
-
-#### Checkbox:
-
-- **Show**: Display the crosshair on the image.
-- **Show Markings**: Show corsshair positions in the H&V Line extraction plots.
-
-#### Spinboxes:
-
-- **Horizontal**: Adjust the width of the horizontal extraction line for the crosshair.
-- **Vertical**: Adjust the width of the vertical extraction line for the crosshair.
-
-For the H&V Line extraction plots shown next to the image the line thickness is taken into account. Example: For a horizontal thickness of 7, we extract 7*2 +1 =15 horizontal lines in total, average them and then show the resulting line on the corresponding upper plot.
+### Extraction Plots
+These settings control the side panels (H Plot / V Plot).
+- **Min/Max per image:** Shows the global min/max values of the current frame in the plots.
+- **Envelope per crosshair:** Shows the min/max range of the crosshair line over time.
+- **Envelope per position (dataset):** Shows the min/max range of the entire dataset at the crosshair position.
 
 ### Timeline Plot
+Controls the bottom chart.
+- **ROI:** Toggles the Region of Interest functionality.
+- **Type:** Choose between Rectangular or Polygon ROI.
+- **Update on drop:** If checked, the plot updates only when you release the mouse (better performance).
 
-Options for the timeline plot visualization.
+---
 
-#### Checkbox:
+## Ops Tab
 
-- **ROI**: Turn on the Region of Interest (ROI) that shows the mean of all pixels in its range over time.
-  - **Spinnerbox format**: Choose a format for the ROI (e.g., Rectangular / Polygon).
-  - **Update on drop**: Whether to update the ROI plot upon dragging the ROI or only on drop (releasing the mouse button).
+The core image processing pipeline. Operations are applied in real-time.
 
-#### Additional Checkbox:
-
-- **TOF**: Include the Time of Flight (TOF) data in the timeline plot.
-
-
-## Time
-<img src="images/tabs/time.png" alt="Temporal Options" width="250" align="right" style="margin-left: 10px; border: 1px solid #ddd; padding: 3px;"/>
-
-The **Time Tab** allows for temporal cropping, image aggregation, and normalization of your dataset.
-
-### Timeline Cropping
-
-- **Start Frame:** Specifies the start frame for cropping the dataset (Default: `0`, Adjustable).
-- **End Frame:** Specifies the end frame for cropping the dataset (Default: `max`, Adjustable).
-- **Blue Checkbox:** Display the range defined by Start and End Frame as a blue box in the timeline.
-- **Crop Button:** Crop the dataset to the specified range.
-- **Undo Button:** Revert the cropping action.
-- **Keep in RAM:** Retain cropped frames in memory for quicker access.
-
-### Image Aggregation
-
-**Method Dropdown:** Choose the method for image aggregation:
-  - **None:** Display the normal image without aggregation.
-  - **MEAN:** Calculate the per-pixel average of the dataset.
-  - **MAX:** Calculate the per-pixel maximum of the dataset.
-  - **MIN:** Calculate the per-pixel minimum of the dataset.
-  - **STD:** Calculate the per-pixel standard deviation of the dataset.
-
-#### Explanation
-
-BLITZ utilizes a matrix-based approach, performing aggregations for each pixel over time. You can easily switch between the aggregations using the mouse-wheel, when hovering over the dropdown field. These aggregated images provide insights into the spread and variability of your dataset.
-
-A nice way of reducing your data for instance:
-- Start with the **Max Image** for a quick overview.
-- Crop the dataset based on this information using the "View" Tab.
-- Return back to the **Time Tab** and switch back to "None", showing the cropped dataset with only the crucial region visible.
-
-
-### Normalization
-
-Normalization allows for the adjustment and fluctuation analysis of your dataset.
-
-### Range
-Here you can define how your base image for normalization is calculated:
-
-- **Start Frame:** Specifies the start frame for normalization (Adjustable).
-- **End Frame:** Specifies the end frame for normalization (Adjustable).
-- **Use:** Choose the metric for normalization from a dropdown (Options: Min, Max, Mean, STD).
-
-### Background
-You can also provide a single file from somewhere else (must be equal in size as the dataset)
-
-- **Background Checkbox:** Enable background subtraction or division.
-- **Background Select Button:** Select a background image of the same size as the dataset.
+### Subtract & Divide
+Apply arithmetic operations to the image stream.
+- **Source:**
+  - *Off:* No operation.
+  - *Range (Aggregate):* Uses the aggregated result from the Timeline Panel (e.g., Mean of frames 0-100).
+  - *File:* Uses an external loaded reference image (e.g., Dark Frame, Flat Field).
+  - *Sliding range:* Uses a moving window average (see below).
+- **Amount:** Slider (0-100%) to blend the operation intensity.
 
 ### Sliding Window
+Advanced temporal filtering (e.g., for motion detection or background removal).
+- **Range method:** Algorithm for the window (Mean, Max, Min, Median, Std).
+- **Window:** Number of frames in the moving buffer.
+- **Lag:** Delay between the current frame and the window.
+- **Apply to full:** If checked, applies the sliding window to the entire dataset (reducing frame count).
 
-A powerful technique for detecting changes and movements in temporal datasets.
+### Timeline Crop
+- **Apply Crop:** Destructively crops the dataset in time (RAM is freed).
+- **Undo Crop:** Restores the full dataset (only works if data wasn't purged).
 
-- **Window:** The number of frames to average (Adjustable).
-- **Lag:** The delay between the current frame and the sliding window (Adjustable).
+---
 
-### Normalization Options
+## Tools Tab
 
-These controls dictate how normalization is applied to the dataset.
+Measurement and analysis tools.
 
-- **100% Dropdown:** Select the percentage for normalization.
-- **Subtract Checkbox:** Enable subtraction normalization, which is useful for highlighting fluctuations.
-- **Divide Checkbox:** Enable division normalization, useful for adjusting image brightness.
+### Measure Tool
+- **Show:** Activates a draggable ROI for measurement.
+- **Display in au:** Converts pixel units to arbitrary units (e.g., mm).
+- **Pixels / in au:** Calibration factor (pixels per unit).
+- **Stats:** Displays Area, Circularity, and Bounding Box dimensions of the measured region.
 
-#### Explanation
+---
 
-For many datasets, focusing on fluctuation rather than absolute values is key. Subtraction effectively highlights changes by reducing steady-state regions to black, while division can equalize brightness variations, often making the image appear more grayish.
+## RoSEE Tab
 
-In the case of subtraction, the lookup table switches to a red/blue gradient, instantly indicating which parts of the image are above or below the mean. You can control the percentage effect and select the normalization method (e.g., mean, min, max, std).
+**RoSEE** (Robust and Simple Event Extraction) is a specialized algorithm for detecting and analyzing events in the image data.
 
-Another common technique is "foreground detection" using a sliding window. For example, with a window of 5 frames and a lag of 2 frames, the algorithm highlights movement by comparing the current frame with frames from earlier and later, reducing the influence of stationary elements.
+- **Show RoSEE:** Activates the overlay.
+- **Use local extrema:** Refines detection to local peaks.
+- **Smoothing:** Applies spatial smoothing before detection.
+- **Plots (H/V):** Toggles auxiliary plots for RoSEE analysis.
+- **Normalize:** Normalizes values for better visualization.
+- **Isocurves:** Draws contour lines at specific intensity levels.
 
-This method is particularly effective for timelapse videos, where you might want to focus on movement despite variations in lighting or other unchanged background elements. Combined with the temporal evolution of the intensity of the Region of Interest (ROI) in the lower graph, you can easily observe movement trends in critical areas.
+---
+
+## PCA Tab
+
+Principal Component Analysis (SVD) for dimensionality reduction and pattern extraction.
+
+### Calculate
+- **Target Comp:** Number of components to calculate.
+- **Exact (Slow):** Uses full SVD (accurate). Uncheck for Randomized SVD (fast approximation).
+- **Calculate PCA:** Starts the computation (runs in background).
+
+### View
+- **Reconstruction:** Shows the image reconstructed from selected components.
+- **Components:** Shows the raw Eigenimages.
+- **Include mean:** Adds the average image to the reconstruction.
+
+### Results
+- **Variance Plot:** Scree plot showing the variance explained by each component.
+- **Table:** Detailed variance statistics.
+
+---
+
+## Bench Tab
+
+Performance monitoring and optimization info.
+
+- **Show CPU load:** Displays a sparkline graph of CPU usage.
+- **Status Labels:** Shows state of raw matrix, result matrix, cache, and Numba acceleration status.
+- **Sparklines:** Real-time graphs of memory and processing load.
+
+---
+
+## Stream Tab
+
+Live data sources.
+
+### Simulated Live
+Generates synthetic data for testing without hardware.
+- **Generate:** Starts a Lissajous or Lightning simulation.
+- **Uses:** Good for testing the pipeline performance and ring-buffer logic.
+
+### Webcam
+Connects to a USB camera (via OpenCV).
+- **Settings:** Exposure, Gain, Brightness, Contrast.
+- **Buffer:** Configurable ring-buffer size (frames or seconds).
+
+### Network
+Connects to a remote data server (e.g., WOLKE).
+- **Address / Token:** Connection credentials.
+- **Connect:** Establishes a WebSocket connection for remote control/data loading.
+
+---
+
+## Timeline Panel
+
+Located at the bottom, this panel controls navigation and aggregation.
+
+### Frame Tab
+Single-frame navigation mode.
+- **Idx:** Current frame index.
+- **Curve:** Aggregation method for the ROI plot (Mean/Median).
+- **Upper/lower band:** Shows min/max envelope in the plot.
+
+### Aggregate Tab
+Multi-frame aggregation mode (reduces time dimension).
+- **Reduce:** Method to collapse frames (Mean, Max, Min, Std).
+- **Start / End:** Range of frames to aggregate.
+- **Win const.:** Keeps the window size fixed when moving start/end.
+- **Full Range:** Resets range to the entire dataset.
+- **Update on drag:** Updates the aggregation live while dragging the range slider (resource intensive).

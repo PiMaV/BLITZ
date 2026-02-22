@@ -1,67 +1,37 @@
-# TODO / Follow-ups
+# TODO / Roadmap
 
-## High
+## Known Issues (Bugs)
 
-### Fixing
+*   **Timeline / Aggregation:**
+    *   Transition between Aggregate and Frame mode is not intuitive. Consider separate timelines?
+    *   "Running Mean" has issues.
+    *   Aggregate function is deactivated when starting a grayscale web stream (32 frames). Ops tab allows opening Aggregate, but Range is not initially FULL.
+    *   Switching from Aggregate to Frame mode causes an error in some cases.
+*   **Live View:**
+    *   Background Subtraction in Live Stream causes error messages.
+    *   RAM usage warning needed in Buffer Dialog.
+    *   Display FPS is currently fixed at 10 FPS; should be configurable.
 
+## High Priority Features
 
-cropping Time vs. Mask
+*   **DataSource Interface:** Unified interface for Loaders, Converters, and Handlers. Foundation for future plugins.
+*   **Loader Registry:** Registry for extensible loaders.
+*   **Polyline Intensity Profile:** Add a window/dock to display intensity distribution over a drawn polyline.
 
-Evtl. sollten wir für aggragate und Frame 2 verschiedene Timelines vorsehen; es ist immer recht schiweirig und nicht intuitv das man von aggragate immer est noch in Frames wechsel muss; irgendwie will man einfach direkt in die Timeline klicken...
----
-running mean hat irgendwie auch noch probleme
+## Medium Priority
 
+*   **Dual-Build Setup:** Ability to build Standard and Full EXE.
+*   **CSV Converter:** Dialog with Preview, Column Selection -> .npy export.
+*   **Tests:** Expand tests for `ReduceDict` edge cases.
+*   **RoSEE:** Check Isolines and normalization (Autozoom should activate).
+*   **Mouse Wheel Zoom:** Allow zooming only on one axis (in extraction plots?).
+*   **Docker:** Verify Docker deployment.
 
-es kommt zu fehlermeldungen bei BG Sub im livestream
+## Low Priority / Long Term
 
-Aggreagte nicht immer verfügbar!
-und für mean ist nicht immer die Full range aktiv
+*   **Video Optimization:** Strategy for handling compressed video data vs. full float32 matrices (mmap, Chunked, Range-Load). See `docs/OPTIMIZATION.md`.
+*   **Project Files:** Restore Load/Save project file functionality (currently removed). See `docs/MISSING_FEATURES.md`.
 
+## Notes on "Missing" Features
 
-
-ich starte und mache inen graysclae web stream. nun habe ich eine matrix mit 32frames. die Aggragate funktion ost allerdings deaktiviert (schlecht, weil das ja jetzt ein nächster Schritt wäre)
-über Ops kann ich dann aber auf open aggraget und zack, habe ich den Tab aktiv.
-Mean und co werden berechnet, ABER die Range sollte initial auf FULL sein
-
-Wenn ich von Aggragate dann auf Frame wechsle kommt Fehler:
-
----
-
-
-add something (window or docked?) that displays intensity distribution over a polyline.
-
-
-### Ops-Tab (erledigt)
-Ops-Tab im Options-Dock: Background-Subtract (File oder Range, Mean/Median). Siehe `docs/TIMELINE_AGGREGATION.md`.
-
-### OMERO-Handler (geplant)
-OMERO-Server-Anbindung als Handler (Full-Build). Eigenes UI: Verbindung, Projekt/Dataset/Image waehlen, ImageData oder .npy liefern. Siehe `docs/SOURCES_AND_VARIANTS.md`.
-
-### DataSource-Interface + Loader-Registry (geplant)
-Gemeinsame Schnittstelle fuer Loader, Converter, Handler. Registry fuer erweiterbare Loader. Grundlage fuer OMERO, DICOM, etc.
-
-
-
-
-
-## Medium
-- [ ] Dual-Build-Setup: Standard- und Full-EXE bauen koennen
-- [ ] CSV-Konverter (Standard): Dialog mit Preview, Spaltenauswahl -> .npy
-- [ ] Tests erweitern: ReduceDict Edge-Cases ???
-- [ ] Rosee prüfen: Isolines und normalizatione (hier sollte "autozoom" dann aktivieren)
-- [ ] Zoom per mausrad nur in einer Achse (in den extractin plots?)
-
-- [ ] LiveView: RAM-Hinweis im Buffer-Dialog (Buffer 1–10000, FPS/Exposure/Gain bereits vorhanden)
-- [ ] LiveView: Display-FPS konfigurierbar (aktuell fest 10 FPS)
-
-- Docker testen
-
-## Low
-- [ ] Load/Save project file: Checkbox und Auto-Logik voruebergehend entfernt. Explizites Oeffnen von .blitz funktioniert. Siehe docs/SETTINGS.md.
-- [ ] LiveView (Stream-Source) – separates Thema
-- [ ] Docs aktualisieren
-- [ ] Video: Komprimierte Videodaten -> volle float32-Matrizen. Siehe docs/OPTIMIZATION.md Abschnitt "Video: Komprimierte Daten vs. volle Matrizen" fuer Strategien (mmap, Chunked, Range-Load).
-
-
-Apply Crop: deaktiviert. Wer croppen will, merkt sich die Zahlen und laedt neu. Spaeter wieder implementierbar.
-- Statusbar unten links: Frame X/Y zeigt Idx ODER Filename - nicht redundant zu Idx-Spinner rechts (Spinner = direkte Eingabe, Statusbar = Kontext/Filename)
+See [`docs/MISSING_FEATURES.md`](docs/MISSING_FEATURES.md) for details on features that are hidden, deactivated, or planned for the "Full" build (e.g., OMERO, DICOM, Crop Widget).

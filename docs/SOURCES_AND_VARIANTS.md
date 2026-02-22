@@ -1,27 +1,29 @@
 # Data Sources, Loaders & Build Variants
 
-Architektur-Entscheidungen fuer Standard vs. Full Build und die Einteilung von Loadern, Convertern und Handlern.
+Architectural decisions for Standard vs. Full Build and the classification of Loaders, Converters, and Handlers.
 
 ---
 
-## 1. Build-Varianten
+## 1. Build Variants
 
-BLITZ wird in zwei Varianten ausgeliefert:
+BLITZ is designed to be distributed in two variants:
 
-| Variante | Zielgruppe | Verteilung |
+| Variant | Target Audience | Distribution |
 |----------|------------|------------|
-| **Standard** | Normale Nutzer (99%) | Pre-compiled EXE via GitHub-Release |
-| **Full** | Nutzer mit exotischen Formaten/Backends | Pre-compiled EXE via GitHub-Release |
+| **Standard** | Normal Users (99%) | Pre-compiled EXE via GitHub-Release |
+| **Full** | Users with exotic formats/backends | Pre-compiled EXE via GitHub-Release |
 
-**Hintergrund:** Die meisten Nutzer bekommen eine fertige EXE. Installation via pip/uv ist fuer sie unrealistisch. Daher werden Plugins nicht zur Laufzeit installiert, sondern als Build-Varianten ausgeliefert.
+> **Note on Repository State:** This repository currently represents the **Standard** build. Features marked as "Full" (OMERO, DICOM) are **not included** in the source code to keep the dependency footprint minimal.
+
+**Background:** Most users receive a ready-made EXE. Installing via pip/uv is unrealistic for them. Therefore, plugins are not installed at runtime but delivered as build variants.
 
 ---
 
-## 2. Einteilungs-Regel: Standard vs. Full
+## 2. Classification Rule: Standard vs. Full
 
-**Regel:** Ein Feature (Loader, Converter oder Handler) gehoert zu **Standard**, solange es nur Bibliotheken nutzt, die bereits im Standard-Build enthalten sind. Sobald **exotische Dependencies** benoetigt werden, wird es ein **Full**-Kandidat.
+**Rule:** A feature (Loader, Converter, or Handler) belongs to **Standard** as long as it only uses libraries already included in the Standard Build. As soon as **exotic dependencies** are required, it becomes a **Full** candidate.
 
-### Standard-Dependencies (bereits in Standard-Build)
+### Standard Dependencies (already in Standard Build)
 
 - `csv`, `json`, `os`, `pathlib`, ... (stdlib)
 - `numpy`
@@ -33,163 +35,105 @@ BLITZ wird in zwei Varianten ausgeliefert:
 - `python-socketio`
 - `psutil`
 - `QDarkStyle`
+- `numba` (Optional/Recommended)
 
-### Exotische Dependencies (fuer Full)
+### Exotic Dependencies (for Full)
 
 - `omero-py` (OMERO)
-- `pydicom` (DICOM-Dateien)
-- `pynetdicom` (DICOM-Server/PACS)
+- `pydicom` (DICOM files)
+- `pynetdicom` (DICOM Server/PACS)
 - `fhirclient` (FHIR Imaging)
 - `openpyxl` / `xlrd` (Excel)
 - `h5py` (HDF5)
 - `bioformats` / Java-Bridge
-- Weitere domain-spezifische Pakete
+- Other domain-specific packages
 
-### Beispiele
+### Examples
 
-| Feature | Typ | Standard / Full | Begruendung |
+| Feature | Type | Standard / Full | Reasoning |
 |---------|-----|----------------|-------------|
 | PNG, JPEG, TIFF, BMP | Loader | Standard | cv2 |
 | Video (MP4, AVI, MOV) | Loader | Standard | cv2 |
 | NumPy (.npy) | Loader | Standard | numpy |
 | WebDataLoader (WOLKE) | Handler | Standard | requests, socketio |
 | LiveView | Handler | Standard | requests/websocket |
-| CSV-Konverter | Converter | Standard | csv, numpy |
-| JSON-Config-Import | Converter | Standard | json, numpy |
+| CSV Converter | Converter | Standard | csv, numpy |
+| JSON Config Import | Converter | Standard | json, numpy |
 | OMERO | Handler | Full | omero-py |
-| DICOM-Datei | Loader | Full | pydicom |
-| DICOM-Server (PACS) | Handler | Full | pydicom/pynetdicom |
+| DICOM File | Loader | Full | pydicom |
+| DICOM Server (PACS) | Handler | Full | pydicom/pynetdicom |
 | FHIR Imaging | Handler | Full | fhirclient |
-| Excel-Konverter | Converter | Full | openpyxl |
-| Daikon | Loader | Je nach Implementierung | Nur numpy/stdlib -> Standard; spezielle Lib -> Full |
+| Excel Converter | Converter | Full | openpyxl |
 
 ---
 
-## 3. Drei Typen von Datenquellen
+## 3. Three Types of Data Sources
 
-| Typ | Aufgabe | GUI | Ausgabe |
+| Type | Task | GUI | Output |
 |-----|---------|-----|---------|
-| **Loader** | Datei lesen und direkt als Bild darstellen | Nein (nutzt Standard-File-Dialog) | `ImageData` |
-| **Converter** | Rohdaten in ein nutzbares Format bringen | Ja (eigener Dialog mit Preview, Optionen) | `ImageData` oder `.npy`-Datei |
-| **Handler** | Externe Systeme (Server, Datenbanken) anbinden | Ja (eigener Dialog: Verbindung, Browsing, Auswahl) | `ImageData` oder `.npy`-Datei |
+| **Loader** | Read file and display directly as image | No (uses Standard File Dialog) | `ImageData` |
+| **Converter** | Convert raw data into a usable format | Yes (custom dialog with preview, options) | `ImageData` or `.npy` file |
+| **Handler** | Connect to external systems (Server, Databases) | Yes (custom dialog: Connection, Browsing, Selection) | `ImageData` or `.npy` file |
 
-**Gemeinsamer Vertrag:** Alle liefern am Ende `ImageData` oder einen Pfad zu `.npy`. BLITZ behandelt beide Faelle einheitlich.
-
----
-
-### 3.1 Loader
-
-- Einfach: Pfad -> Array
-- Kein eigener Dialog (nutzt Standard File-Open)
-- Beispiele: PNG, JPEG, DICOM (Datei), Daikon, .npy
-
-### 3.2 Converter
-
-- Rohdaten -> Bild/Array
-- Eigener Dialog: Preview, Spaltenauswahl, Optionen
-- Beispiele: CSV -> NPY, Excel -> NPY, JSON -> NPY
-
-### 3.3 Handler
-
-- Komplexe Backends mit eigener UI
-- Verbindung, Authentifizierung, Browsing (Projekt/Dataset/Image)
-- Beispiele: OMERO, DICOM-Server (PACS), FHIR, WebDataLoader, LiveView
-
-**Handler-Output:** Optional ueber `.npy` zwischenspeichern bei sehr grossen Datasets; sonst direkt `ImageData` in den Viewer.
+**Common Contract:** All eventually deliver `ImageData` or a path to `.npy`. BLITZ treats both cases uniformly.
 
 ---
 
-## 4. Aktueller Stand (Standard-Build)
+## 4. Current State (Standard Build)
 
-### Loader (bereits vorhanden)
-
+### Loaders (Implemented)
 - **Images:** jpg, png, jpeg, bmp, tiff, tif
 - **Video:** mp4, avi, mov
 - **Arrays:** .npy
 
-### Handler (bereits vorhanden)
+### Handlers (Implemented)
+- **WebDataLoader:** WOLKE integration (Socket.IO + HTTP Download)
+- **SimulatedLiveHandler:** Generates Lissajous/Lightning visualization as Live Stream
+- **RealCameraHandler:** Real USB Webcam via cv2.VideoCapture (custom dialog with sliders)
 
-- **WebDataLoader:** WOLKE-Integration (Socket.IO + HTTP-Download)
-- **MockLiveHandler:** Generiert Lissajous-/Winamp-Viz als Live-Stream (kein Video)
-- **RealCameraHandler:** Echte USB-Webcam via cv2.VideoCapture (eigener Dialog mit Slidern)
-
-### Bereits implementiert (Standard)
-
-- **ASC/DAT-Konverter** (`blitz/data/converters/asc_dat.py`): Dialog mit Rohdaten-Vorschau (5 Zeilen, abgeschnitten), Bild-Vorschau (Plasma-Colormap), Optionen (Delimiter, erste Spalte = Zeilennummer).
+### Converters (Implemented)
+- **ASC/DAT Converter** (`blitz/data/converters/asc_dat.py`): Dialog with raw data preview, image preview, options.
 
 ---
 
-## 5. Geplant fuer Full
-
-- DICOM-Loader (Datei)
-- OMERO-Handler (hohe Prio)
-- DICOM-Server / PACS-Handler
-- FHIR Imaging (falls benoetigt)
-- Weitere exotische Loader (Daikon, Bio-Formats, ...) je nach Bedarf
+## 5. Planned for Full (Not in this Repo)
+- DICOM Loader (File)
+- OMERO Handler
+- DICOM Server / PACS Handler
+- FHIR Imaging
+- Additional exotic loaders (Daikon, Bio-Formats, ...) as needed
 
 ---
 
-## 6. Technische Architektur (geplant)
+## 6. Technical Architecture (Planned)
 
-### Gemeinsame Schnittstelle
-
+### Common Interface
 ```python
-# Vereinfacht – alle Quellen erfuellen dies:
+# Simplified – all sources fulfill this:
 class DataSource(Protocol):
     def provide(self, ...) -> ImageData | Path | None: ...
 
-# Converter/Handler mit eigener GUI:
+# Converter/Handler with own GUI:
 class HasDialog(Protocol):
     def get_dialog(self, parent) -> QDialog: ...
     def run_and_provide(self, parent) -> ImageData | Path | None: ...
 ```
 
-### Loader-Registry
-
-- Core definiert Registry
-- Bei unbekanntem Suffix: Registry abfragen
-- Standard-Build: nur Core-Loader registriert
-- Full-Build: zusaetzliche Loader (DICOM, Daikon, ...) registriert
-
-### Build-Prozess
-
-- **Standard:** `pyproject.toml` mit Standard-Dependencies; PyInstaller-Spec ohne Full-Extras
-- **Full:** Zusaetzliche `[dependency-groups] full` oder `blitz[full]`; PyInstaller-Spec mit allen Full-Paketen; Init-Code registriert Full-Loader/-Handler
+### Loader Registry
+- Core defines Registry
+- For unknown suffixes: Query Registry
+- Standard Build: Only Core Loaders registered
+- Full Build: Additional Loaders (DICOM, Daikon, ...) registered
 
 ---
 
-## 7. Prioritaeten und naechste Schritte
+## 7. Next Steps
+1.  **Architecture Documentation** (this document) – Done.
+2.  **OMERO Handler** – Own module, Full Build (External).
+3.  **DataSource Interface** – Introduce common interface.
+4.  **Loader Registry** – Framework for extensible loaders.
 
-1. **Architektur-Dokumentation** (dieses Dokument) – erledigt
-2. **OMERO-Handler** (hohe Prio) – eigenes Modul, Full-Build
-3. **DataSource-Interface** – gemeinsame Schnittstelle einfuehren
-4. **Loader-Registry** – Grundgeruest fuer erweiterbare Loader
-5. **CSV-Konverter** – Standard, als erster Converter
-6. **Dual-Build-Setup** – Standard- und Full-EXE bauen koennen
-7. ~~LiveView~~ – Mock Live + Webcam implementiert
-
----
-
-## 8. Mock Live / Cam Mock (implementiert)
-
-- **Zweck:** Simulierte Kamera (Lissajous, spaeter z. B. Blitz). FPS bis 120, Exposure, Aufloesung, Buffer (MB).
-- **UI:** Cam Mock – Winamp-styled Floating-Fenster; Play, Stop; Variant, FPS, Exposure, Resolution, Buffer (MB), Grayscale.
-- **Technik:** Ring-Buffer im Handler; Worker schreibt, Observer (BLITZ) zieht per Timer. Anzeige auf max. ~50 MB begrenzt (Display-Cap), damit hohe FPS/Aufloesung die UI nicht blockieren. Siehe `docs/LIVE_AND_MOCK.md` (Handshake, Verbindung Mock ↔ BLITZ).
-- **Pfade:** `blitz/data/live.py` (Handler, Worker, buffer_frames_from_mb), `blitz/layout/winamp_mock.py` (UI)
-
----
-
-## 9. Webcam (implementiert)
-
-- **Zweck:** Live-Stream von USB-Webcam. Rolling Buffer (1–10000 Frames), Ausgabe als ImageData in den Viewer. Gleiche Ring-Logik wie Cam Mock: Index 0 = Ring-Start, letzter Index = Ring-Ende; beim Stopp wird der Ring-Zustand als finaler Snapshot uebergeben.
-- **UI:** Eigener Dialog (`RealCameraDialog`): Device (0 oder 1), Resolution (640x480–1920x1080), Buffer (Frames oder Sekunden); Anzeige der gemessenen Capture-FPS (z. B. ~12.2 fps); Slider Exposure/Gain/Brightness/Contrast, Auto Exposure; Start/Stop-Toggle, Close. Display-Throttle fest 10 FPS.
-- **Technik:** `cv2.VideoCapture` mit CAP_DSHOW unter Windows; BGR->RGB; Worker liest so schnell wie die Kamera liefert, keine Sleeps; pro Frame Timestamp (`time.perf_counter()`); `buffer_time_span_sec` fuer gemessene Zeitspanne; Capture-FPS = frames / measured_sec (typ. ~10–12 FPS). Worker emittiert beim Beenden einmal den aktuellen Ring als finalen Snapshot. Siehe `docs/LIVE_AND_MOCK.md`.
-- **Pfade:** `blitz/data/live_camera.py` (Handler, Worker), `blitz/layout/dialogs.py` (RealCameraDialog), Button "Webcam" im File-Tab.
-
----
-
-## Referenzen
-
-- `docs/ARCHITECTURE.md` – allgemeine Code-Architektur
-- `docs/LOADING.md` – Load-Flow, Dialoge, Session-Defaults
-- `docs/LIVE_AND_MOCK.md` – Live-Quellen, Handshake Mock/Kamera ↔ BLITZ, Ring-Buffer, Display-Cap
+## References
+- `docs/ARCHITECTURE.md` – General code architecture
+- `docs/LOADING.md` – Load flow, dialogs, session defaults
+- `docs/Tabs_explained.md` – User guide for features
