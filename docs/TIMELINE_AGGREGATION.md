@@ -1,69 +1,71 @@
 # Timeline & Aggregation
 
-Dokumentation des Timeline-Panels und des Aggregate-Modus.
+Documentation of the Timeline Panel and Aggregate Mode.
 
-## Timeline-Panel (unten)
+## Timeline Panel (Bottom)
 
-Zwei Tabs steuern den Modus:
+Two tabs control the mode:
 
-- **Frame**: Einzelbild-Modus. Idx-Spinner waehlt den Frame.
-- **Aggregate**: Aggregations-Modus. Reduce-Methode (Mean, Max, Min, Std) und Range (Start/End) definieren das Ergebnis.
+- **Frame:** Single-frame mode. The *Idx* spinner selects the current frame.
+- **Aggregate:** Aggregation mode. The *Reduce* method (Mean, Max, Min, Std) and *Range* (Start/End) define the result.
 
-### Frame-Tab
+### Frame Tab
 
-- **Idx-Spinner**: Aktueller Frame (immer aktiv bei geladenen Daten).
-- **Upper/lower band**: Checkbox. Zeigt Min-/Max-Kurve (gruenes Band) in der Timeline.
-- **Curve**: Dropdown Mean/Median. Aggregation innerhalb des ROI pro Frame fuer die Timeline-Kurve.
+- **Idx Spinner:** Current frame index (always active when data is loaded).
+- **Upper/lower band:** Checkbox. Shows the Min/Max curve (green band) in the timeline plot.
+- **Curve:** Dropdown Mean/Median. Aggregation within the ROI per frame for the timeline curve.
 
-### Aggregate-Tab
+### Aggregate Tab
 
-- **Reduce**: Methode (None - current frame, Mean, Max, Min, Std).
-- **Start / End**: Range fuer die Aggregation.
-- **Win const.**: Fensterlaenge bleibt beim Aendern von Start/End (Spinner) konstant. Beim Ziehen der Range-Handles passt sich das Window der neuen Spannweite an.
-- **Full Range**: Setzt Range auf 0..max (volle Laenge).
-- **Update on drag**: Checkbox. Wenn aktiviert, wird die Aggregation waehrend des Range-Drags live aktualisiert (sonst nur beim Loslassen).
+- **Reduce:** Method to collapse frames (None - current frame, Mean, Max, Min, Std).
+- **Start / End:** Range of frames to aggregate.
+- **Win const.:** Window length remains constant when changing Start/End via spinners. When dragging range handles, the window adapts to the new span.
+- **Full Range:** Resets range to 0..max (full length).
+- **Update on drag:** Checkbox. If enabled, aggregation updates live while dragging the range slider (resource intensive); otherwise, only on release.
 
 ---
 
-## Wichtige Designentscheidung: Timeline bei Aggregation
+## Technical Design: Timeline in Aggregate Mode
 
-**Problem**: Wenn man im Aggregate-Modus z.B. auf Mean wechselt, wurde die Timeline praktisch unsichtbar (nur ein Punkt, da das Bild auf 2D reduziert wurde).
+**Problem:** In Aggregate mode (e.g., switching to Mean), the timeline would effectively become invisible (reduced to a single point because the image is collapsed to 2D).
 
-**Loesung**: Die Timeline zeigt **immer** die volle Zeitserie (ROI-Kurve ueber alle Frames), auch im Aggregate-Modus.
+**Solution:** The timeline **always** shows the full time series (ROI curve over all frames), even in Aggregate mode.
 
-### Datenfluss
+### Data Flow
 
-| Komponente | Frame-Modus | Aggregate-Modus |
-|------------|-------------|-----------------|
-| **Bild** | Aktueller Frame | Reduziertes Ergebnis (z.B. Mean ueber Range) |
-| **Timeline-Kurve** | ROI-Mean/Median pro Frame | Gleich: ROI-Mean/Median pro Frame ueber **alle** Frames |
-| **Datenquelle Timeline** | `getProcessedImage()` | `data.image_timeline` |
-| **Range (crop_range)** | Ausgeblendet | Sichtbar, markiert die aggregierte Range |
+| Component | Frame Mode | Aggregate Mode |
+|-----------|------------|----------------|
+| **Image** | Current Frame | Reduced Result (e.g., Mean over Range) |
+| **Timeline Curve** | ROI-Mean/Median per frame | Same: ROI-Mean/Median per frame over **all** frames |
+| **Timeline Source** | `getProcessedImage()` | `data.image_timeline` |
+| **Range (crop_range)** | Hidden | Visible, highlights the aggregated range |
 
 ### `ImageData.image_timeline`
 
-Neue Property in `blitz/data/image.py`:
+Property in `blitz/data/image.py`:
 
-- Liefert den **vollen Stack** (norm + mask, **ohne** reduce).
-- Wird nur im Aggregate-Modus genutzt (`_redop` gesetzt).
-- On-the-fly berechnet – kein permanenter RAM-Verbrauch.
-- Beruecksichtigt: Norm-Pipeline, Mask (_image_mask, _mask), Crop, Transpose, Flip.
+- Returns the **full stack** (norm + mask, **without** reduce).
+- Used only in Aggregate mode (`_redop` is set).
+- Calculated on-the-fly – no permanent RAM overhead.
+- Respects: Norm pipeline, Mask (`_image_mask`, `_mask`), Crop, Transpose, Flip.
 
-### Implementierung (`blitz/layout/viewer.py`)
+### Implementation (`blitz/layout/viewer.py`)
 
-- `roiChanged` prueft `in_agg` (data._redop gesetzt und image_timeline vorhanden).
-- Bei `in_agg`: ROI-Daten von `data.image_timeline`, X-Werte = `np.arange(n_frames)`.
-- X-Range und timeLine-Bounds werden auf 0..n-1 gesetzt.
-- Auto-Zoom: `roiPlot.plotItem.vb.autoRange()` nach jedem roiChanged.
+- `roiChanged` checks `in_agg` (`data._redop` set and `image_timeline` present).
+- If `in_agg`: ROI data is pulled from `data.image_timeline`, X-values = `np.arange(n_frames)`.
+- X-Range and timeline bounds are set to `0..n-1`.
+- Auto-Zoom: `roiPlot.plotItem.vb.autoRange()` called after every `roiChanged`.
 
 ---
 
-## Ops-Tab (erledigt)
+## Ops Tab
 
-**Ops** ist ein eigener Tab im Options-Dock. Subtract und Divide nutzen dieselbe Referenz-Quelle:
+**Ops** is a dedicated tab in the Options Dock. Subtract and Divide use the same reference source logic:
 
-- **1. Subtract**: Source Off | Aggregate | File, Amount 0-100%
-- **2. Divide**: Source Off | Aggregate | File, Amount 0-100%
-- **Aggregate**: Verwendet Range und Reduce aus dem Aggregate-Tab (Open Aggregate)
-- **File**: Geladenes Referenzbild (Dark Frame, Flat Field)
-- Subtract und Divide koennen kombiniert werden (z.B. Subtract: File, Divide: Aggregate)
+- **Subtract:** Source Off | Aggregate | File | Sliding Range, Amount 0-100%
+- **Divide:** Source Off | Aggregate | File | Sliding Range, Amount 0-100%
+- **Aggregate:** Uses the Range and Reduce method from the Aggregate Tab.
+- **File:** Loaded reference image (Dark Frame, Flat Field).
+- **Sliding Range:** Uses a moving window (Window/Lag) defined in the Ops tab.
+
+Subtract and Divide can be combined (e.g., Subtract: File, Divide: Aggregate).

@@ -37,6 +37,16 @@ For large arrays (>10 MB), reduction operations (Mean, Std, Min, Max, Median) ut
 *   **Single-Core Default:** Multicore loading for video was benchmarked and found to be slower due to I/O contention and codec state overhead.
 *   **Seek vs Grab:** The loader intelligently chooses between `grab()` (sequential) and `set(CAP_PROP_POS_FRAMES)` (random access) based on the sampling step size.
 
+## Profiling Insights: Qt Signal Bottleneck
+
+When loading large datasets, profiling reveals that the post-load delay is dominated by Qt signal processing rather than raw data loading.
+
+*   **Observation:** The `setImage()` call triggers a cascade of signals within PyQtGraph (`sigRegionChanged`, histogram updates, timeline updates).
+*   **Quantified Impact:** In extreme cases (e.g., 40k images), signal processing can account for ~80% of the perceived "load time" (e.g., 20s of signal processing vs 4s of disk I/O).
+*   **Mitigation:**
+    *   **Lazy Updates:** Extraction plots (`ExtractionPlot`) check `isVisible()` before redrawing. If hidden (dock collapsed), computation is skipped.
+    *   **Blocked Signals:** During batch updates like `reset_options`, signals are explicitly blocked (`blockSignals(True)`) to prevent redundant re-renders.
+
 ## Identified Bottlenecks & Recommendations
 
 ### 1. Memory Spikes during Loading
