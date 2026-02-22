@@ -52,6 +52,7 @@ from .dialogs import (AsciiLoadOptionsDialog, CropTimelineDialog,
 from .rosee import ROSEEAdapter
 from .simulated_live import SimulatedLiveWidget
 from .tof import TOFAdapter
+from .pca import PCAAdapter
 from .ui import UI_MainWindow
 
 URL_GITHUB = QUrl("https://github.com/CodeSchmiedeHGW/BLITZ")
@@ -80,6 +81,7 @@ class MainWindow(QMainWindow):
         self._real_camera_dialog: RealCameraDialog | None = None
         self._aggregate_first_open: bool = True
 
+        self.pca_adapter = PCAAdapter(self.ui.image_viewer)
         self.tof_adapter = TOFAdapter(self.ui.roi_plot)
         self.rosee_adapter = ROSEEAdapter(
             self.ui.image_viewer,
@@ -377,6 +379,13 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_show_isocurve.stateChanged.connect(
             self.update_isocurves
         )
+        self.ui.button_pca_calc.clicked.connect(self.pca_calculate)
+        self.ui.button_pca_show.clicked.connect(self.pca_toggle_show)
+        self.ui.spinbox_pcacomp.valueChanged.connect(self.pca_update_view)
+        self.ui.combobox_pca.currentIndexChanged.connect(self.pca_update_view)
+        self.pca_adapter.started.connect(self.pca_on_started)
+        self.pca_adapter.finished.connect(self.pca_on_finished)
+        self.pca_adapter.error.connect(self.pca_on_error)
         self.ui.spinbox_isocurves.editingFinished.connect(
             self.update_isocurves
         )
@@ -1439,12 +1448,20 @@ class MainWindow(QMainWindow):
             self.ui.button_disconnect.setEnabled(False)
             self._web_connection.deleteLater()
 
+<<<<<<< feature/pca-implementation-10997467719281473108
+    def show_winamp_mock(self) -> None:
+        """Open Mock Live: generates Lissajous viz, streams to viewer."""
+        if self._winamp_mock is None:
+            self._winamp_mock = WinampMockLiveWidget(self)
+            self._winamp_mock.setWindowFlags(
+=======
     def show_simulated_live(self) -> None:
         """Open Simulated Live: generates Lissajous/Lightning viz, streams to viewer."""
         from PyQt6.QtCore import Qt
         if self._simulated_live is None:
             self._simulated_live = SimulatedLiveWidget(self)
             self._simulated_live.setWindowFlags(
+>>>>>>> main
                 Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint
             )
             def _simulated_frame_cb(img):
@@ -1458,7 +1475,6 @@ class MainWindow(QMainWindow):
 
     def show_real_camera_dialog(self) -> None:
         """Open Webcam dialog: sliders, Start/Stop, streams to viewer."""
-        from PyQt6.QtCore import Qt
         if self._real_camera_dialog is None:
             self._camera_pending: ImageData | None = None
             self._camera_apply_timer = QTimer(self)
@@ -1606,11 +1622,6 @@ class MainWindow(QMainWindow):
                 meta = DataLoader.get_video_metadata(path)
                 # Estimate RAM usage for full load at current settings
                 # ImageData keeps uint8 by default (1 byte)
-                channels = 1 if params["grayscale"] else 3
-                est_bytes = (
-                    meta.size[0] * meta.size[1] * channels * meta.frame_count
-                    * (params["size_ratio"] ** 2)
-                )
 
                 show_dialog = self.ui.checkbox_video_dialog_always.isChecked()
                 if show_dialog:
@@ -1975,3 +1986,62 @@ class MainWindow(QMainWindow):
         settings.set("window/relative_size",
             self.width() / screen_geometry.width(),
         )
+
+    # --- PCA ---
+    def pca_calculate(self) -> None:
+        n = self.ui.spinbox_pcacomp_target.value()
+        exact = self.ui.checkbox_pca_exact.isChecked()
+        self.pca_adapter.calculate(n_components=n, exact=exact)
+
+    def pca_on_started(self) -> None:
+        self.ui.button_pca_calc.setEnabled(False)
+        self.ui.checkbox_pca_exact.setEnabled(False)
+        self.ui.spinbox_pcacomp_target.setEnabled(False)
+        self.ui.label_pca_status.setText("Calculating...")
+        self.ui.blocking_status.setText("BUSY")
+        self.ui.blocking_status.setStyleSheet(get_style("busy"))
+
+    def pca_on_finished(self) -> None:
+        self.ui.button_pca_calc.setEnabled(True)
+        self.ui.checkbox_pca_exact.setEnabled(True)
+        self.ui.spinbox_pcacomp_target.setEnabled(True)
+        self.ui.label_pca_status.setText("Calculated")
+        self.ui.blocking_status.setText("IDLE")
+        self.ui.blocking_status.setStyleSheet(get_style("idle"))
+
+        n_comps = self.pca_adapter.max_components
+        self.ui.spinbox_pcacomp.setMaximum(n_comps)
+        self.ui.spinbox_pcacomp.setValue(1)
+
+        self.ui.spinbox_pcacomp.setEnabled(True)
+        self.ui.combobox_pca.setEnabled(True)
+        self.ui.button_pca_show.setEnabled(True)
+
+    def pca_on_error(self, msg: str) -> None:
+        self.ui.button_pca_calc.setEnabled(True)
+        self.ui.checkbox_pca_exact.setEnabled(True)
+        self.ui.spinbox_pcacomp_target.setEnabled(True)
+        self.ui.label_pca_status.setText("Error")
+        self.ui.blocking_status.setText("IDLE")
+        self.ui.blocking_status.setStyleSheet(get_style("idle"))
+        log(f"PCA Error: {msg}", color="red")
+
+    def pca_toggle_show(self) -> None:
+        if self.ui.button_pca_show.isChecked():
+            self.pca_update_view()
+            self.ui.button_pca_show.setText("Hide")
+        else:
+            self.pca_adapter.reset_view()
+            self.ui.button_pca_show.setText("Show")
+
+    def pca_update_view(self) -> None:
+        if not self.ui.button_pca_show.isChecked():
+            return
+
+        mode = self.ui.combobox_pca.currentText()
+        n = self.ui.spinbox_pcacomp.value()
+
+        if mode == "Components":
+            self.pca_adapter.show_components(n)
+        else:
+            self.pca_adapter.show_reconstruction(n)
