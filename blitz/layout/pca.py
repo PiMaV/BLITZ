@@ -89,7 +89,8 @@ class PCACalculator(QThread):
                 U, s, Vh, mean = randomized_svd_low_memory(
                     matrix,
                     n_components=self.n_components,
-                    n_iter=2
+                    n_iter=2,
+                    random_state=42
                 )
 
             # Result: (U, s, Vh, mean, original_shape)
@@ -116,6 +117,7 @@ class PCAAdapter(QObject):
         self._base_data: Optional[ImageData] = None
 
         self._calculator: Optional[PCACalculator] = None
+        self._last_exact: bool = False
 
     def calculate(self, n_components: int, exact: bool = False) -> None:
         """Start PCA calculation on current viewer data."""
@@ -137,6 +139,7 @@ class PCAAdapter(QObject):
             return
 
         self.started.emit()
+        self._last_exact = exact
 
         self._calculator = PCACalculator(data, n_components, exact)
         self._calculator.calc_finished.connect(self._on_calculation_finished)
@@ -162,6 +165,21 @@ class PCAAdapter(QObject):
         if self._cache:
             return len(self._cache[1])  # len(s)
         return 0
+
+    def invalidate(self) -> None:
+        """Clear PCA cache when data changes (load, crop, etc.)."""
+        self._cache = None
+        self._base_data = None
+        calc = self._calculator
+        if calc is not None:
+            self._calculator = None
+            try:
+                calc.calc_finished.disconnect()
+                calc.calc_error.disconnect()
+            except TypeError:
+                pass
+            calc.quit()
+            calc.wait(100)
 
     def reset_view(self) -> None:
         """Restore the original image data."""
@@ -195,7 +213,7 @@ class PCAAdapter(QObject):
                     size=(spatial_shape[0], spatial_shape[1]),
                     dtype=eigenimages.dtype,
                     bit_depth=32,
-                    color_model="Gray" if len(spatial_shape) == 2 else "RGB"
+                    color_model="grayscale" if spatial_shape[-1] == 1 else "rgb"
                 ))
 
             img_data = ImageData(eigenimages, meta_list)
@@ -204,7 +222,30 @@ class PCAAdapter(QObject):
         except Exception as e:
             self.error.emit(f"Failed to show components: {e}")
 
-    def show_reconstruction(self, n_components: int) -> None:
+    def variance_explained(self, n_components: int) -> float:
+        """Cumulative variance explained by first n components [0..100]."""
+        if not self._cache:
+            return 0.0
+        s = self._cache[1]
+        k = min(n_components, len(s))
+        total = float((s**2).sum())
+        if total <= 0:
+            return 0.0
+        return 100.0 * float((s[:k]**2).sum()) / total
+
+    def variance_curve_data(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """(indices, indiv_pct, cumul_pct) for variance plot."""
+        if not self._cache:
+            return np.array([]), np.array([]), np.array([])
+        s = self._cache[1]
+        total = float((s**2).sum())
+        if total <= 0:
+            return np.arange(len(s)), np.zeros_like(s), np.zeros_like(s)
+        indiv = 100.0 * (s**2) / total
+        cumul = np.cumsum(indiv)
+        return np.arange(1, len(s) + 1, dtype=float), indiv, cumul
+
+    def show_reconstruction(self, n_components: int, add_mean: bool = True) -> None:
         """Display the reconstruction using top n_components."""
         if not self.is_calculated or self._cache is None:
             self.error.emit("PCA not calculated.")
@@ -215,7 +256,7 @@ class PCAAdapter(QObject):
         k = min(n_components, len(s))
 
         try:
-            # Reconstruct: X ~ U_k * S_k @ Vh_k + mean
+            # Reconstruct: X ~ U_k * S_k @ Vh_k [+ mean]
             # U (T, K), s (K,), Vh (K, N)
 
             # (T, k) * (k,) -> (T, k)
@@ -224,8 +265,8 @@ class PCAAdapter(QObject):
             # (T, k) @ (k, N) -> (T, N)
             reconstructed_flat = scores @ Vh[:k, :]
 
-            # Add mean
-            reconstructed_flat += mean
+            if add_mean:
+                reconstructed_flat += mean
 
             # Reshape
             reconstructed = reconstructed_flat.reshape(shape)
@@ -239,7 +280,7 @@ class PCAAdapter(QObject):
                     size=(shape[1], shape[2]),
                     dtype=reconstructed.dtype,
                     bit_depth=32,
-                    color_model="Gray" if len(shape) == 3 else "RGB"
+                    color_model="grayscale" if shape[-1] == 1 else "rgb"
                 ))
 
             img_data = ImageData(reconstructed, meta_list)

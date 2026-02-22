@@ -4,7 +4,7 @@ from typing import Any, Callable, Optional
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt6.QtCore import QPoint, QPointF, pyqtSignal
+from PyQt6.QtCore import QPoint, QPointF, Qt, pyqtSignal
 from PyQt6.QtGui import QDropEvent, QFont
 from pyqtgraph import RectROI
 from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
@@ -79,6 +79,8 @@ class ImageViewer(pg.ImageView):
         self._last_set_image_time = 0.0
         self._set_image_throttle_sec = 0.035
         self._set_image_throttle_live_sec = 0.025
+        self._reference_timeline_data: Optional[tuple] = None
+        self._reference_timeline_curve: Optional[pg.PlotDataItem] = None
         self.load_data()
 
     def set_live_update_fps(self, fps: float) -> None:
@@ -195,6 +197,51 @@ class ImageViewer(pg.ImageView):
         self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
         if in_agg and len(xvals) > 0:
             self.ui.roiPlot.setXRange(0.0, float(xvals.max()), padding=0)
+        self._update_reference_timeline_curve()
+
+    def set_reference_timeline_curve(self, x: np.ndarray, y: np.ndarray) -> None:
+        """Show original ROI curve as reference (e.g. when viewing PCA reconstruction)."""
+        self._reference_timeline_data = (np.asarray(x), np.asarray(y))
+        self._update_reference_timeline_curve()
+
+    def clear_reference_timeline_curve(self) -> None:
+        """Remove reference timeline curve."""
+        self._reference_timeline_data = None
+        self._update_reference_timeline_curve()
+
+    def _update_reference_timeline_curve(self) -> None:
+        """Add or remove reference curve from roiPlot and show legend when both curves present."""
+        if self._reference_timeline_curve is not None:
+            try:
+                self.ui.roiPlot.plotItem.removeItem(self._reference_timeline_curve)
+            except Exception:
+                pass
+            self._reference_timeline_curve = None
+        pi = self.ui.roiPlot.plotItem if self.ui.roiPlot else None
+        if self._reference_timeline_data is not None and pi is not None:
+            x, y = self._reference_timeline_data
+            if len(x) > 0 and len(y) > 0:
+                pen = pg.mkPen((180, 180, 100), width=2, style=Qt.PenStyle.DashLine)
+                self._reference_timeline_curve = self.ui.roiPlot.plot(
+                    x, y, pen=pen, name="Original"
+                )
+                self._reference_timeline_curve.setZValue(-10)
+                if self.roiCurves:
+                    self.roiCurves[0].opts["name"] = "Reconstruction"
+                if pi.legend is None:
+                    pi.addLegend(offset=(5, 5), labelTextSize="8pt")
+            else:
+                self._reference_timeline_curve = None
+        else:
+            if self.roiCurves:
+                self.roiCurves[0].opts["name"] = None
+            if pi is not None and getattr(pi, "legend", None) is not None:
+                leg = pi.legend
+                pi.scene().removeItem(leg)
+                try:
+                    pi.legend = None
+                except Exception:
+                    pass
 
     def image_mask(self, file_path: Optional[Path] = None, **kwargs) -> None:
         mask = DataLoader(**kwargs).load(file_path)

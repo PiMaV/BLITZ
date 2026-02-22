@@ -3,19 +3,19 @@ import json
 import pyqtgraph as pg
 from PyQt6.QtCore import QFile, Qt, QTimer
 from PyQt6.QtGui import QFont, QIcon
-from PyQt6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox,
-                             QFrame, QGridLayout, QGroupBox, QHBoxLayout,
-                             QLabel, QLayout, QLineEdit, QMenu, QMenuBar,
-                             QPushButton, QRadioButton, QScrollArea,
-                             QSizePolicy, QSlider, QSplitter, QSpinBox,
-                             QStatusBar, QTabWidget, QVBoxLayout,
-                             QWidget)
+from PyQt6.QtWidgets import (QAbstractSpinBox, QButtonGroup, QCheckBox,
+                             QComboBox, QDoubleSpinBox, QFrame, QGridLayout,
+                             QGroupBox, QHBoxLayout, QLabel, QLayout, QLineEdit,
+                             QMenu, QMenuBar, QPushButton, QRadioButton,
+                             QScrollArea, QSizePolicy, QSlider, QSplitter,
+                             QSpinBox, QStatusBar, QTabWidget, QTableWidget,
+                             QVBoxLayout, QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import __version__, settings
 from .. import resources  # noqa: F401  (import registers Qt resources)
 from ..data.ops import ReduceOperation, reduce_display_name
-from ..theme import get_style, get_agg_section_stylesheet, get_agg_heading_color, get_agg_separator_stylesheet
+from ..theme import get_style, get_plot_bg, get_agg_section_stylesheet, get_agg_heading_color, get_agg_separator_stylesheet
 from ..tools import LoggingTextEdit, get_available_ram, setup_logger
 from .bench_compact import BenchCompact
 from .bench_data import BenchData
@@ -204,17 +204,65 @@ class UI_MainWindow(QWidget):
         self.statusbar.addWidget(self.ram_label)
 
     def setup_lut_dock(self) -> None:
-        self.image_viewer.ui.histogram.setParent(None)
+        # Replace default vertical histogram with horizontal (more space, min-left max-right)
+        old_hist = self.image_viewer.ui.histogram
+        old_hist.setParent(None)
+        img_item = self.image_viewer.getImageItem()
+        new_hist = pg.HistogramLUTWidget(
+            orientation="horizontal",
+            gradientPosition="bottom",
+            image=img_item,
+        )
+        state = old_hist.saveState()
+        new_hist.restoreState(state)
+        new_hist.setMinimumHeight(100)
+        new_hist.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        lut_axis_font = QFont()
+        lut_axis_font.setPointSize(10)
+        lut_axis_font.setWeight(QFont.Weight.DemiBold)
+        new_hist.axis.setStyle(tickFont=lut_axis_font)
+        self.image_viewer.ui.histogram = new_hist
+
         lut_left = QWidget()
         lut_left_vbox = QVBoxLayout(lut_left)
         lut_left_vbox.setContentsMargins(0, 0, 0, 0)
-        lut_left_vbox.setSpacing(0)
-        lut_left_vbox.addWidget(self.image_viewer.ui.histogram)
+        lut_left_vbox.setSpacing(2)
+
+        # LUT level spinners: min left, max right, no labels; values from LUT only
+        def _make_lut_spinner() -> QDoubleSpinBox:
+            s = QDoubleSpinBox()
+            s.setRange(-1e15, 1e15)
+            s.setDecimals(2)
+            s.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+            s.setMinimumWidth(48)
+            s.setMaximumWidth(72)
+            return s
+
+        self.spin_lut_min = _make_lut_spinner()
+        self.spin_lut_min.setValue(0.0)
+        self.spin_lut_min.setToolTip("LUT lower bound.")
+        self.spin_lut_max = _make_lut_spinner()
+        self.spin_lut_max.setValue(1.0)
+        self.spin_lut_max.setToolTip("LUT upper bound.")
+
+        # Spinners above LUT (not in button group), minimal row
+        level_row = QHBoxLayout()
+        level_row.addWidget(self.spin_lut_min, 0)
+        level_row.addStretch(1)
+        level_row.addWidget(self.spin_lut_max, 0)
+        lut_left_vbox.addLayout(level_row)
+        lut_left_vbox.addWidget(new_hist, 2)
+
         self.button_autofit = QPushButton("Fit")
         self.checkbox_auto_fit = QCheckBox("Auto fit")
         self.checkbox_auto_fit.setChecked(True)
         self.checkbox_auto_colormap = QCheckBox("Auto colormap")
         self.checkbox_auto_colormap.setChecked(True)
+        self.checkbox_lut_log = QCheckBox("Log counts")
+        self.checkbox_lut_log.setChecked(False)
+        self.checkbox_lut_log.setToolTip("Logarithmic scale on histogram counts (makes low-count bins visible).")
         lut_button_container = QWidget(self)
         self.button_load_lut = QPushButton("Load")
         self.button_export_lut = QPushButton("Export")
@@ -225,11 +273,14 @@ class UI_MainWindow(QWidget):
         lut_fit_row.addWidget(self.button_autofit)
         lut_fit_row.addWidget(self.checkbox_auto_fit)
         lut_button_layout.addLayout(lut_fit_row)
-        lut_button_layout.addWidget(self.checkbox_auto_colormap)
+        lut_cmap_row = QHBoxLayout()
+        lut_cmap_row.addWidget(self.checkbox_auto_colormap)
+        lut_cmap_row.addWidget(self.checkbox_lut_log)
+        lut_button_layout.addLayout(lut_cmap_row)
         lut_button_layout.addWidget(self.button_load_lut)
         lut_button_layout.addWidget(self.button_export_lut)
         lut_button_container.setLayout(lut_button_layout)
-        lut_left_vbox.addWidget(lut_button_container)
+        lut_left_vbox.addWidget(lut_button_container, 1)
         self.blocking_status = QLabel("IDLE")
         self.blocking_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.blocking_status.setMinimumWidth(64)
@@ -287,6 +338,15 @@ class UI_MainWindow(QWidget):
 
         # --- File ---
         file_layout = QVBoxLayout()
+
+        load_buttons_row = QHBoxLayout()
+        self.button_load_file = QPushButton("Load File")
+        self.button_load_folder = QPushButton("Load Folder")
+        self.button_load_file.setToolTip("Open file dialog (same as File > Open File)")
+        self.button_load_folder.setToolTip("Open folder dialog (same as File > Open Folder)")
+        load_buttons_row.addWidget(self.button_load_file)
+        load_buttons_row.addWidget(self.button_load_folder)
+        file_layout.addLayout(load_buttons_row)
 
         text = "Show load options dialog \n(when dropping files into viewer)"
         self.checkbox_video_dialog_always = QCheckBox(text)
@@ -814,52 +874,90 @@ class UI_MainWindow(QWidget):
         pca_heading.setStyleSheet(get_style("heading"))
         pca_layout.addWidget(pca_heading)
 
-        pca_opt_layout = QHBoxLayout()
+        pca_top_row = QHBoxLayout()
+        pca_top_row.setStretch(0, 40)
+        pca_top_row.setStretch(1, 60)
+
+        pca_calc_group = QGroupBox("Calculate")
+        pca_calc_group.setMinimumWidth(180)
+        pca_calc_layout = QVBoxLayout()
+        pca_calc_layout.addWidget(QLabel("Target Comp"))
+        target_row = QHBoxLayout()
         self.spinbox_pcacomp_target = QSpinBox()
-        self.spinbox_pcacomp_target.setPrefix("Target Comp: ")
         self.spinbox_pcacomp_target.setMinimum(1)
         self.spinbox_pcacomp_target.setMaximum(500)
         self.spinbox_pcacomp_target.setValue(20)
-        self.spinbox_pcacomp_target.setToolTip("Number of components to calculate")
-        pca_opt_layout.addWidget(self.spinbox_pcacomp_target)
-
+        self.spinbox_pcacomp_target.setToolTip("Number of components to calculate (max = min(frames, 500))")
+        self.spinbox_pcacomp_target.setMaximumWidth(90)
+        target_row.addWidget(self.spinbox_pcacomp_target)
         self.checkbox_pca_exact = QCheckBox("Exact (Slow)")
-        self.checkbox_pca_exact.setToolTip("Use full SVD (Exact but slow/memory hungry). Uncheck for Approximate (Randomized) SVD.")
-        pca_opt_layout.addWidget(self.checkbox_pca_exact)
-        pca_layout.addLayout(pca_opt_layout)
-
+        self.checkbox_pca_exact.setToolTip(
+            "Use full SVD (exact but slow). Uncheck for Approximate (Randomized) SVD. "
+            "Approximate can yield slightly different variance values than exact."
+        )
+        target_row.addWidget(self.checkbox_pca_exact)
+        pca_calc_layout.addLayout(target_row)
         self.button_pca_calc = QPushButton("Calculate PCA")
         self.button_pca_calc.setToolTip("Compute Principal Component Analysis (SVD). May take time.")
-        pca_layout.addWidget(self.button_pca_calc)
+        pca_calc_layout.addWidget(self.button_pca_calc)
+        self.label_pca_time = QLabel("")
+        self.label_pca_time.setStyleSheet("font-size: 9pt;")
+        self.label_pca_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pca_calc_layout.addWidget(self.label_pca_time)
+        pca_calc_group.setLayout(pca_calc_layout)
+        pca_top_row.addWidget(pca_calc_group)
 
-        self.label_pca_status = QLabel("Not calculated")
-        self.label_pca_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        pca_layout.addWidget(self.label_pca_status)
-
-        hline = QFrame()
-        hline.setFrameShape(QFrame.Shape.HLine)
-        hline.setFrameShadow(QFrame.Shadow.Sunken)
-        pca_layout.addWidget(hline)
-
-        pca_view_layout = QHBoxLayout()
+        pca_view_group = QGroupBox("View")
+        pca_view_group.setMinimumWidth(180)
+        pca_view_layout = QVBoxLayout()
+        pca_view_layout.addWidget(QLabel("Components"))
+        view_row = QHBoxLayout()
         self.spinbox_pcacomp = QSpinBox()
-        self.spinbox_pcacomp.setPrefix("View Comp: ")
         self.spinbox_pcacomp.setMinimum(1)
         self.spinbox_pcacomp.setMaximum(100)
         self.spinbox_pcacomp.setEnabled(False)
-        pca_view_layout.addWidget(self.spinbox_pcacomp)
-
+        self.spinbox_pcacomp.setToolTip("Number of components for reconstruction (Reconstruction mode only)")
+        self.spinbox_pcacomp.setMaximumWidth(90)
+        view_row.addWidget(self.spinbox_pcacomp)
         self.combobox_pca = QComboBox()
         self.combobox_pca.addItem("Reconstruction")
         self.combobox_pca.addItem("Components")
         self.combobox_pca.setEnabled(False)
-        pca_view_layout.addWidget(self.combobox_pca)
-        pca_layout.addLayout(pca_view_layout)
-
-        self.button_pca_show = QPushButton("Show")
+        view_row.addWidget(self.combobox_pca)
+        pca_view_layout.addLayout(view_row)
+        self.checkbox_pca_include_mean = QCheckBox("Include mean")
+        self.checkbox_pca_include_mean.setChecked(True)
+        self.checkbox_pca_include_mean.setToolTip("Add mean image to reconstruction (uncheck to see deviation from mean only)")
+        pca_view_layout.addWidget(self.checkbox_pca_include_mean)
+        self.button_pca_show = QPushButton("View PCA")
         self.button_pca_show.setCheckable(True)
         self.button_pca_show.setEnabled(False)
-        pca_layout.addWidget(self.button_pca_show)
+        self.button_pca_show.setToolTip("Toggle: show PCA results in viewer (or original data)")
+        pca_view_layout.addWidget(self.button_pca_show)
+        pca_view_group.setLayout(pca_view_layout)
+        pca_top_row.addWidget(pca_view_group)
+        pca_layout.addLayout(pca_top_row)
+
+        pca_results_group = QGroupBox("Results")
+        pca_results_layout = QVBoxLayout()
+        self.pca_variance_plot = pg.PlotWidget(background=get_plot_bg())
+        self.pca_variance_plot.setMinimumHeight(120)
+        self.pca_variance_plot.setMaximumHeight(200)
+        self.pca_variance_plot.hide()
+        self.pca_variance_plot.setTitle("Variance: cumulative + individual")
+        self.pca_variance_plot.setLabel("left", "Variance [%]")
+        self.pca_variance_plot.setLabel("bottom", "Component")
+        pca_results_layout.addWidget(self.pca_variance_plot)
+
+        self.table_pca_results = QTableWidget()
+        self.table_pca_results.setColumnCount(3)
+        self.table_pca_results.setHorizontalHeaderLabels(["Comp", "Var [%]", "Cumul [%]"])
+        self.table_pca_results.setMaximumHeight(150)
+        self.table_pca_results.setAlternatingRowColors(True)
+        self.table_pca_results.hide()
+        pca_results_layout.addWidget(self.table_pca_results)
+        pca_results_group.setLayout(pca_results_layout)
+        pca_layout.addWidget(pca_results_group)
 
         pca_layout.addStretch()
         self.create_option_tab(pca_layout, "PCA")

@@ -33,7 +33,7 @@ RUN pip3 install uv --break-system-packages
 # Create directory for the application
 WORKDIR /app/blitz
 
-# Copy the repository content into the image
+# Copy the repository content into the image (build context is repo root)
 COPY . .
 
 # Create a virtual environment and install dependencies

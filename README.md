@@ -59,6 +59,10 @@ To compile and develop locally:
 
 Early development of BLITZ was supported by Richard Krieg (student assistant) until v1.3.0 / January 2025, including refactoring, bug fixing, and feature development during the INP-funded project phase.
 
+## Docker
+
+Run BLITZ in a browser via Docker: see [docker/README.md](docker/README.md).
+
 ## Additional Resources
 
 * Example Dataset: [KinPen Science Example Set](https://www.inptdat.de/dataset/fast-framing-images-kinpen-science-example-set-images-testing-blitz-image-viewer)

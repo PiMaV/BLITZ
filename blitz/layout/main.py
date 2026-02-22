@@ -1,10 +1,15 @@
 import json
+import time
+
+import numpy as np
 from pathlib import Path
 from typing import Optional
 
 from PyQt6.QtCore import QCoreApplication, Qt, QTimer, QUrl
 from PyQt6.QtGui import QDesktopServices, QKeySequence, QShortcut
-from PyQt6.QtWidgets import QApplication, QDialog, QFileDialog, QMainWindow
+from PyQt6.QtWidgets import (QApplication, QDialog, QFileDialog, QMainWindow,
+                             QTableWidgetItem)
+import pyqtgraph as pg
 from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 
 from .. import settings
@@ -16,6 +21,16 @@ from ..data.web import WebDataLoader
 from ..data.ops import ReduceOperation
 from ..tools import (LoadingManager, format_size_mb, get_available_ram,
                      get_cpu_percent, get_disk_io_mbs, get_used_ram, log)
+
+
+def _pca_sync_vb2(plot_widget) -> None:
+    """Sync second ViewBox geometry for dual-axis PCA plot."""
+    vb2 = getattr(plot_widget, "_pca_vb2", None)
+    if vb2 is None:
+        return
+    pi = plot_widget.getPlotItem()
+    vb2.setGeometry(pi.getViewBox().sceneBoundingRect())
+    vb2.linkedViewChanged(pi.getViewBox(), vb2.XAxis)
 
 
 def _numba_active(data) -> bool:
@@ -120,6 +135,8 @@ class MainWindow(QMainWindow):
         # menu connections
         self.ui.action_open_file.triggered.connect(self.browse_file)
         self.ui.action_open_folder.triggered.connect(self.browse_folder)
+        self.ui.button_load_file.clicked.connect(self.browse_file)
+        self.ui.button_load_folder.clicked.connect(self.browse_folder)
         self.ui.action_load_tof.triggered.connect(self.browse_tof)
         self.ui.action_export.triggered.connect(self.export)
         self.ui.action_restart.triggered.connect(restart)
@@ -178,6 +195,19 @@ class MainWindow(QMainWindow):
         )
         self.ui.button_load_lut.pressed.connect(self.browse_lut)
         self.ui.button_export_lut.pressed.connect(self.save_lut)
+        self.ui.spin_lut_min.valueChanged.connect(self._on_lut_spin_changed)
+        self.ui.spin_lut_max.valueChanged.connect(self._on_lut_spin_changed)
+        self._lut_sync_timer = QTimer(self)
+        self._lut_sync_timer.timeout.connect(self._sync_lut_spinners)
+        self._lut_sync_timer.start(80)
+        self.ui.image_viewer.image_changed.connect(
+            lambda: QTimer.singleShot(50, self._sync_lut_spinners)
+        )
+        self.ui.image_viewer.image_changed.connect(
+            lambda: QTimer.singleShot(60, self._apply_lut_log_state)
+        )
+        self.ui.checkbox_lut_log.stateChanged.connect(self._on_lut_log_changed)
+        self._sync_lut_spinners()
 
         # option connections
         self.ui.button_connect.pressed.connect(self.start_web_connection)
@@ -381,8 +411,10 @@ class MainWindow(QMainWindow):
         )
         self.ui.button_pca_calc.clicked.connect(self.pca_calculate)
         self.ui.button_pca_show.clicked.connect(self.pca_toggle_show)
+        self.ui.checkbox_pca_exact.stateChanged.connect(self._pca_on_exact_changed)
         self.ui.spinbox_pcacomp.valueChanged.connect(self.pca_update_view)
-        self.ui.combobox_pca.currentIndexChanged.connect(self.pca_update_view)
+        self.ui.combobox_pca.currentIndexChanged.connect(self._pca_on_mode_changed)
+        self.ui.checkbox_pca_include_mean.stateChanged.connect(self.pca_update_view)
         self.pca_adapter.started.connect(self.pca_on_started)
         self.pca_adapter.finished.connect(self.pca_on_finished)
         self.pca_adapter.error.connect(self.pca_on_error)
@@ -724,6 +756,21 @@ class MainWindow(QMainWindow):
 
     def _reset_options_body(self) -> None:
         self._aggregate_first_open = True
+        self.pca_adapter.invalidate()
+        self.ui.image_viewer.clear_reference_timeline_curve()
+        self.ui.button_pca_show.setChecked(False)
+        self.ui.button_pca_show.setText("View PCA")
+        self.ui.button_pca_show.setEnabled(False)
+        self.ui.spinbox_pcacomp.setEnabled(False)
+        self.ui.spinbox_pcacomp.setVisible(True)
+        self.ui.combobox_pca.setEnabled(False)
+        self.ui.label_pca_time.setText("")
+        self._pca_update_target_spinner_state()
+        self.ui.pca_variance_plot.hide()
+        self.ui.pca_variance_plot.clear()
+        self.ui.table_pca_results.hide()
+        self.ui.table_pca_results.setRowCount(0)
+        self.ui.timeline_stack.label_timeline_mode.setText("Frame")
         self.ui.combobox_reduce.setCurrentIndex(0)
         self.ui.checkbox_flipx.setChecked(False)
         self.ui.checkbox_flipy.setChecked(False)
@@ -750,6 +797,10 @@ class MainWindow(QMainWindow):
             self.ui.image_viewer.data.n_images - 1
         )
         n_frames = max(1, self.ui.image_viewer.data.n_images)
+        target_max = min(n_frames, 500)
+        self.ui.spinbox_pcacomp_target.setMaximum(target_max)
+        default_target = min(n_frames // 2, 50, target_max)
+        self.ui.spinbox_pcacomp_target.setValue(default_target)
         self.ui.spinbox_current_frame.setMaximum(n_frames - 1)
         self.ui.spinbox_current_frame.setValue(
             min(self.ui.image_viewer.currentIndex, n_frames - 1)
@@ -1421,6 +1472,82 @@ class MainWindow(QMainWindow):
                     indent=4,
                 )
 
+    def _on_lut_spin_changed(self) -> None:
+        """Apply LUT min/max from spinners to histogram."""
+        mn = self.ui.spin_lut_min.value()
+        mx = self.ui.spin_lut_max.value()
+        if mn > mx:
+            mn, mx = mx, mn
+        self.ui.image_viewer.ui.histogram.setLevels(min=mn, max=mx)
+
+    def _on_lut_log_changed(self) -> None:
+        """Toggle logarithmic scale on histogram counts via data transform (no setLogMode)."""
+        self._apply_lut_log_state()
+
+    def _apply_lut_log_state(self) -> None:
+        """Apply log/linear histogram display. Uses data transform instead of setLogMode to keep
+        Y-axis anchored at bottom (avoids pyqtgraph ViewBox log-mode jump)."""
+        log_on = self.ui.checkbox_lut_log.isChecked()
+        hist = self.ui.image_viewer.ui.histogram
+        vb = hist.vb
+        plot = hist.item.plot
+        img_item = self.ui.image_viewer.getImageItem()
+        if img_item is None:
+            vb.setLogMode("y", False)
+            return
+        h = img_item.getHistogram()
+        if h[0] is None:
+            vb.setLogMode("y", False)
+            return
+        xdata, ydata = np.asarray(h[0]), np.asarray(h[1], dtype=np.float64)
+        if len(ydata) == 0:
+            vb.setLogMode("y", False)
+            return
+        with np.errstate(invalid="ignore"):
+            ymax_raw = float(np.nanmax(ydata))
+        if not np.isfinite(ymax_raw) or ymax_raw <= 0:
+            ymax_raw = 1.0
+        vb.enableAutoRange(vb.YAxis, False)
+        vb.setLogMode("y", False)
+        if log_on:
+            y_transformed = np.log10(ydata + 1.0)
+            ymax_log = float(np.log10(ymax_raw + 1.0))
+            plot.setData(xdata, y_transformed)
+            vb.setYRange(0.0, ymax_log, padding=0)
+        else:
+            plot.setData(xdata, ydata)
+            vb.setYRange(0.0, ymax_raw, padding=0)
+        vb.updateViewRange()
+
+    def _sync_lut_spinners(self) -> None:
+        """Sync spinner values from imageItem (authoritative) or histogram."""
+        img_item = self.ui.image_viewer.getImageItem()
+        levels = img_item.getLevels()
+        if levels is None:
+            levels = self.ui.image_viewer.ui.histogram.getLevels()
+        if levels is None or (hasattr(levels, "__len__") and len(levels) != 2):
+            return
+        arr = np.asarray(levels)
+        if arr.ndim != 1 or arr.size != 2:
+            return
+        mn_f, mx_f = float(arr[0]), float(arr[1])
+
+        # Skip if values already match (avoid redundant updates)
+        if (abs(self.ui.spin_lut_min.value() - mn_f) < 1e-12
+                and abs(self.ui.spin_lut_max.value() - mx_f) < 1e-12):
+            return
+
+        decimals = 2
+
+        for s in (self.ui.spin_lut_min, self.ui.spin_lut_max):
+            s.blockSignals(True)
+        self.ui.spin_lut_min.setDecimals(decimals)
+        self.ui.spin_lut_max.setDecimals(decimals)
+        self.ui.spin_lut_min.setValue(mn_f)
+        self.ui.spin_lut_max.setValue(mx_f)
+        for s in (self.ui.spin_lut_min, self.ui.spin_lut_max):
+            s.blockSignals(False)
+
     def start_web_connection(self) -> None:
         address = self.ui.address_edit.text()
         token = self.ui.token_edit.text()
@@ -1439,6 +1566,7 @@ class MainWindow(QMainWindow):
     def end_web_connection(self, img: ImageData | None) -> None:
         if img is not None:
             self.ui.image_viewer.set_image(img)
+            self.reset_options()
         else:
             self._web_connection.stop()
             self.ui.address_edit.setEnabled(True)
@@ -1448,25 +1576,21 @@ class MainWindow(QMainWindow):
             self.ui.button_disconnect.setEnabled(False)
             self._web_connection.deleteLater()
 
-<<<<<<< feature/pca-implementation-10997467719281473108
-    def show_winamp_mock(self) -> None:
-        """Open Mock Live: generates Lissajous viz, streams to viewer."""
-        if self._winamp_mock is None:
-            self._winamp_mock = WinampMockLiveWidget(self)
-            self._winamp_mock.setWindowFlags(
-=======
     def show_simulated_live(self) -> None:
         """Open Simulated Live: generates Lissajous/Lightning viz, streams to viewer."""
         from PyQt6.QtCore import Qt
+        self._simulated_first_frame = True
         if self._simulated_live is None:
             self._simulated_live = SimulatedLiveWidget(self)
             self._simulated_live.setWindowFlags(
->>>>>>> main
                 Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint
             )
             def _simulated_frame_cb(img):
                 self.ui.image_viewer.set_image(img, live_update=True)
                 self.ui.image_viewer.setCurrentIndex(img.n_images - 1)
+                if self._simulated_first_frame:
+                    self._simulated_first_frame = False
+                    self.reset_options()
             self._simulated_live.set_frame_callback(_simulated_frame_cb)
             self._simulated_live.setWindowIcon(self.windowIcon())
         self._simulated_live.show()
@@ -1477,6 +1601,7 @@ class MainWindow(QMainWindow):
         """Open Webcam dialog: sliders, Start/Stop, streams to viewer."""
         if self._real_camera_dialog is None:
             self._camera_pending: ImageData | None = None
+            self._camera_has_applied = False
             self._camera_apply_timer = QTimer(self)
             self._camera_apply_timer.setSingleShot(True)
             _CAMERA_APPLY_MS = 100  # Fixed 10 FPS display; FPS from dialog ignored for now
@@ -1487,6 +1612,9 @@ class MainWindow(QMainWindow):
                     self._camera_pending = None
                     self.ui.image_viewer.set_image(img, live_update=True)
                     self.ui.image_viewer.setCurrentIndex(img.n_images - 1)
+                    if not self._camera_has_applied:
+                        self._camera_has_applied = True
+                        self.reset_options()
                 if self._camera_pending is not None:
                     self._camera_apply_timer.start(_CAMERA_APPLY_MS)
 
@@ -1505,6 +1633,7 @@ class MainWindow(QMainWindow):
                     self._camera_pending = None
                     self.ui.image_viewer.set_image(img, live_update=False)
                     self.ui.image_viewer.setCurrentIndex(max(0, img.n_images - 1))
+                    self.reset_options()
 
             self._real_camera_dialog = RealCameraDialog(
                 self,
@@ -1989,59 +2118,194 @@ class MainWindow(QMainWindow):
 
     # --- PCA ---
     def pca_calculate(self) -> None:
+        if self.ui.button_pca_show.isChecked():
+            self.ui.button_pca_show.setChecked(False)
+            self.pca_adapter.reset_view()
+            self.ui.button_pca_show.setText("View PCA")
+        self.ui.label_pca_time.setText("")
+        self.ui.pca_variance_plot.hide()
+        self.ui.pca_variance_plot.clear()
+        self.ui.table_pca_results.hide()
+        self.ui.table_pca_results.setRowCount(0)
         n = self.ui.spinbox_pcacomp_target.value()
         exact = self.ui.checkbox_pca_exact.isChecked()
         self.pca_adapter.calculate(n_components=n, exact=exact)
 
     def pca_on_started(self) -> None:
+        self._pca_calc_start_time = time.perf_counter()
         self.ui.button_pca_calc.setEnabled(False)
         self.ui.checkbox_pca_exact.setEnabled(False)
         self.ui.spinbox_pcacomp_target.setEnabled(False)
-        self.ui.label_pca_status.setText("Calculating...")
+        self.ui.label_pca_time.setText("Calculating...")
         self.ui.blocking_status.setText("BUSY")
         self.ui.blocking_status.setStyleSheet(get_style("busy"))
 
     def pca_on_finished(self) -> None:
+        duration = time.perf_counter() - getattr(self, "_pca_calc_start_time", 0)
         self.ui.button_pca_calc.setEnabled(True)
         self.ui.checkbox_pca_exact.setEnabled(True)
-        self.ui.spinbox_pcacomp_target.setEnabled(True)
-        self.ui.label_pca_status.setText("Calculated")
+        self.ui.label_pca_time.setText(f"Calculated in {duration:.2f}s")
         self.ui.blocking_status.setText("IDLE")
         self.ui.blocking_status.setStyleSheet(get_style("idle"))
 
         n_comps = self.pca_adapter.max_components
         self.ui.spinbox_pcacomp.setMaximum(n_comps)
-        self.ui.spinbox_pcacomp.setValue(1)
-
         self.ui.spinbox_pcacomp.setEnabled(True)
+        self.ui.spinbox_pcacomp.setValue(n_comps if self.ui.checkbox_pca_exact.isChecked() else 1)
         self.ui.combobox_pca.setEnabled(True)
         self.ui.button_pca_show.setEnabled(True)
+        self._pca_on_mode_changed()
+        self._pca_update_variance_plot()
+        self._pca_update_timeline_label()
+        QTimer.singleShot(0, self._pca_update_target_spinner_state)
+
+    def _pca_update_variance_plot(self) -> None:
+        """Fill variance plot with dual axis: cumulative (red, 0-100), individual (green, actual)."""
+        if not self.pca_adapter.is_calculated:
+            self.ui.pca_variance_plot.hide()
+            self.ui.table_pca_results.hide()
+            if getattr(self.ui.pca_variance_plot, "_pca_vb2", None):
+                self.ui.pca_variance_plot._pca_vb2 = None
+            return
+        old_vb = getattr(self.ui.pca_variance_plot, "_pca_vb2", None)
+        if old_vb is not None and old_vb.scene():
+            old_vb.scene().removeItem(old_vb)
+        self.ui.pca_variance_plot._pca_vb2 = None
+        self.ui.pca_variance_plot.clear()
+        x, indiv, cumul = self.pca_adapter.variance_curve_data()
+        if len(x) == 0:
+            self.ui.pca_variance_plot.hide()
+            self.ui.table_pca_results.hide()
+            return
+        self.ui.pca_variance_plot.show()
+        self.ui.table_pca_results.show()
+        max_modes = len(x)
+        pi = self.ui.pca_variance_plot.getPlotItem()
+        pi.setXRange(0, max_modes)
+        pi.getViewBox().setLimits(xMin=0, xMax=max_modes)
+        indiv_max = float(indiv.max()) if indiv.size > 0 else 1.0
+        pen_cumul = (220, 80, 80)
+        pen_indiv = (80, 200, 100)
+        pi.getAxis("left").setPen(pg.mkPen(pen_cumul))
+        pi.getAxis("left").setTextPen(pg.mkPen(pen_cumul))
+        pi.setLabel("left", "cum. Var [%]", color=pen_cumul)
+        pi.setYRange(0, 100)
+        cumul_curve = self.ui.pca_variance_plot.plot(x, cumul, pen=pen_cumul, name="Cumulative")
+        cumul_curve.setPen(pen_cumul, width=2)
+        vb2 = pg.ViewBox()
+        pi.showAxis("right")
+        pi.scene().addItem(vb2)
+        pi.getAxis("right").linkToView(vb2)
+        vb2.setXLink(pi)
+        pi.getAxis("right").setPen(pg.mkPen(pen_indiv))
+        pi.getAxis("right").setTextPen(pg.mkPen(pen_indiv))
+        pi.getAxis("right").setLabel("ind. Var [%]", color=pen_indiv)
+        vb2.setGeometry(pi.getViewBox().sceneBoundingRect())
+        vb2.linkedViewChanged(pi.getViewBox(), vb2.XAxis)
+        if not getattr(self.ui.pca_variance_plot, "_pca_sync_connected", False):
+            pi.getViewBox().sigResized.connect(lambda: _pca_sync_vb2(self.ui.pca_variance_plot))
+            self.ui.pca_variance_plot._pca_sync_connected = True
+        indiv_item = pg.PlotCurveItem(x, indiv, pen=pen_indiv)
+        vb2.addItem(indiv_item)
+        vb2.setYRange(0, indiv_max)
+        self.ui.pca_variance_plot._pca_vb2 = vb2
+        k = self.ui.spinbox_pcacomp.value() if self.ui.combobox_pca.currentText() == "Reconstruction" else 0
+        if k > 0 and k <= len(cumul):
+            kx, ky = float(x[k - 1]), float(cumul[k - 1])
+            pt = pg.ScatterPlotItem([kx], [ky], symbol="o", size=12, pen=pg.mkPen("w", width=2))
+            pi.addItem(pt)
+            txt = pg.TextItem(text=f"{ky:.1f}%", anchor=(0, 0.5), color="w")
+            txt.setPos(kx, ky)
+            pi.addItem(txt)
+        pi.showGrid(x=True, y=True, alpha=0.4)
+        self.ui.table_pca_results.setRowCount(max_modes)
+        for i in range(max_modes):
+            self.ui.table_pca_results.setItem(i, 0, QTableWidgetItem(str(int(x[i]))))
+            self.ui.table_pca_results.setItem(i, 1, QTableWidgetItem(f"{indiv[i]:.2f}"))
+            self.ui.table_pca_results.setItem(i, 2, QTableWidgetItem(f"{cumul[i]:.1f}"))
+
+    def _pca_update_timeline_label(self) -> None:
+        """Set timeline mode label (top-right overlay): Component vs Frame."""
+        if self.ui.button_pca_show.isChecked():
+            mode = self.ui.combobox_pca.currentText()
+            label = "Component" if mode == "Components" else "Frame"
+        else:
+            label = "Frame"
+        self.ui.timeline_stack.label_timeline_mode.setText(label)
+        self.ui.roi_plot.getPlotItem().setLabel("bottom", "")
+
+    def _pca_update_variance_display(self) -> None:
+        """Refresh variance plot (reconstruction point) when Components spinbox changes."""
+        if self.pca_adapter.is_calculated and self.ui.button_pca_show.isChecked():
+            self._pca_update_variance_plot()
+
+    def _pca_update_target_spinner_state(self) -> None:
+        """When Exact: Target Comp at max and disabled. When not Exact: enabled."""
+        exact = self.ui.checkbox_pca_exact.isChecked()
+        target = self.ui.spinbox_pcacomp_target
+        if exact:
+            target.setValue(target.maximum())
+            target.setEnabled(False)
+        else:
+            target.setEnabled(True)
+
+    def _pca_on_exact_changed(self) -> None:
+        """React to Exact checkbox: Target Comp at max and disabled when Exact, enabled when not."""
+        self._pca_update_target_spinner_state()
+
+    def _pca_on_mode_changed(self) -> None:
+        is_reconstruction = self.ui.combobox_pca.currentText() == "Reconstruction"
+        self.ui.spinbox_pcacomp.setVisible(is_reconstruction)
+        self.ui.checkbox_pca_include_mean.setVisible(is_reconstruction)
+        self._pca_update_target_spinner_state()
+        if self.ui.button_pca_show.isChecked():
+            self.pca_update_view()
+        self._pca_update_variance_display()
+        self._pca_update_timeline_label()
 
     def pca_on_error(self, msg: str) -> None:
         self.ui.button_pca_calc.setEnabled(True)
         self.ui.checkbox_pca_exact.setEnabled(True)
-        self.ui.spinbox_pcacomp_target.setEnabled(True)
-        self.ui.label_pca_status.setText("Error")
+        self._pca_update_target_spinner_state()
+        self.ui.label_pca_time.setText("Error")
         self.ui.blocking_status.setText("IDLE")
         self.ui.blocking_status.setStyleSheet(get_style("idle"))
         log(f"PCA Error: {msg}", color="red")
 
     def pca_toggle_show(self) -> None:
         if self.ui.button_pca_show.isChecked():
+            self._pca_capture_original_timeline()
             self.pca_update_view()
-            self.ui.button_pca_show.setText("Hide")
+            self.ui.button_pca_show.setText("View Data")
         else:
+            self._pca_original_timeline_curve = None
+            self.ui.image_viewer.clear_reference_timeline_curve()
             self.pca_adapter.reset_view()
-            self.ui.button_pca_show.setText("Show")
+            self.ui.button_pca_show.setText("View PCA")
+        self._pca_update_timeline_label()
+
+    def _pca_capture_original_timeline(self) -> None:
+        """Capture original ROI curve for reference when viewing PCA (Reconstruction mode)."""
+        curves = getattr(self.ui.image_viewer, "roiCurves", [])
+        if curves and self.pca_adapter._base_data is not None:
+            x, y = curves[0].getData()
+            if x is not None and y is not None and len(x) > 0 and len(y) > 0:
+                self._pca_original_timeline_curve = (np.asarray(x).copy(), np.asarray(y).copy())
 
     def pca_update_view(self) -> None:
         if not self.ui.button_pca_show.isChecked():
             return
 
         mode = self.ui.combobox_pca.currentText()
-        n = self.ui.spinbox_pcacomp.value()
-
         if mode == "Components":
+            self.ui.image_viewer.clear_reference_timeline_curve()
+            n = self.pca_adapter.max_components
             self.pca_adapter.show_components(n)
         else:
-            self.pca_adapter.show_reconstruction(n)
+            if getattr(self, "_pca_original_timeline_curve", None) is not None:
+                x, y = self._pca_original_timeline_curve
+                self.ui.image_viewer.set_reference_timeline_curve(x, y)
+            n = self.ui.spinbox_pcacomp.value()
+            add_mean = self.ui.checkbox_pca_include_mean.isChecked()
+            self.pca_adapter.show_reconstruction(n, add_mean=add_mean)
+        self._pca_update_variance_display()

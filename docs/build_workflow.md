@@ -22,3 +22,12 @@ Upon successful completion, the workflow produces the following artifacts:
 *   **Linux:** `BLITZ-Linux` (contains `BLITZ` executable)
 
 These artifacts can be downloaded directly from the workflow run summary page.
+
+## Local Build Artefacts
+
+`build/` and `dist/` are in `.gitignore`. They are created by PyInstaller during builds (locally or in CI). The GitHub Action produces them in a fresh runner and does not commit them.
+
+If you have local `build/` or `dist/` from manual PyInstaller runs, you can safely delete them:
+```bash
+rm -rf build dist
+```

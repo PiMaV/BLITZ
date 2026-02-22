@@ -27,7 +27,8 @@ Wenn ich von Aggragate dann auf Frame wechsle kommt Fehler:
 
 ---
 
-Autofit Toggle statt "fit" ?
+
+add something (window or docked?) that displays intensity distribution over a polyline.
 
 
 ### Ops-Tab (erledigt)
@@ -53,7 +54,7 @@ Gemeinsame Schnittstelle fuer Loader, Converter, Handler. Registry fuer erweiter
 - [ ] LiveView: RAM-Hinweis im Buffer-Dialog (Buffer 1–10000, FPS/Exposure/Gain bereits vorhanden)
 - [ ] LiveView: Display-FPS konfigurierbar (aktuell fest 10 FPS)
 
-
+- Docker testen
 
 ## Low
 - [ ] Load/Save project file: Checkbox und Auto-Logik voruebergehend entfernt. Explizites Oeffnen von .blitz funktioniert. Siehe docs/SETTINGS.md.

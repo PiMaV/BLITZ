@@ -12,7 +12,7 @@ _PEN_MIN_PER_DATASET = pg.mkPen((60, 80, 160), width=2)
 _PEN_MAX_PER_DATASET = pg.mkPen((100, 130, 220), width=2)
 from PyQt6.QtCore import QPointF, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QKeyEvent, QMouseEvent, QShowEvent, QWheelEvent
-from PyQt6.QtWidgets import QFrame, QSizePolicy, QVBoxLayout, QWidget, QLineEdit
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget, QLineEdit
 
 from .viewer import ImageViewer
 from .. import settings
@@ -145,6 +145,12 @@ class TimelineStack(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+        top_row = QHBoxLayout()
+        top_row.addStretch()
+        self.label_timeline_mode = QLabel("Frame")
+        self.label_timeline_mode.setStyleSheet("font-size: 16pt; font-weight: bold;")
+        top_row.addWidget(self.label_timeline_mode)
+        layout.addLayout(top_row)
         self.main_plot = TimePlot(self, image_viewer)
         self.agg_sep = QFrame()
         self.agg_sep.setFixedHeight(4)
