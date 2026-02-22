@@ -1390,8 +1390,7 @@ class MainWindow(QMainWindow):
             self._camera_pending: ImageData | None = None
             self._camera_apply_timer = QTimer(self)
             self._camera_apply_timer.setSingleShot(True)
-
-            _CAMERA_APPLY_MS = 25
+            _CAMERA_APPLY_MS = 100  # Fixed 10 FPS display; FPS from dialog ignored for now
 
             def _apply_camera_frame() -> None:
                 if self._camera_pending is not None:
@@ -1411,7 +1410,12 @@ class MainWindow(QMainWindow):
 
             def _camera_stop_cleanup() -> None:
                 self._camera_apply_timer.stop()
-                self._camera_pending = None
+                # Apply final buffer if pending (worker sends full buffer on stop)
+                if self._camera_pending is not None:
+                    img = self._camera_pending
+                    self._camera_pending = None
+                    self.ui.image_viewer.set_image(img, live_update=False)
+                    self.ui.image_viewer.setCurrentIndex(max(0, img.n_images - 1))
 
             self._real_camera_dialog = RealCameraDialog(
                 self,

@@ -9,6 +9,7 @@ is only sent to the camera (CAP_PROP_FPS); actual rate depends on the driver.
 """
 
 import sys
+import time
 from typing import Optional
 
 import cv2
@@ -51,6 +52,7 @@ class _CameraWorker(QObject):
 
     frame_ready = pyqtSignal(object)
     buffer_status = pyqtSignal(int, int)  # current, max
+    buffer_time_span_sec = pyqtSignal(float)  # actual span from first to last frame
     stopped = pyqtSignal()
 
     def __init__(
@@ -82,7 +84,7 @@ class _CameraWorker(QObject):
         self._auto_exposure = 0.75 if auto_exposure else 0.25  # 0.25=manual
         self._send_live_only = send_live_only
         self._running = True
-        self._buffer: list[np.ndarray] = []
+        self._buffer: list[tuple[np.ndarray, float]] = []  # (frame, capture timestamp)
         self._cap: Optional[cv2.VideoCapture] = None
 
     def run(self) -> None:
@@ -123,24 +125,31 @@ class _CameraWorker(QObject):
                 f = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             else:
                 f = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            self._buffer.append(f.copy())
+            ts = time.perf_counter()
+            self._buffer.append((f.copy(), ts))
             if len(self._buffer) > self._buffer_size:
                 self._buffer.pop(0)
 
             self.buffer_status.emit(len(self._buffer), self._buffer_size)
+            if len(self._buffer) >= 2:
+                self.buffer_time_span_sec.emit(
+                    self._buffer[-1][1] - self._buffer[0][1]
+                )
 
-            if self._send_live_only and self._buffer:
+            frames_only = [b[0] for b in self._buffer]
+            if self._send_live_only and frames_only:
                 out = _frames_to_imagedata(
-                    np.stack([self._buffer[-1]]), self._grayscale
+                    np.stack([frames_only[-1]]), self._grayscale
                 )
             else:
                 out = _frames_to_imagedata(
-                    np.stack(self._buffer), self._grayscale
+                    np.stack(frames_only), self._grayscale
                 )
             self.frame_ready.emit(out)
             QThread.msleep(1)
         if self._buffer:
-            final = _frames_to_imagedata(np.stack(self._buffer), self._grayscale)
+            frames_only = [b[0] for b in self._buffer]
+            final = _frames_to_imagedata(np.stack(frames_only), self._grayscale)
             self.frame_ready.emit(final)
         if self._cap:
             self._cap.release()
@@ -171,6 +180,7 @@ class RealCameraHandler(QObject):
 
     frame_ready = pyqtSignal(object)
     buffer_status = pyqtSignal(int, int)  # current, max
+    buffer_time_span_sec = pyqtSignal(float)  # actual span from first to last frame
     stopped = pyqtSignal()
 
     def __init__(
@@ -226,6 +236,7 @@ class RealCameraHandler(QObject):
         self._worker.moveToThread(self._thread)
         self._worker.frame_ready.connect(self.frame_ready.emit)
         self._worker.buffer_status.connect(self.buffer_status.emit)
+        self._worker.buffer_time_span_sec.connect(self.buffer_time_span_sec.emit)
         self._worker.stopped.connect(self._on_worker_stopped)
         self._thread.started.connect(self._worker.run)
         self._thread.start()

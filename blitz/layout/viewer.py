@@ -76,6 +76,11 @@ class ImageViewer(pg.ImageView):
         self._set_image_throttle_live_sec = 0.025
         self.load_data()
 
+    def set_live_update_fps(self, fps: float) -> None:
+        """Set throttle for live updates to match target FPS (1-120)."""
+        fps_clamped = max(1.0, min(120.0, fps))
+        self._set_image_throttle_live_sec = 1.0 / fps_clamped
+
     @property
     def now(self) -> np.ndarray:
         return self.image[self.currentIndex, ...]
@@ -268,6 +273,11 @@ class ImageViewer(pg.ImageView):
 
     def set_image(self, img: ImageData, live_update: bool = False) -> None:
         self.data = img
+        # No throttle for full-dataset (multi-frame, non-live) to always show final buffer
+        if not live_update and img.n_images > 1:
+            self._last_set_image_time = time.perf_counter()
+            self.update_image(live_update=False)
+            return
         now = time.perf_counter()
         throttle = self._set_image_throttle_live_sec if live_update else self._set_image_throttle_sec
         if now - self._last_set_image_time >= throttle:
