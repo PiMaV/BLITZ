@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=BLITZ
+Comment=Image Viewer and Analysis Tool
+Exec=/usr/local/bin/start-blitz.sh
+Icon=/app/blitz/resources/icon/blitz.ico
+Path=/app/blitz
+Terminal=false
+StartupNotify=true
+Categories=Graphics;Science;
