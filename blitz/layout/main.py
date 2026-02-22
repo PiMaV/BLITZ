@@ -1690,16 +1690,22 @@ class MainWindow(QMainWindow):
 
     # --- PCA ---
     def pca_calculate(self) -> None:
-        self.pca_adapter.calculate()
+        n = self.ui.spinbox_pcacomp_target.value()
+        exact = self.ui.checkbox_pca_exact.isChecked()
+        self.pca_adapter.calculate(n_components=n, exact=exact)
 
     def pca_on_started(self) -> None:
         self.ui.button_pca_calc.setEnabled(False)
+        self.ui.checkbox_pca_exact.setEnabled(False)
+        self.ui.spinbox_pcacomp_target.setEnabled(False)
         self.ui.label_pca_status.setText("Calculating...")
         self.ui.blocking_status.setText("BUSY")
         self.ui.blocking_status.setStyleSheet(get_style("busy"))
 
     def pca_on_finished(self) -> None:
         self.ui.button_pca_calc.setEnabled(True)
+        self.ui.checkbox_pca_exact.setEnabled(True)
+        self.ui.spinbox_pcacomp_target.setEnabled(True)
         self.ui.label_pca_status.setText("Calculated")
         self.ui.blocking_status.setText("IDLE")
         self.ui.blocking_status.setStyleSheet(get_style("idle"))
@@ -1714,6 +1720,8 @@ class MainWindow(QMainWindow):
 
     def pca_on_error(self, msg: str) -> None:
         self.ui.button_pca_calc.setEnabled(True)
+        self.ui.checkbox_pca_exact.setEnabled(True)
+        self.ui.spinbox_pcacomp_target.setEnabled(True)
         self.ui.label_pca_status.setText("Error")
         self.ui.blocking_status.setText("IDLE")
         self.ui.blocking_status.setStyleSheet(get_style("idle"))

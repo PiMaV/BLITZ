@@ -746,6 +746,20 @@ class UI_MainWindow(QWidget):
         pca_heading.setStyleSheet(get_style("heading"))
         pca_layout.addWidget(pca_heading)
 
+        pca_opt_layout = QHBoxLayout()
+        self.spinbox_pcacomp_target = QSpinBox()
+        self.spinbox_pcacomp_target.setPrefix("Target Comp: ")
+        self.spinbox_pcacomp_target.setMinimum(1)
+        self.spinbox_pcacomp_target.setMaximum(500)
+        self.spinbox_pcacomp_target.setValue(20)
+        self.spinbox_pcacomp_target.setToolTip("Number of components to calculate")
+        pca_opt_layout.addWidget(self.spinbox_pcacomp_target)
+
+        self.checkbox_pca_exact = QCheckBox("Exact (Slow)")
+        self.checkbox_pca_exact.setToolTip("Use full SVD (Exact but slow/memory hungry). Uncheck for Approximate (Randomized) SVD.")
+        pca_opt_layout.addWidget(self.checkbox_pca_exact)
+        pca_layout.addLayout(pca_opt_layout)
+
         self.button_pca_calc = QPushButton("Calculate PCA")
         self.button_pca_calc.setToolTip("Compute Principal Component Analysis (SVD). May take time.")
         pca_layout.addWidget(self.button_pca_calc)
@@ -761,7 +775,7 @@ class UI_MainWindow(QWidget):
 
         pca_view_layout = QHBoxLayout()
         self.spinbox_pcacomp = QSpinBox()
-        self.spinbox_pcacomp.setPrefix("Components: ")
+        self.spinbox_pcacomp.setPrefix("View Comp: ")
         self.spinbox_pcacomp.setMinimum(1)
         self.spinbox_pcacomp.setMaximum(100)
         self.spinbox_pcacomp.setEnabled(False)

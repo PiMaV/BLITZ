@@ -6,6 +6,7 @@ from PyQt6.QtCore import QObject, QThread, pyqtSignal
 from .viewer import ImageViewer
 from ..data.image import ImageData, MetaData
 from ..tools import log, get_available_ram
+from ..data.pca_algo import randomized_svd_low_memory, svd_exact
 
 
 class PCACalculator(QThread):
@@ -14,9 +15,11 @@ class PCACalculator(QThread):
     calc_finished = pyqtSignal(object)  # Emits result tuple
     calc_error = pyqtSignal(str)
 
-    def __init__(self, data: np.ndarray) -> None:
+    def __init__(self, data: np.ndarray, n_components: int, exact: bool = False) -> None:
         super().__init__()
-        self.data_ref = data  # Reference to the numpy array (shared memory)
+        self.data_ref = data
+        self.n_components = n_components
+        self.exact = exact
 
     def run(self) -> None:
         try:
@@ -25,41 +28,69 @@ class PCACalculator(QThread):
             n_frames = shape[0]
 
             # Flatten all spatial dimensions: (T, Features)
-            # If shape is (T, H, W) -> (T, H*W)
-            # If shape is (T, H, W, C) -> (T, H*W*C)
             matrix = self.data_ref.reshape((n_frames, -1))
 
             # Memory Check
-            # We need:
-            # - Original matrix (already in RAM)
-            # - Centered matrix (same size, float64 default for mean subtraction unless cast)
-            # - U (T, K), s (K,), Vh (K, N)
-            # - Mean (N,)
-            # approximate additional RAM needed: 2.5 * matrix.nbytes
-
-            needed_bytes = matrix.nbytes * 2.5
-            needed_gb = needed_bytes / (1024**3)
             available_gb = get_available_ram()
 
-            if needed_gb > available_gb * 0.9:
-                self.calc_error.emit(
-                    f"Insufficient RAM for PCA. Need approx. {needed_gb:.2f} GB, "
-                    f"available {available_gb:.2f} GB."
+            if self.exact:
+                # Exact SVD requires creating centered matrix (float64 by default for mean subtraction)
+                # If input is uint8 (1 byte), float64 is 8 bytes.
+                # Factor: 1.0 (mean) + 8.0 (centered) + SVD overhead (~2-3x centered)
+                # If input is already float32, centered is 1.0.
+
+                bpp_in = matrix.dtype.itemsize
+                bpp_calc = 8  # float64
+
+                ratio = bpp_calc / bpp_in
+                # Centered matrix copy + SVD internals
+                needed_bytes = matrix.nbytes * (ratio + ratio * 2.5)
+                needed_gb = needed_bytes / (1024**3)
+
+                if needed_gb > available_gb * 0.9:
+                    self.calc_error.emit(
+                        f"Insufficient RAM for Exact PCA. Need ~{needed_gb:.2f} GB, "
+                        f"available {available_gb:.2f} GB. Try Approximate PCA."
+                    )
+                    return
+
+                U, s, Vh, mean = svd_exact(matrix)
+
+            else:
+                # Randomized SVD is much more memory efficient.
+                # It does NOT form the dense centered matrix.
+                # We mainly need Q (T, k) and B (k, N) in float32/64.
+                # k is usually small (e.g. 20-50).
+                # Overhead is dominated by the random matrix Omega (N, k+oversamples).
+                # If k is small, this is negligible compared to T*N.
+                # We verify we have enough for the intermediate projections.
+
+                k_target = self.n_components + 10 # oversamples
+                # Omega (N, k), Y (T, k), Q (T, k), B (k, N)
+                # All float32 or float64.
+                bpp_calc = 4 # assume float32 for randomized (as set in algo)
+
+                elements_overhead = (
+                    matrix.shape[1] * k_target + # Omega
+                    matrix.shape[0] * k_target + # Y / Q
+                    k_target * matrix.shape[1]   # B
                 )
-                return
 
-            # Compute Mean and Center
-            # Force float32 to save memory if original is float32
-            dtype = matrix.dtype
-            if dtype != np.float32 and dtype != np.float64:
-                dtype = np.float32
+                needed_bytes = elements_overhead * bpp_calc
+                needed_gb = needed_bytes / (1024**3)
 
-            mean = np.mean(matrix, axis=0, dtype=dtype)
-            centered = matrix - mean
+                if needed_gb > available_gb * 0.95:
+                     self.calc_error.emit(
+                        f"Insufficient RAM even for Approximate PCA. "
+                        f"Available {available_gb:.2f} GB."
+                    )
+                     return
 
-            # Compute SVD
-            # full_matrices=False -> U(T, K), s(K,), Vh(K, N) where K=min(T, N)
-            U, s, Vh = np.linalg.svd(centered, full_matrices=False)
+                U, s, Vh, mean = randomized_svd_low_memory(
+                    matrix,
+                    n_components=self.n_components,
+                    n_iter=2
+                )
 
             # Result: (U, s, Vh, mean, original_shape)
             self.calc_finished.emit((U, s, Vh, mean, shape))
@@ -86,7 +117,7 @@ class PCAAdapter(QObject):
 
         self._calculator: Optional[PCACalculator] = None
 
-    def calculate(self) -> None:
+    def calculate(self, n_components: int, exact: bool = False) -> None:
         """Start PCA calculation on current viewer data."""
         if self.viewer.data is None:
             self.error.emit("No data loaded.")
@@ -107,7 +138,7 @@ class PCAAdapter(QObject):
 
         self.started.emit()
 
-        self._calculator = PCACalculator(data)
+        self._calculator = PCACalculator(data, n_components, exact)
         self._calculator.calc_finished.connect(self._on_calculation_finished)
         self._calculator.calc_error.connect(self._on_calculation_error)
         self._calculator.start()
