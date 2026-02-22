@@ -1013,8 +1013,12 @@ class AsciiLoadOptionsDialog(QDialog):
         return out
 
 
+# Display/capture fixed at 10 FPS until pipeline supports configurable FPS
+_CAMERA_DISPLAY_FPS = 10
+
+
 class RealCameraDialog(QDialog):
-    """Webcam dialog with Buffer, Resolution and FPS control."""
+    """Webcam dialog with Buffer, Resolution. FPS fixed at 10 for now."""
 
     def __init__(
         self,
@@ -1028,6 +1032,10 @@ class RealCameraDialog(QDialog):
         self._on_frame = on_frame
         self._on_stop = on_stop
         self._handler: Any = None
+        self._buffer_current = 0
+        self._buffer_max = 1
+        self._buffer_actual_sec: float | None = None
+        self._last_capture_fps: float | None = None  # measured; used for buffer time
         self._setup_ui()
         self._update_estimates()
 
@@ -1050,12 +1058,13 @@ class RealCameraDialog(QDialog):
         self.cmb_res.setCurrentText("640x480")
         form.addRow("Resolution:", self.cmb_res)
 
-        # FPS
-        self.spin_fps = QSpinBox()
-        self.spin_fps.setRange(1, 120)
-        self.spin_fps.setValue(30)
-        self.spin_fps.setSuffix(" fps")
-        form.addRow("Target FPS:", self.spin_fps)
+        # FPS (capture rate; 10 fixed until measured)
+        self.lbl_fps = QLabel("10 fps (fixed)")
+        self.lbl_fps.setToolTip(
+            "Capture rate (measured). 10 fps = init until first measurement. "
+            "Used to assign buffer length to correct time span."
+        )
+        form.addRow("FPS:", self.lbl_fps)
 
         # Grayscale
         self.chk_grayscale = QCheckBox("Grayscale (1 Byte/px)")
@@ -1115,7 +1124,6 @@ class RealCameraDialog(QDialog):
 
         # Connections
         self.cmb_res.currentTextChanged.connect(self._update_estimates)
-        self.spin_fps.valueChanged.connect(self._update_estimates)
         self.chk_grayscale.toggled.connect(self._update_estimates)
         self.spin_buffer_val.valueChanged.connect(self._update_estimates)
         self.radio_frames.toggled.connect(self._on_mode_changed)
@@ -1127,18 +1135,16 @@ class RealCameraDialog(QDialog):
             return
 
         val = self.spin_buffer_val.value()
-        fps = max(1, self.spin_fps.value())
+        fps = self._last_capture_fps if self._last_capture_fps is not None else _CAMERA_DISPLAY_FPS
 
         # Block signals to prevent recursive update during conversion
         self.spin_buffer_val.blockSignals(True)
 
         if self.radio_seconds.isChecked():
-            # Switched to Seconds (was Frames)
-            # Example: 60 frames @ 30fps -> 2 seconds
+            # Switched to Seconds (was Frames): frames / fps -> seconds
             new_val = max(1, int(val / fps))
         else:
-            # Switched to Frames (was Seconds)
-            # Example: 2 seconds @ 30fps -> 60 frames
+            # Switched to Frames (was Seconds): seconds * fps -> frames
             new_val = int(val * fps)
 
         self.spin_buffer_val.setValue(new_val)
@@ -1148,7 +1154,7 @@ class RealCameraDialog(QDialog):
         self._update_estimates()
 
     def _update_estimates(self) -> None:
-        """Calculate and display estimated RAM usage."""
+        """Calculate and display estimated RAM usage and buffer time span."""
         # 1. Resolution
         res_txt = self.cmb_res.currentText()
         if "x" in res_txt:
@@ -1157,11 +1163,10 @@ class RealCameraDialog(QDialog):
         else:
             w, h = 640, 480
 
-        # 2. Frames
+        # 2. Frames; use last capture FPS when available, else 10 fixed
         val = self.spin_buffer_val.value()
-        fps = self.spin_fps.value()
+        fps = self._last_capture_fps if self._last_capture_fps is not None else _CAMERA_DISPLAY_FPS
         if self.radio_seconds.isChecked():
-            # If in seconds mode, calculate frames
             frames = int(val * fps)
             suffix = " s"
         else:
@@ -1172,10 +1177,13 @@ class RealCameraDialog(QDialog):
         if self.spin_buffer_val.suffix() != suffix:
             self.spin_buffer_val.setSuffix(suffix)
 
-        # 3. Channels
+        # 3. Time span: frames / fps = seconds
+        time_sec = frames / fps
+
+        # 4. Channels
         channels = 1 if self.chk_grayscale.isChecked() else 3
 
-        # 4. Calculation
+        # 5. RAM
         total_bytes = w * h * channels * frames
         mb = total_bytes / (1024**2)
         gb = total_bytes / (1024**3)
@@ -1187,8 +1195,11 @@ class RealCameraDialog(QDialog):
         elif gb > avail * 0.7:
             color = "orange"
 
+        time_str = f"{time_sec:.1f} s" if time_sec >= 1 else f"{time_sec * 1000:.0f} ms"
+        fps_note = f"@ {fps:.1f} fps" if self._last_capture_fps is not None else f"@ {fps} fps (fixed)"
         self.lbl_ram_est.setText(
-            f"Frames: {frames} | Est. RAM: <font color='{color}'><b>{mb:.0f} MB ({gb:.2f} GB)</b></font>"
+            f"Frames: {frames} | {time_str} {fps_note} | Est. RAM: "
+            f"<font color='{color}'><b>{mb:.0f} MB ({gb:.2f} GB)</b></font>"
         )
 
     def _on_toggle_clicked(self) -> None:
@@ -1210,9 +1221,8 @@ class RealCameraDialog(QDialog):
         else:
             w, h = 640, 480
 
-        fps = self.spin_fps.value()
-
         val = self.spin_buffer_val.value()
+        fps = self._last_capture_fps if self._last_capture_fps is not None else _CAMERA_DISPLAY_FPS
         if self.radio_seconds.isChecked():
             frames = int(val * fps)
         else:
@@ -1241,6 +1251,7 @@ class RealCameraDialog(QDialog):
             self._handler.frame_ready.connect(self._on_frame)
 
         self._handler.buffer_status.connect(self._on_buffer_status)
+        self._handler.buffer_time_span_sec.connect(self._on_buffer_time_span)
 
         self._handler.start()
         self.btn_toggle.setText("Stop")
@@ -1257,9 +1268,12 @@ class RealCameraDialog(QDialog):
             if self._on_frame:
                 self._handler.frame_ready.disconnect(self._on_frame)
             self._handler.buffer_status.disconnect(self._on_buffer_status)
+            self._handler.buffer_time_span_sec.disconnect(self._on_buffer_time_span)
         except (TypeError, RuntimeError):
             pass
         self._handler = None
+        self._buffer_actual_sec = None
+        self._update_fps_label()
         if self._on_stop:
             self._on_stop()
         self.btn_toggle.setText("Start")
@@ -1268,12 +1282,60 @@ class RealCameraDialog(QDialog):
     def _on_buffer_status(self, current: int, max_val: int) -> None:
         self.progress_buffer.setMaximum(max_val)
         self.progress_buffer.setValue(current)
+        self._buffer_current = current
+        self._buffer_max = max_val
+        self._update_streaming_display()
+
+    def _on_buffer_time_span(self, sec: float) -> None:
+        self._buffer_actual_sec = sec
+        self._update_streaming_display()
+
+    def _update_fps_label(self) -> None:
+        """Show last capture FPS (for buffer time); 10 fps only as init."""
+        if self._last_capture_fps is not None:
+            self.lbl_fps.setText(f"~{self._last_capture_fps:.1f} fps (capture)")
+        else:
+            self.lbl_fps.setText("10 fps (fixed)")
+
+    def _update_streaming_display(self) -> None:
+        """Update RAM/time estimate during streaming with measured values."""
+        if not self._handler or self._buffer_max < 1:
+            return
+        res_txt = self.cmb_res.currentText()
+        if "x" in res_txt:
+            w_s, h_s = res_txt.split("x")
+            w, h = int(w_s), int(h_s)
+        else:
+            w, h = 640, 480
+        channels = 1 if self.chk_grayscale.isChecked() else 3
+        frames = self._buffer_current
+        total_bytes = w * h * channels * frames
+        mb = total_bytes / (1024**2)
+        color = "green"
+        avail = get_available_ram()
+        if total_bytes / (1024**3) > avail * 0.9:
+            color = "red"
+        elif total_bytes / (1024**3) > avail * 0.7:
+            color = "orange"
+        if self._buffer_actual_sec is not None and self._buffer_actual_sec > 0:
+            time_str = (
+                f"{self._buffer_actual_sec:.2f} s (measured)"
+                if self._buffer_actual_sec >= 0.01
+                else f"{self._buffer_actual_sec * 1000:.0f} ms (measured)"
+            )
+            self._last_capture_fps = frames / self._buffer_actual_sec
+        else:
+            time_str = f"{frames / _CAMERA_DISPLAY_FPS:.1f} s (est.)"
+        self._update_fps_label()
+        self.lbl_ram_est.setText(
+            f"Frames: {frames} / {self._buffer_max} | {time_str} | Est. RAM: "
+            f"<font color='{color}'><b>{mb:.0f} MB</b></font>"
+        )
 
     def _set_stream_controls_enabled(self, enabled: bool) -> None:
         self.btn_toggle.setEnabled(True)
         self.cmb_device.setEnabled(enabled)
         self.cmb_res.setEnabled(enabled)
-        self.spin_fps.setEnabled(enabled)
         self.spin_buffer_val.setEnabled(enabled)
         self.radio_frames.setEnabled(enabled)
         self.radio_seconds.setEnabled(enabled)

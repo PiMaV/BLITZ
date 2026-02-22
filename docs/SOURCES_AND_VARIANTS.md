@@ -181,9 +181,9 @@ class HasDialog(Protocol):
 
 ## 9. Webcam (implementiert)
 
-- **Zweck:** Live-Stream von USB-Webcam. Rolling Buffer (8-128 Frames), Ausgabe als ImageData in den Viewer. Gleiche Ring-Logik wie Cam Mock: Index 0 = Ring-Start, letzter Index = Ring-Ende; beim Stopp wird der Ring-Zustand als finaler Snapshot uebergeben.
-- **UI:** Eigener Dialog (`RealCameraDialog`): Device (0 oder 1), Resolution (640x480–1920x1080), FPS (1–120 oder Max), Buffer, Grayscale, Send to BLITZ (Live/Timeline); Slider Exposure/Gain/Brightness/Contrast, Auto Exposure; Start/Stop-Toggle, Close.
-- **Technik:** `cv2.VideoCapture` mit CAP_DSHOW unter Windows; BGR->RGB; Worker emittiert beim Beenden einmal den aktuellen Ring als finalen Snapshot. Siehe `docs/LIVE_AND_MOCK.md`.
+- **Zweck:** Live-Stream von USB-Webcam. Rolling Buffer (1–10000 Frames), Ausgabe als ImageData in den Viewer. Gleiche Ring-Logik wie Cam Mock: Index 0 = Ring-Start, letzter Index = Ring-Ende; beim Stopp wird der Ring-Zustand als finaler Snapshot uebergeben.
+- **UI:** Eigener Dialog (`RealCameraDialog`): Device (0 oder 1), Resolution (640x480–1920x1080), Buffer (Frames oder Sekunden); Anzeige der gemessenen Capture-FPS (z. B. ~12.2 fps); Slider Exposure/Gain/Brightness/Contrast, Auto Exposure; Start/Stop-Toggle, Close. Display-Throttle fest 10 FPS.
+- **Technik:** `cv2.VideoCapture` mit CAP_DSHOW unter Windows; BGR->RGB; Worker liest so schnell wie die Kamera liefert, keine Sleeps; pro Frame Timestamp (`time.perf_counter()`); `buffer_time_span_sec` fuer gemessene Zeitspanne; Capture-FPS = frames / measured_sec (typ. ~10–12 FPS). Worker emittiert beim Beenden einmal den aktuellen Ring als finalen Snapshot. Siehe `docs/LIVE_AND_MOCK.md`.
 - **Pfade:** `blitz/data/live_camera.py` (Handler, Worker), `blitz/layout/dialogs.py` (RealCameraDialog), Button "Webcam" im File-Tab.
 
 ---

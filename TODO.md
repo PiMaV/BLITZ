@@ -50,9 +50,8 @@ Gemeinsame Schnittstelle fuer Loader, Converter, Handler. Registry fuer erweiter
 - [ ] Rosee prüfen: Isolines und normalizatione (hier sollte "autozoom" dann aktivieren)
 - [ ] Zoom per mausrad nur in einer Achse (in den extractin plots?)
 
-buffer der liveview größer anbieten (vielleicht auch direkt mit ein wenig RAM kommentaren)
-live view könnte zumindest noch fps und exposure bekommen; das wäre toll
-und gain (pseudo brightness)
+- [ ] LiveView: RAM-Hinweis im Buffer-Dialog (Buffer 1–10000, FPS/Exposure/Gain bereits vorhanden)
+- [ ] LiveView: Display-FPS konfigurierbar (aktuell fest 10 FPS)
 
 
 
