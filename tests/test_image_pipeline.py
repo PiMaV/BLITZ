@@ -74,6 +74,82 @@ class TestOpsPipeline:
         out = img.image
         np.testing.assert_array_equal(out, data)
 
+    def test_divide_sliding_mean_full(self) -> None:
+        """Divide by sliding mean (apply_full) reduces T and normalizes per-pixel."""
+        T, H, W, C = 10, 4, 4, 1
+        data = (np.arange(T * H * W * C, dtype=np.float32) + 1.0).reshape(T, H, W, C)
+        meta = _make_meta(T)
+        img = ImageData(data, meta)
+
+        pipeline = {
+            "divide": {
+                "source": "sliding_mean",
+                "window": 3,
+                "lag": 1,
+                "amount": 1.0,
+                "apply_full": True,
+            },
+        }
+        img.set_ops_pipeline(pipeline)
+        out = img.image
+        N = T - (1 + 3)
+        assert out.shape == (N, H, W, C)
+        from blitz.data.tools import sliding_mean_normalization
+        sm = sliding_mean_normalization(data.astype(np.float32), 3, 1)
+        expected = data[2 : 2 + N] / sm
+        np.testing.assert_allclose(out, expected, rtol=1e-5, atol=1e-5)
+
+    def test_subtract_sliding_mean_preview(self) -> None:
+        """Subtract sliding mean (preview) keeps T frames, processes valid range."""
+        T, H, W, C = 10, 4, 4, 1
+        data = (np.arange(T * H * W * C, dtype=np.float32) + 1.0).reshape(T, H, W, C)
+        meta = _make_meta(T)
+        img = ImageData(data, meta)
+
+        pipeline = {
+            "subtract": {
+                "source": "sliding_mean",
+                "window": 3,
+                "lag": 1,
+                "amount": 1.0,
+                "apply_full": False,
+            },
+        }
+        img.set_ops_pipeline(pipeline)
+        out = img.image
+        assert out.shape == (T, H, W, C)
+        # Frames in valid range [2, 7] should be subtracted
+        from blitz.data.tools import sliding_mean_at_frame
+        for f in range(2, 8):
+            sm = sliding_mean_at_frame(data, f, 3)
+            expected = data[f] - sm
+            np.testing.assert_allclose(out[f], expected, rtol=1e-5, atol=1e-5)
+
+    def test_subtract_sliding_mean_full(self) -> None:
+        """Subtract sliding mean (apply_full) reduces to N frames."""
+        T, H, W, C = 10, 4, 4, 1
+        data = (np.arange(T * H * W * C, dtype=np.float32) + 1.0).reshape(T, H, W, C)
+        meta = _make_meta(T)
+        img = ImageData(data, meta)
+
+        pipeline = {
+            "subtract": {
+                "source": "sliding_mean",
+                "window": 3,
+                "lag": 1,
+                "amount": 1.0,
+                "apply_full": True,
+            },
+        }
+        img.set_ops_pipeline(pipeline)
+        out = img.image
+        N = T - (1 + 3)
+        assert out.shape == (N, H, W, C)
+        from blitz.data.tools import sliding_mean_normalization
+        sm = sliding_mean_normalization(data.astype(np.float32), 3, 1)
+        expected = data[2 : 2 + N] - sm
+        np.testing.assert_allclose(out, expected, rtol=1e-5, atol=1e-5)
+
     def test_subtract_then_divide(self) -> None:
         data = np.ones((3, 2, 2, 1), dtype=np.float32) * 20.0
         meta = _make_meta(3)

@@ -131,6 +131,24 @@ def test_sliding_mean_numba_equivalence():
     np.testing.assert_allclose(res_numba, res_numpy, rtol=1e-4, atol=1e-4)
 
 @pytest.mark.skipif(not optimized.HAS_NUMBA, reason="Numba not installed")
+def test_reduce_numba_equivalence():
+    """Reduce (MEAN, MAX, MIN, STD) Numba vs NumPy produce same result."""
+    from blitz.data.ops import ReduceDict, ReduceOperation
+
+    T, H, W, C = 20, 16, 16, 1
+    data = (np.random.rand(T, H, W, C) * 100).astype(np.float32)
+    reducer = ReduceDict()
+
+    for op_name in ("MEAN", "MAX", "MIN", "STD"):
+        result = reducer.reduce(data, op_name)
+        expected = np.expand_dims(
+            getattr(np, op_name.lower() if op_name != "STD" else "std")(data, axis=0),
+            axis=0,
+        )
+        np.testing.assert_allclose(result, expected, rtol=1e-5, atol=1e-5)
+
+
+@pytest.mark.skipif(not optimized.HAS_NUMBA, reason="Numba not installed")
 def test_sliding_mean_numba_uint8():
     """Test sliding_mean_numba with uint8 input."""
     T, H, W, C = 20, 10, 10, 1

@@ -7,7 +7,11 @@ import pyqtgraph as pg
 # from .. import settings
 from ..tools import log
 from . import ops, optimized
-from .tools import ensure_4d
+from .tools import (
+    ensure_4d,
+    sliding_mean_at_frame,
+    sliding_mean_normalization,
+)
 
 
 @dataclass(kw_only=True)
@@ -72,6 +76,10 @@ class ImageData:
             if ref_img.shape[0] != 1 or ref_img.shape[1:] != image.shape[1:]:
                 return None
             return ref_img.astype(np.float32)
+        if src == "sliding_mean":
+            window = step.get("window", 1)
+            lag = step.get("lag", 0)
+            return sliding_mean_normalization(image, window, lag)
         return None
 
     def _apply_ops_pipeline(self, image: np.ndarray) -> np.ndarray:
@@ -79,6 +87,52 @@ class ImageData:
         pipeline = self._ops_pipeline
         if not pipeline:
             return image.astype(np.float32) if image.dtype != np.float32 else image
+
+        sub_step = pipeline.get("subtract")
+        div_step = pipeline.get("divide")
+        sub_sm = sub_step and sub_step.get("source") == "sliding_mean" and sub_step.get("amount", 0) > 0
+        div_sm = div_step and div_step.get("source") == "sliding_mean" and div_step.get("amount", 0) > 0
+
+        if sub_sm or div_sm:
+            image = image.astype(np.float32)
+            window = (sub_step or div_step).get("window", 1)
+            lag = (sub_step or div_step).get("lag", 0)
+            apply_full = (sub_step or div_step).get("apply_full", False)
+
+            if apply_full:
+                # Full: reduce to N frames
+                sliding_mean = self._compute_ref(div_step if div_sm else sub_step, image)
+                if sliding_mean is None or sliding_mean.shape[0] == 0:
+                    return image
+                N = sliding_mean.shape[0]
+                img_slice = image[lag + 1 : lag + 1 + N].astype(np.float32)
+                if sub_sm:
+                    img_slice = img_slice - float(sub_step.get("amount", 1.0)) * sliding_mean
+                if div_sm:
+                    amt = np.float32(div_step.get("amount", 1.0))
+                    denom = amt * sliding_mean + (np.float32(1.0) - amt)
+                    denom = np.where(denom != 0, denom, np.float32(np.nan))
+                    img_slice = img_slice / denom
+                    np.nan_to_num(img_slice, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+                return img_slice
+
+            # Preview: keep T frames, process valid range only
+            T, H, W, C = image.shape
+            result = image.copy()
+            valid_start = lag + 1
+            valid_end = T - window + 1
+            for f in range(valid_start, valid_end):
+                sm = sliding_mean_at_frame(image, f, window)
+                if sub_sm:
+                    result[f] -= float(sub_step.get("amount", 1.0)) * sm
+                if div_sm:
+                    amt = float(div_step.get("amount", 1.0))
+                    denom = amt * sm + (1.0 - amt)
+                    denom = np.where(denom != 0, denom, np.nan)
+                    result[f] = np.divide(result[f], denom, out=np.zeros_like(result[f]), where=denom != 0)
+            if div_sm:
+                np.nan_to_num(result, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+            return result
 
         # Determine if we should use Numba
         use_numba = optimized.HAS_NUMBA and getattr(self, "use_numba", True)
@@ -225,9 +279,21 @@ class ImageData:
 
     @property
     def n_images(self) -> int:
+        T = self._image.shape[0]
+        pipeline = self._ops_pipeline
+        if pipeline:
+            for step in (pipeline.get("subtract"), pipeline.get("divide")):
+                if step and step.get("source") == "sliding_mean" and step.get("amount", 0) > 0:
+                    if not step.get("apply_full", False):
+                        return T  # Preview: keep full timeline
+                    window = step.get("window", 1)
+                    lag = step.get("lag", 0)
+                    return max(0, T - (lag + window))
         if self._cropped is not None:
-            return self._image[self._cropped[0]:self._cropped[1]+1].shape[0]
-        return self._image.shape[0]
+            return self._image[
+                self._cropped[0] : self._cropped[1] + 1
+            ].shape[0]
+        return T
 
     @property
     def shape(self) -> tuple[int, int]:

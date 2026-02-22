@@ -82,6 +82,8 @@ def sliding_mean_normalization(
 ) -> np.ndarray:
     """Computes sliding mean using Numba or cumulative sum (fallback).
 
+    Used by ImageData when Divide source is "Sliding mean" (Ops tab).
+
     Optimized for CPU and Memory:
     - Uses Numba if available for parallel execution and minimal memory overhead.
     - Fallback: Uses np.cumsum for O(1) sliding window (vs O(window)), processing
@@ -139,6 +141,19 @@ def sliding_mean_normalization(
         result[:, i, ...] = (upper - lower) / window
 
     return result
+
+
+def sliding_mean_at_frame(
+    images: np.ndarray,
+    frame_idx: int,
+    window: int,
+) -> np.ndarray:
+    """Sliding mean for a single frame's window. Returns (H, W, C)."""
+    end = frame_idx + window
+    if end > images.shape[0]:
+        return np.zeros(images.shape[1:], dtype=np.float32)
+    sl = images[frame_idx:end]
+    return np.mean(sl.astype(np.float32), axis=0)
 
 
 def normalize(signal: np.ndarray, eps: float = 1e-10) -> np.ndarray:

@@ -1,12 +1,11 @@
-"""Sparklines neben Metriken fuer Bench tab."""
-from collections import deque
-
+"""Sparklines neben Metriken fuer Bench tab. Uses shared BenchData."""
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from ..theme import get_plot_bg, PLOT_CPU_COLOR, PLOT_DISK_COLOR, PLOT_RAM_COLOR
+from .bench_data import BenchData
 
 
 def _tiny_plot(parent: QWidget, color: tuple[int, int, int]) -> tuple[pg.PlotWidget, pg.PlotDataItem]:
@@ -21,16 +20,12 @@ def _tiny_plot(parent: QWidget, color: tuple[int, int, int]) -> tuple[pg.PlotWid
 
 
 class BenchSparklines(QWidget):
-    """CPU, RAM, Disk mit Sparkline neben jeder Metrik."""
+    """CPU, RAM, Disk mit Sparkline neben jeder Metrik. Mirrors shared BenchData."""
 
-    MAX_POINTS = 60
-
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, bench_data: BenchData, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._data = bench_data
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
-        self._cpu: deque[float] = deque(maxlen=self.MAX_POINTS)
-        self._ram: deque[float] = deque(maxlen=self.MAX_POINTS)  # free GB
-        self._disk: deque[float] = deque(maxlen=self.MAX_POINTS)  # read+write MB/s
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 2, 0, 2)
         layout.setSpacing(4)
@@ -74,29 +69,32 @@ class BenchSparklines(QWidget):
         h3.addWidget(self.label_disk)
         h3.addWidget(self._plot_disk)
         layout.addWidget(row3)
+        self.refresh_from_data()
 
-    def add_point(
-        self,
-        cpu_pct: float,
-        ram_used_gb: float,
-        ram_free_gb: float,
-        disk_read_mbs: float,
-        disk_write_mbs: float,
-    ) -> None:
-        self._cpu.append(cpu_pct)
-        peak = max(self._cpu) if self._cpu else cpu_pct
-        peak_str = f" (peak {peak:.1f}%)" if peak > cpu_pct and peak > 5 else ""
-        self.label_cpu.setText(f"CPU: {cpu_pct:.1f}%{peak_str}")
+    def refresh_from_data(self) -> None:
+        """Update labels and curves from shared BenchData."""
+        d = self._data
+        if not d.cpu:
+            self.label_cpu.setText("CPU: —")
+            self.label_ram.setText("RAM: —")
+            self.label_disk.setText("Disk: —")
+            self._curve_cpu.setData([], [])
+            self._curve_ram.setData([], [])
+            self._curve_disk.setData([], [])
+            return
+        cpu = d.last_cpu
+        peak = max(d.cpu) if d.cpu else cpu
+        peak_str = f" (peak {peak:.1f}%)" if peak > cpu and peak > 5 else ""
+        self.label_cpu.setText(f"CPU: {cpu:.1f}%{peak_str}")
         self.label_ram.setText(
-            f"RAM: Used {ram_used_gb:.1f} | Free {ram_free_gb:.1f} GB"
+            f"RAM: Used {d.last_ram_used:.1f} | Free {d.last_ram_free:.1f} GB"
         )
         self.label_disk.setText(
-            f"Disk: R {disk_read_mbs:.2f} W {disk_write_mbs:.2f} MB/s"
+            f"Disk: R {d.last_disk_r:.2f} W {d.last_disk_w:.2f} MB/s"
         )
-        self._ram.append(ram_free_gb)
-        self._disk.append(disk_read_mbs + disk_write_mbs)
-        n = len(self._cpu)
+        n = len(d.cpu)
         x = np.arange(n)
-        self._curve_cpu.setData(x, np.array(self._cpu))
-        self._curve_ram.setData(x, np.array(self._ram))
-        self._curve_disk.setData(x, np.array(self._disk))
+        self._curve_cpu.setData(x, np.array(d.cpu))
+        self._curve_ram.setData(x, np.array(d.ram_free))
+        disk_combined = np.array(d.disk_r) + np.array(d.disk_w)
+        self._curve_disk.setData(x, disk_combined)

@@ -1,3 +1,5 @@
+import sys
+
 import numpy as np
 import logging
 
@@ -14,7 +16,10 @@ except ImportError:
     def prange(x):
         return range(x)
 
-@jit(nopython=True, parallel=True, fastmath=True, cache=True)
+# Disable Numba disk cache in PyInstaller/frozen builds (__pycache__ may be read-only)
+_JIT_CACHE = not getattr(sys, "frozen", False)
+
+@jit(nopython=True, parallel=True, fastmath=True, cache=_JIT_CACHE)
 def apply_pipeline_fused(
     image,
     do_sub, sub_ref, sub_amt,
@@ -83,7 +88,7 @@ def apply_pipeline_fused(
     return image
 
 
-@jit(nopython=True, parallel=True, fastmath=True, cache=True)
+@jit(nopython=True, parallel=True, fastmath=True, cache=_JIT_CACHE)
 def sliding_mean_numba(images, window, lag):
     """
     Compute sliding mean over time dimension T.
@@ -138,3 +143,80 @@ def sliding_mean_numba(images, window, lag):
                     result[n, h, w, c] = current_sum / window
 
     return result
+
+
+def _reduce_axis0_numba(x: np.ndarray, op: str) -> np.ndarray | None:
+    """Numba-accelerated reduce over axis 0. Returns (1, H, W, C). Expects 4D input."""
+    if not HAS_NUMBA:
+        return None
+    if x.ndim != 4:
+        return None
+    T, H, W, C = x.shape
+    result = np.empty((1, H, W, C), dtype=np.float32)
+    x_f = x.astype(np.float32) if x.dtype != np.float32 else x
+    if op == "mean":
+        _reduce_mean_impl(result, x_f, T, H, W, C)
+    elif op == "max":
+        _reduce_max_impl(result, x_f, T, H, W, C)
+    elif op == "min":
+        _reduce_min_impl(result, x_f, T, H, W, C)
+    elif op == "std":
+        _reduce_std_impl(result, x_f, T, H, W, C)
+    else:
+        return None
+    return result
+
+
+@jit(nopython=True, parallel=True, fastmath=True, cache=_JIT_CACHE)
+def _reduce_mean_impl(result, x, T, H, W, C):
+    for h in prange(H):
+        for w in range(W):
+            for c in range(C):
+                s = 0.0
+                for t in range(T):
+                    s += x[t, h, w, c]
+                result[0, h, w, c] = s / T
+
+
+@jit(nopython=True, parallel=True, fastmath=True, cache=_JIT_CACHE)
+def _reduce_max_impl(result, x, T, H, W, C):
+    for h in prange(H):
+        for w in range(W):
+            for c in range(C):
+                m = x[0, h, w, c]
+                for t in range(1, T):
+                    v = x[t, h, w, c]
+                    if v > m:
+                        m = v
+                result[0, h, w, c] = m
+
+
+@jit(nopython=True, parallel=True, fastmath=True, cache=_JIT_CACHE)
+def _reduce_min_impl(result, x, T, H, W, C):
+    for h in prange(H):
+        for w in range(W):
+            for c in range(C):
+                m = x[0, h, w, c]
+                for t in range(1, T):
+                    v = x[t, h, w, c]
+                    if v < m:
+                        m = v
+                result[0, h, w, c] = m
+
+
+@jit(nopython=True, parallel=True, fastmath=True, cache=_JIT_CACHE)
+def _reduce_std_impl(result, x, T, H, W, C):
+    # Welford's online algorithm for single-pass mean + variance
+    for h in prange(H):
+        for w in range(W):
+            for c in range(C):
+                n = 0
+                mean = 0.0
+                m2 = 0.0
+                for t in range(T):
+                    v = x[t, h, w, c]
+                    n += 1
+                    delta = v - mean
+                    mean += delta / n
+                    m2 += delta * (v - mean)
+                result[0, h, w, c] = np.sqrt(m2 / n) if n > 1 else 0.0
