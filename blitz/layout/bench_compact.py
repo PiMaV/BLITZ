@@ -51,10 +51,7 @@ class BenchCompact(QFrame):
             return
         cpu = d.last_cpu
         peak = max(d.cpu) if d.cpu else cpu
-        if peak > cpu and peak > 5:
-            self._label_cpu.setText(f"CPU: {cpu:.0f}%\nmax. {peak:.0f}")
-        else:
-            self._label_cpu.setText(f"CPU: {cpu:.0f}%")
+        self._label_cpu.setText(f"CPU: {cpu:.0f}%\nmax. {peak:.0f} %")
         self._label_cpu.setToolTip(
             f"Current: {cpu:.0f}%. Peak in last ~30 s."
         )

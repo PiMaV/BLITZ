@@ -1017,6 +1017,58 @@ class AsciiLoadOptionsDialog(QDialog):
 _CAMERA_DISPLAY_FPS = 10
 
 
+class CropTimelineDialog(QDialog):
+    """Confirm timeline crop to the selected range. Non-destructive by default (mask)."""
+
+    def __init__(
+        self,
+        start: int,
+        end: int,
+        n_total: int,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowIcon(QIcon(":/icon/blitz.ico"))
+        self.setWindowTitle("Crop Timeline")
+        self._start = start
+        self._end = end
+        self._n_total = n_total
+        self._keep = True
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.addWidget(
+            QLabel("Crop the timeline to the range set above.")
+        )
+        form = QFormLayout()
+        self.lbl_start = QLabel(str(self._start))
+        self.lbl_end = QLabel(str(self._end))
+        n_frames = max(1, self._end - self._start + 1)
+        self.lbl_frames = QLabel(f"{n_frames} (of {self._n_total})")
+        form.addRow("Start index:", self.lbl_start)
+        form.addRow("End index:", self.lbl_end)
+        form.addRow("Frames:", self.lbl_frames)
+        layout.addLayout(form)
+        self.chk_keep = QCheckBox("Keep in RAM (reversible)")
+        self.chk_keep.setChecked(True)
+        self.chk_keep.setToolTip(
+            "If checked: non-destructive mask, data stays in RAM, Undo restores all. "
+            "If unchecked: frames outside range are discarded to save memory."
+        )
+        layout.addWidget(self.chk_keep)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def get_keep(self) -> bool:
+        """Whether to use non-destructive mode (mask, reversible)."""
+        return self.chk_keep.isChecked()
+
+
 class RealCameraDialog(QDialog):
     """Webcam dialog with Buffer, Resolution. FPS fixed at 10 for now."""
 

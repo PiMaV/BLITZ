@@ -9,6 +9,8 @@ from ..tools import log
 from . import ops, optimized
 from .tools import (
     ensure_4d,
+    sliding_aggregate_at_frame,
+    sliding_aggregate_normalization,
     sliding_mean_at_frame,
     sliding_mean_normalization,
 )
@@ -58,6 +60,7 @@ class ImageData:
         self._bench_cache_hits: int = 0  # For Bench tab
         self._bench_cache_misses: int = 0
         self.use_numba: bool = True
+        self.preview_frame: Optional[int] | None = None
 
     def _compute_ref(
         self, step: dict, image: np.ndarray
@@ -80,6 +83,11 @@ class ImageData:
             window = step.get("window", 1)
             lag = step.get("lag", 0)
             return sliding_mean_normalization(image, window, lag)
+        if src == "sliding_aggregate":
+            window = step.get("window", 1)
+            lag = step.get("lag", 0)
+            method = step.get("method", ops.ReduceOperation.MEAN)
+            return sliding_aggregate_normalization(image, window, lag, method)
         return None
 
     def _apply_ops_pipeline(self, image: np.ndarray) -> np.ndarray:
@@ -90,8 +98,8 @@ class ImageData:
 
         sub_step = pipeline.get("subtract")
         div_step = pipeline.get("divide")
-        sub_sm = sub_step and sub_step.get("source") == "sliding_mean" and sub_step.get("amount", 0) > 0
-        div_sm = div_step and div_step.get("source") == "sliding_mean" and div_step.get("amount", 0) > 0
+        sub_sm = sub_step and sub_step.get("source") in ("sliding_mean", "sliding_aggregate") and sub_step.get("amount", 0) > 0
+        div_sm = div_step and div_step.get("source") in ("sliding_mean", "sliding_aggregate") and div_step.get("amount", 0) > 0
 
         if sub_sm or div_sm:
             image = image.astype(np.float32)
@@ -116,13 +124,17 @@ class ImageData:
                     np.nan_to_num(img_slice, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
                 return img_slice
 
-            # Preview: keep T frames, process valid range only
+            # Preview: keep T frames, process only current frame to avoid hangs
             T, H, W, C = image.shape
             result = image.copy()
             valid_start = lag + 1
             valid_end = T - window + 1
-            for f in range(valid_start, valid_end):
-                sm = sliding_mean_at_frame(image, f, window)
+            pf = getattr(self, "preview_frame", None)
+            if pf is not None and valid_start <= pf < valid_end:
+                f = pf
+                step = sub_step if sub_sm else div_step
+                method = step.get("method", ops.ReduceOperation.MEAN) if step.get("source") == "sliding_aggregate" else ops.ReduceOperation.MEAN
+                sm = sliding_aggregate_at_frame(image, f, window, method)
                 if sub_sm:
                     result[f] -= float(sub_step.get("amount", 1.0)) * sm
                 if div_sm:
@@ -283,7 +295,7 @@ class ImageData:
         pipeline = self._ops_pipeline
         if pipeline:
             for step in (pipeline.get("subtract"), pipeline.get("divide")):
-                if step and step.get("source") == "sliding_mean" and step.get("amount", 0) > 0:
+                if step and step.get("source") in ("sliding_mean", "sliding_aggregate") and step.get("amount", 0) > 0:
                     if not step.get("apply_full", False):
                         return T  # Preview: keep full timeline
                     window = step.get("window", 1)
@@ -342,6 +354,7 @@ class ImageData:
         if self._cropped is None:
             return False
         self._cropped = None
+        self._save_cropped = None
         return True
 
     def unravel(self) -> None:
@@ -409,6 +422,10 @@ class ImageData:
 
     def set_mask(self, mask: tuple[slice, slice, slice] | None):
         self._mask = mask
+
+    def can_undo_crop(self) -> bool:
+        """True if crop was applied with keep=True (reversible)."""
+        return self._cropped is not None
 
     def get_crop(self) -> tuple[int, int] | None:
         return self._save_cropped

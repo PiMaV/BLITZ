@@ -56,6 +56,7 @@ Gemeinsame Schnittstelle fuer Loader, Converter, Handler. Registry fuer erweiter
 
 
 ## Low
+- [ ] Load/Save project file: Checkbox und Auto-Logik voruebergehend entfernt. Explizites Oeffnen von .blitz funktioniert. Siehe docs/SETTINGS.md.
 - [ ] LiveView (Stream-Source) – separates Thema
 - [ ] Docs aktualisieren
 - [ ] Video: Komprimierte Videodaten -> volle float32-Matrizen. Siehe docs/OPTIMIZATION.md Abschnitt "Video: Komprimierte Daten vs. volle Matrizen" fuer Strategien (mmap, Chunked, Range-Load).

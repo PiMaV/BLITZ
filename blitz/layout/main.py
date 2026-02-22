@@ -4,7 +4,7 @@ from typing import Optional
 
 from PyQt6.QtCore import QCoreApplication, Qt, QTimer, QUrl
 from PyQt6.QtGui import QDesktopServices, QKeySequence, QShortcut
-from PyQt6.QtWidgets import QApplication, QFileDialog, QMainWindow
+from PyQt6.QtWidgets import QApplication, QDialog, QFileDialog, QMainWindow
 from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 
 from .. import settings
@@ -46,15 +46,17 @@ def _set_numba_status(label, data) -> None:
         on = _numba_active(data)
         label.setText("Numba: on" if on else "Numba: off")
 from ..data.converters import get_ascii_metadata, load_ascii
-from .dialogs import (AsciiLoadOptionsDialog, ImageLoadOptionsDialog,
-                     RealCameraDialog, VideoLoadOptionsDialog)
+from .dialogs import (AsciiLoadOptionsDialog, CropTimelineDialog,
+                     ImageLoadOptionsDialog, RealCameraDialog,
+                     VideoLoadOptionsDialog)
 from .rosee import ROSEEAdapter
-from .winamp_mock import WinampMockLiveWidget
+from .simulated_live import SimulatedLiveWidget
 from .tof import TOFAdapter
 from .ui import UI_MainWindow
 
 URL_GITHUB = QUrl("https://github.com/CodeSchmiedeHGW/BLITZ")
 URL_INP = QUrl("https://www.inp-greifswald.de/")
+URL_MESS = QUrl("https://mess.engineering/")
 
 
 def restart() -> None:
@@ -74,7 +76,7 @@ class MainWindow(QMainWindow):
         self._video_session_defaults: dict = {}
         self._image_session_defaults: dict = {}
         self._ascii_session_defaults: dict = {}
-        self._winamp_mock: WinampMockLiveWidget | None = None
+        self._simulated_live: SimulatedLiveWidget | None = None
         self._real_camera_dialog: RealCameraDialog | None = None
         self._aggregate_first_open: bool = True
 
@@ -101,8 +103,8 @@ class MainWindow(QMainWindow):
         restart()
 
     def closeEvent(self, event):
-        if self._winamp_mock:
-            self._winamp_mock.stop_stream()
+        if self._simulated_live:
+            self._simulated_live.stop_stream()
         if self._real_camera_dialog:
             self._real_camera_dialog.stop_stream()
         self.save_settings()
@@ -155,12 +157,20 @@ class MainWindow(QMainWindow):
         self.ui.image_viewer.timeLine.sigPositionChanged.connect(
             self._sync_current_frame_spinbox
         )
+        self.ui.image_viewer.timeLine.sigPositionChanged.connect(
+            self._on_timeline_for_sliding_preview
+        )
         self.ui.spinbox_current_frame.valueChanged.connect(
             self._on_current_frame_spinbox_changed
         )
 
         # lut connections
         self.ui.button_autofit.clicked.connect(self.ui.image_viewer.autoLevels)
+        self.ui.checkbox_auto_fit.stateChanged.connect(
+            lambda: self.ui.image_viewer.set_auto_fit(
+                self.ui.checkbox_auto_fit.isChecked()
+            )
+        )
         self.ui.checkbox_auto_colormap.stateChanged.connect(
             self.ui.image_viewer.toggle_auto_colormap
         )
@@ -172,7 +182,7 @@ class MainWindow(QMainWindow):
         self.ui.button_disconnect.pressed.connect(
             lambda: self.end_web_connection(None)
         )
-        self.ui.button_mock_live.pressed.connect(self.show_winamp_mock)
+        self.ui.button_simulated_live.pressed.connect(self.show_simulated_live)
         self.ui.button_real_camera.pressed.connect(self.show_real_camera_dialog)
         self.ui.checkbox_flipx.clicked.connect(
             lambda: self.ui.image_viewer.manipulate("flip_x")
@@ -258,9 +268,8 @@ class MainWindow(QMainWindow):
         )
         self.ui.button_reset_range.clicked.connect(self.reset_selection_range)
         self.ui.button_crop.clicked.connect(self.crop)
-        self.ui.button_ops_open_aggregate.clicked.connect(
-            self._ops_open_aggregate_tab
-        )
+        self.ui.button_ops_crop.clicked.connect(self._open_crop_dialog)
+        self.ui.button_ops_undo_crop.clicked.connect(self._undo_crop)
         self.ui.combobox_ops_subtract_src.currentIndexChanged.connect(
             self._update_ops_file_visibility
         )
@@ -278,6 +287,7 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_ops_sliding_apply_full.stateChanged.connect(self.apply_ops)
         for cb in (self.ui.combobox_ops_subtract_src, self.ui.combobox_ops_divide_src):
             cb.currentIndexChanged.connect(self.apply_ops)
+        self.ui.combobox_ops_range_method.currentIndexChanged.connect(self.apply_ops)
         self.ui.slider_ops_subtract.valueChanged.connect(
             self._update_ops_slider_labels
         )
@@ -290,8 +300,8 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_crop_range_start.editingFinished.connect(self.apply_ops)
         self.ui.spinbox_crop_range_end.editingFinished.connect(self.apply_ops)
         self.ui.combobox_reduce.currentIndexChanged.connect(self.apply_ops)
-        self.ui.timeline_tabwidget.currentChanged.connect(
-            self._on_timeline_tab_changed
+        self.ui.roi_plot.clicked_to_set_frame.connect(
+            self._on_timeline_clicked_to_frame
         )
         self.ui.checkbox_timeline_bands.stateChanged.connect(
             self._on_timeline_options_changed
@@ -303,10 +313,8 @@ class MainWindow(QMainWindow):
             self._on_agg_update_on_drag_changed
         )
         self._on_agg_update_on_drag_changed()
-        self.ui.radio_time_series.toggled.connect(self.update_view_mode)
-        self.ui.radio_aggregated.toggled.connect(self.update_view_mode)
         self.ui.combobox_reduce.currentIndexChanged.connect(
-            self.apply_aggregation
+            self._on_reduce_changed
         )
         self.ui.spinbox_selection_window.valueChanged.connect(
             self._sync_selection_range_from_window
@@ -410,22 +418,20 @@ class MainWindow(QMainWindow):
         if not (rosee_active and self.ui.checkbox_rosee_v.isChecked()):
             self.ui.v_plot.draw_line()
 
-    def _on_timeline_tab_changed(self, index: int) -> None:
-        """Tab-Wechsel = Modus: Frame->Single, Agg->Aggregated. Tab ist die Quelle."""
-        if index == 0:
-            self.ui.radio_time_series.setChecked(True)
-        else:
-            self.ui.radio_aggregated.setChecked(True)
-            # Nur beim ersten Mal und bei leerem Reduce-Cache: Full Range setzen.
-            data = getattr(self.ui.image_viewer, "data", None)
-            cache_empty = (
-                data is not None
-                and getattr(data, "_redop", None) is None
-                and len(getattr(data, "_result_cache", {})) == 0
-            )
-            if getattr(self, "_aggregate_first_open", True) and cache_empty:
-                self.reset_selection_range()
-                self._aggregate_first_open = False
+    def _on_timeline_clicked_to_frame(self, idx: int) -> None:
+        """User clicked main timeline -> switch to frame (Reduce = None)."""
+        self.ui.combobox_reduce.blockSignals(True)
+        self.ui.combobox_reduce.setCurrentIndex(0)
+        self.ui.combobox_reduce.blockSignals(False)
+        self.update_view_mode()
+        n = self.ui.image_viewer.image.shape[0]
+        idx = max(0, min(idx, n - 1))
+        self.ui.image_viewer.setCurrentIndex(idx)
+        self.ui.image_viewer.timeLine.setPos((idx, 0))
+
+    def _on_reduce_changed(self) -> None:
+        """Reduce dropdown changed -> update view (frame vs aggregate)."""
+        self.update_view_mode()
 
     def _on_timeline_options_changed(self) -> None:
         """Frame-Tab: Upper/lower band + Mean/Median fuer Timeline-Kurve."""
@@ -459,23 +465,38 @@ class MainWindow(QMainWindow):
         self._last_agg_bounds_from_drag = (s, e)
         self._on_selection_changed()
 
+    def _is_aggregate_view(self) -> bool:
+        """True when Reduce is not None (Mean, Max, etc.)."""
+        return self.ui.combobox_reduce.currentData() is not None
+
     def _update_selection_visibility(self) -> None:
-        """Idx immer aktiv (wenn Daten). Range + Tab Agg nur bei Multi-Frame."""
+        """Idx immer aktiv (wenn Daten). Range + aggregate band nur bei Multi-Frame."""
         data = getattr(self.ui.image_viewer, "data", None)
         n = data.n_images if data else 0
-        is_agg = self.ui.radio_aggregated.isChecked()
-        needs_range = n > 1 and is_agg
+        needs_range = n > 1
+        is_agg = self._is_aggregate_view()
 
-        self.ui.timeline_tabwidget.setTabEnabled(1, n > 1)
-        if n <= 1 and self.ui.timeline_tabwidget.currentIndex() == 1:
-            self.ui.timeline_tabwidget.setCurrentIndex(0)
-            self.ui.radio_time_series.setChecked(True)
-        self.ui.spinbox_current_frame.setEnabled(n > 0)
+        if n <= 1:
+            self.ui.combobox_reduce.blockSignals(True)
+            self.ui.combobox_reduce.setCurrentIndex(0)
+            self.ui.combobox_reduce.blockSignals(False)
+        self.ui.spinbox_current_frame.setEnabled(not is_agg and n > 0)
+        if is_agg:
+            self.ui.image_viewer.timeLine.hide()
+        else:
+            self.ui.image_viewer.timeLine.show()
         self.ui.range_section_widget.setEnabled(needs_range)
+        self.ui.combobox_reduce.setEnabled(n > 1)
         if needs_range:
+            self.ui.timeline_stack.agg_sep.show()
+            self.ui.timeline_stack.agg_sep_spacer.show()
+            self.ui.timeline_stack.agg_band.show()
             self.ui.roi_plot.crop_range.show()
             self._update_full_range_button_style()
         else:
+            self.ui.timeline_stack.agg_sep.hide()
+            self.ui.timeline_stack.agg_sep_spacer.hide()
+            self.ui.timeline_stack.agg_band.hide()
             self.ui.roi_plot.crop_range.hide()
 
     def setup_sync(self) -> None:
@@ -560,13 +581,6 @@ class MainWindow(QMainWindow):
             self.ui.token_edit.text,
             self.ui.token_edit.setText,
         )
-        settings.connect_sync(
-            "data/sync",
-            self.ui.checkbox_sync_file.stateChanged,
-            self.ui.checkbox_sync_file.isChecked,
-            self.ui.checkbox_sync_file.setChecked,
-        )
-
     def sync_project_preloading(self) -> None:
         settings.connect_sync_project(
             "size_ratio",
@@ -634,6 +648,15 @@ class MainWindow(QMainWindow):
             self.ui.image_viewer.image_crop_changed,
             self.ui.image_viewer.data.get_crop,
         )
+        self.ui.image_viewer.image_crop_changed.connect(
+            self._update_ops_crop_buttons
+        )
+
+    def _update_ops_crop_buttons(self) -> None:
+        """Enable Undo Crop when crop is reversible (Keep in RAM)."""
+        data = getattr(self.ui.image_viewer, "data", None)
+        can_undo = data is not None and data.can_undo_crop()
+        self.ui.button_ops_undo_crop.setEnabled(can_undo)
 
     def _update_ops_file_visibility(self) -> None:
         """Show Load button when subtract or divide uses File."""
@@ -643,8 +666,8 @@ class MainWindow(QMainWindow):
 
     def _update_ops_norm_visibility(self) -> None:
         """Show window/lag and Apply to full when Subtract or Divide uses Sliding mean."""
-        sub = self.ui.combobox_ops_subtract_src.currentData() == "sliding_mean"
-        div = self.ui.combobox_ops_divide_src.currentData() == "sliding_mean"
+        sub = self.ui.combobox_ops_subtract_src.currentData() == "sliding_aggregate"
+        div = self.ui.combobox_ops_divide_src.currentData() == "sliding_aggregate"
         visible = sub or div
         self.ui.ops_norm_widget.setVisible(visible)
         self.ui.checkbox_ops_sliding_apply_full.setVisible(visible)
@@ -657,14 +680,12 @@ class MainWindow(QMainWindow):
             f"{self.ui.slider_ops_divide.value()}%"
         )
 
-    def _ops_open_aggregate_tab(self) -> None:
-        """Switch to Aggregate tab so user can configure range and reduce."""
-        self.ui.timeline_tabwidget.setCurrentIndex(1)
-        self.ui.radio_aggregated.setChecked(True)
-
     def _on_crop_range_for_ops(self) -> None:
         """Crop range changed -> update Ops if Aggregate is used."""
+        s = self.ui.spinbox_crop_range_start.value()
         self.apply_ops()
+        self.ui.image_viewer.setCurrentIndex(s)
+        self.ui.image_viewer.timeLine.setPos((s, 0))
 
     def reset_options(self) -> None:
         # Signale blockieren waehrend Batch-Update (verhindert 21s emit-Kaskaden nach Load)
@@ -675,9 +696,9 @@ class MainWindow(QMainWindow):
             self.ui.spinbox_selection_window,
             self.ui.spinbox_current_frame,
             self.ui.combobox_reduce,
-            self.ui.timeline_tabwidget,
             self.ui.combobox_ops_subtract_src,
             self.ui.combobox_ops_divide_src,
+            self.ui.combobox_ops_range_method,
             self.ui.slider_ops_subtract,
             self.ui.slider_ops_divide,
             self.ui.spinbox_ops_norm_window,
@@ -695,17 +716,12 @@ class MainWindow(QMainWindow):
     def _reset_options_body(self) -> None:
         self._aggregate_first_open = True
         self.ui.combobox_reduce.setCurrentIndex(0)
-        self.ui.timeline_tabwidget.setCurrentIndex(0)
-        self.ui.radio_time_series.setChecked(True)
         self.ui.checkbox_flipx.setChecked(False)
         self.ui.checkbox_flipy.setChecked(False)
         self.ui.checkbox_transpose.setChecked(False)
-        if self.ui.image_viewer.data.is_single_image():
-            self.ui.timeline_tabwidget.setTabEnabled(1, False)
-        else:
-            self.ui.timeline_tabwidget.setTabEnabled(1, True)
         self.ui.combobox_ops_subtract_src.setCurrentIndex(0)
         self.ui.combobox_ops_divide_src.setCurrentIndex(0)
+        self.ui.combobox_ops_range_method.setCurrentIndex(0)  # Mean
         self.ui.slider_ops_subtract.setValue(100)
         self.ui.slider_ops_divide.setValue(0)
         self.ui.spinbox_ops_norm_window.setValue(10)
@@ -734,6 +750,7 @@ class MainWindow(QMainWindow):
         )
         self._update_ops_file_visibility()
         self._update_ops_norm_visibility()
+        self._update_ops_crop_buttons()
         self._update_ops_slider_labels()
         self.apply_ops()
         self.ui.spinbox_selection_window.setMaximum(
@@ -775,6 +792,7 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_rosee_in_image_v.setChecked(False)
         self.ui.label_rosee_plots.setEnabled(False)
         self.ui.label_rosee_image.setEnabled(False)
+        self.update_view_mode()
 
     def update_crop_range_labels(self) -> None:
         """Region-Drag -> Snap auf Int, Spinboxen + Window aktualisieren.
@@ -995,6 +1013,61 @@ class MainWindow(QMainWindow):
                 keep=False,
             )
         self.reset_options()
+
+    def _open_crop_dialog(self) -> None:
+        """Open Crop Timeline dialog and apply crop with chosen mode (mask/destructive)."""
+        data = getattr(self.ui.image_viewer, "data", None)
+        if data is None or data.n_images <= 0:
+            return
+        s = self.ui.spinbox_crop_range_start.value()
+        e = self.ui.spinbox_crop_range_end.value()
+        n = data.n_images
+        if s > e:
+            s, e = e, s
+        s = max(0, min(s, n - 1))
+        e = max(0, min(e, n - 1))
+        if s > e:
+            return
+        dlg = CropTimelineDialog(start=s, end=e, n_total=n, parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        keep = dlg.get_keep()
+        with LoadingManager(
+            self, "Cropping...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0
+        ):
+            self.ui.image_viewer.crop(left=s, right=e, keep=keep)
+        self.reset_options()
+
+    def _undo_crop(self) -> None:
+        """Undo timeline crop (only when applied with Keep in RAM)."""
+        success = self.ui.image_viewer.undo_crop()
+        if success:
+            self._sync_range_after_undo()
+
+    def _sync_range_after_undo(self) -> None:
+        """Update range UI after undo_crop restored full dataset."""
+        data = getattr(self.ui.image_viewer, "data", None)
+        if data is None:
+            return
+        n = max(1, data.n_images)
+        n_max = max(0, n - 1)
+        self.ui.spinbox_crop_range_start.blockSignals(True)
+        self.ui.spinbox_crop_range_end.blockSignals(True)
+        self.ui.spinbox_selection_window.blockSignals(True)
+        self.ui.spinbox_crop_range_start.setMaximum(n_max)
+        self.ui.spinbox_crop_range_end.setMaximum(n_max)
+        self.ui.spinbox_crop_range_start.setValue(0)
+        self.ui.spinbox_crop_range_end.setValue(n_max)
+        self.ui.spinbox_selection_window.setMaximum(n)
+        self.ui.spinbox_selection_window.setValue(n)
+        self.ui.spinbox_crop_range_start.blockSignals(False)
+        self.ui.spinbox_crop_range_end.blockSignals(False)
+        self.ui.spinbox_selection_window.blockSignals(False)
+        self.ui.roi_plot.crop_range.setRegion((0, n_max))
+        self.ui.spinbox_current_frame.setMaximum(n_max)
+        self._update_full_range_button_style()
+        self._update_ops_crop_buttons()
+        self.apply_ops()
 
     def apply_mask(self) -> None:
         with LoadingManager(self, "Masking...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
@@ -1217,7 +1290,7 @@ class MainWindow(QMainWindow):
             op = data._redop
             bounds = getattr(data, "_agg_bounds", None)
             self.ui.label_bench_mode.setText(
-                f"View mode: Aggregate ({getattr(op, 'name', op)})"
+                f"View mode: Range ({getattr(op, 'name', op)})"
             )
             key = (op, bounds)
             cached = result_cache.get(key) if result_cache else None
@@ -1366,22 +1439,22 @@ class MainWindow(QMainWindow):
             self.ui.button_disconnect.setEnabled(False)
             self._web_connection.deleteLater()
 
-    def show_winamp_mock(self) -> None:
-        """Open Mock Live: generates Lissajous viz, streams to viewer."""
+    def show_simulated_live(self) -> None:
+        """Open Simulated Live: generates Lissajous/Lightning viz, streams to viewer."""
         from PyQt6.QtCore import Qt
-        if self._winamp_mock is None:
-            self._winamp_mock = WinampMockLiveWidget(self)
-            self._winamp_mock.setWindowFlags(
+        if self._simulated_live is None:
+            self._simulated_live = SimulatedLiveWidget(self)
+            self._simulated_live.setWindowFlags(
                 Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint
             )
-            def _mock_frame_cb(img):
+            def _simulated_frame_cb(img):
                 self.ui.image_viewer.set_image(img, live_update=True)
                 self.ui.image_viewer.setCurrentIndex(img.n_images - 1)
-            self._winamp_mock.set_frame_callback(_mock_frame_cb)
-            self._winamp_mock.setWindowIcon(self.windowIcon())
-        self._winamp_mock.show()
-        self._winamp_mock.raise_()
-        self._winamp_mock.activateWindow()
+            self._simulated_live.set_frame_callback(_simulated_frame_cb)
+            self._simulated_live.setWindowIcon(self.windowIcon())
+        self._simulated_live.show()
+        self._simulated_live.raise_()
+        self._simulated_live.activateWindow()
 
     def show_real_camera_dialog(self) -> None:
         """Open Webcam dialog: sliders, Start/Stop, streams to viewer."""
@@ -1450,7 +1523,6 @@ class MainWindow(QMainWindow):
         QApplication.processEvents()
 
         try:
-            project_file = path.parent / (path.name.split(".")[0] + ".blitz")
             if path.suffix == ".blitz":
                 self.load_project(path)
             elif (
@@ -1461,17 +1533,8 @@ class MainWindow(QMainWindow):
                 ))
             ):
                 self._load_ascii(path)
-            elif self.ui.checkbox_sync_file.isChecked() and project_file.exists():
-                self.load_project(project_file)
             else:
                 self.load_images(path)
-                if self.ui.checkbox_sync_file.isChecked():
-                    settings.create_project(
-                        path.parent / (path.name.split(".")[0] + ".blitz")
-                    )
-                    settings.set_project("path", path)
-                    self.sync_project_preloading()
-                    self.sync_project_postloading()
         finally:
             # IDLE falls LoadingManager nicht aktiv (z.B. Dialog abgebrochen)
             if lbl.text() == "SCAN":
@@ -1705,6 +1768,56 @@ class MainWindow(QMainWindow):
         self.update_statusbar()
         self.reset_options()
 
+    def _is_sliding_mean_preview(self) -> bool:
+        """True if Frame mode + pipeline has sliding mean (sub or div) with apply_full=False."""
+        if self._is_aggregate_view():
+            return False
+        data = self.ui.image_viewer.data
+        if data.is_single_image() or data.n_images <= 1:
+            return False
+        p = getattr(data, "_ops_pipeline", None) or {}
+        for step in (p.get("subtract"), p.get("divide")):
+            if (
+                step
+                and step.get("source") == "sliding_aggregate"
+                and step.get("amount", 0) > 0
+                and not step.get("apply_full", False)
+            ):
+                return True
+        return False
+
+    def _set_preview_frame_for_ops(self) -> None:
+        """Set data.preview_frame when in sliding mean preview (single-frame processing)."""
+        data = self.ui.image_viewer.data
+        if self._is_sliding_mean_preview():
+            try:
+                idx = int(round(self.ui.image_viewer.timeLine.pos()[0]))
+            except (AttributeError, TypeError):
+                idx = 0
+            idx = max(0, min(idx, data.n_images - 1))
+            data.preview_frame = idx
+        else:
+            data.preview_frame = None
+
+    def _on_timeline_for_sliding_preview(self) -> None:
+        """Debounced: refresh image when scrubbing in sliding mean preview (current frame only)."""
+        if not self._is_sliding_mean_preview():
+            return
+        t = getattr(self, "_sliding_preview_timer", None)
+        if t is None:
+            t = QTimer(self)
+            t.setSingleShot(True)
+            t.timeout.connect(self._refresh_sliding_preview)
+            self._sliding_preview_timer = t
+        t.start(50)
+
+    def _refresh_sliding_preview(self) -> None:
+        """Re-fetch image with preview_frame = current; pipeline unchanged."""
+        if not self._is_sliding_mean_preview():
+            return
+        self._set_preview_frame_for_ops()
+        self.ui.image_viewer.update_image(keep_timestep=True)
+
     def apply_ops(self) -> None:
         """Build Ops pipeline from UI and set on data."""
         if self.ui.image_viewer.data.is_single_image():
@@ -1713,26 +1826,26 @@ class MainWindow(QMainWindow):
             self.ui.spinbox_crop_range_start.value(),
             self.ui.spinbox_crop_range_end.value(),
         )
-        method = self.ui.combobox_reduce.currentData()  # ReduceOperation or None
+        range_method = self.ui.combobox_ops_range_method.currentData()  # for Range & Sliding range
         bg = self.ui.image_viewer._background_image
 
         def _step(src: str, amount: int) -> dict | None:
             if not src or src == "off" or amount <= 0:
                 return None
             if src == "aggregate":
-                if method is None:  # "None - current frame"
-                    return None
-                return {"source": "aggregate", "bounds": bounds, "method": method, "amount": amount / 100.0}
+                op = range_method
+                return {"source": "aggregate", "bounds": bounds, "method": op, "amount": amount / 100.0}
             if src == "file" and bg is not None:
                 return {"source": "file", "reference": bg, "amount": amount / 100.0}
-            if src == "sliding_mean":
+            if src == "sliding_aggregate":
                 window = max(1, self.ui.spinbox_ops_norm_window.value())
                 lag = max(0, self.ui.spinbox_ops_norm_lag.value())
                 apply_full = self.ui.checkbox_ops_sliding_apply_full.isChecked()
                 return {
-                    "source": "sliding_mean",
+                    "source": "sliding_aggregate",
                     "window": window,
                     "lag": lag,
+                    "method": range_method,
                     "amount": amount / 100.0,
                     "apply_full": apply_full,
                 }
@@ -1742,6 +1855,27 @@ class MainWindow(QMainWindow):
         sub_amt = self.ui.slider_ops_subtract.value()
         div_src = self.ui.combobox_ops_divide_src.currentData()
         div_amt = self.ui.slider_ops_divide.value()
+
+        has_range_step = (
+            (sub_src == "aggregate" and sub_amt > 0)
+            or (div_src == "aggregate" and div_amt > 0)
+        )
+        has_sliding_step = (
+            (sub_src == "sliding_aggregate" and sub_amt > 0)
+            or (div_src == "sliding_aggregate" and div_amt > 0)
+        )
+        self.ui.ops_range_method_widget.setVisible(has_range_step or has_sliding_step)
+        if has_range_step and self._is_aggregate_view():
+            # Range subtraction in Aggregate view = mean minus mean (artifact).
+            # Switch to Frame so user sees frame - mean instead.
+            self.ui.combobox_reduce.blockSignals(True)
+            self.ui.combobox_reduce.setCurrentIndex(0)
+            self.ui.combobox_reduce.blockSignals(False)
+            with LoadingManager(self, "Switching...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
+                self.ui.image_viewer.unravel()
+            self._update_selection_visibility()
+            self.update_statusbar()
+            self.update_bench()
 
         pipeline: dict = {}
         if sub := _step(sub_src, sub_amt):
@@ -1755,7 +1889,7 @@ class MainWindow(QMainWindow):
                 parts.append("Subtracting")
             if "divide" in pipeline:
                 parts.append(
-                    "Dividing" if div_src != "sliding_mean" else "Normalizing"
+                    "Dividing" if div_src != "sliding_aggregate" else "Normalizing"
                 )
             msg = " & ".join(parts) + "..."
         else:
@@ -1763,17 +1897,27 @@ class MainWindow(QMainWindow):
         if msg:
             with LoadingManager(self, msg, blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
                 self.ui.image_viewer.data.set_ops_pipeline(pipeline)
-                self.ui.image_viewer.update_image()
+                self._set_preview_frame_for_ops()
+                keep = self._is_sliding_mean_preview() or (has_range_step and not self._is_aggregate_view())
+                self.ui.image_viewer.update_image(keep_timestep=keep)
         else:
             self.ui.image_viewer.data.set_ops_pipeline(None)
+            self.ui.image_viewer.data.preview_frame = None
             self.ui.image_viewer.update_image()
 
     def update_view_mode(self) -> None:
-        """Switch between Single Frame (Time Series) and Aggregated Image."""
-        is_agg = self.ui.radio_aggregated.isChecked()
-        self.ui.timeline_tabwidget.blockSignals(True)
-        self.ui.timeline_tabwidget.setCurrentIndex(1 if is_agg else 0)
-        self.ui.timeline_tabwidget.blockSignals(False)
+        """Switch between Single Frame (Reduce=None) and Aggregated (Reduce=Mean/Max/etc)."""
+        is_agg = self._is_aggregate_view()
+        if is_agg:
+            data = getattr(self.ui.image_viewer, "data", None)
+            cache_empty = (
+                data is not None
+                and getattr(data, "_redop", None) is None
+                and len(getattr(data, "_result_cache", {})) == 0
+            )
+            if getattr(self, "_aggregate_first_open", True) and cache_empty:
+                self.reset_selection_range()
+                self._aggregate_first_open = False
         self._update_selection_visibility()
         if is_agg:
             self.apply_aggregation()
@@ -1784,15 +1928,20 @@ class MainWindow(QMainWindow):
             self.update_bench()
 
     def _on_selection_changed(self) -> None:
-        """Selection geaendert (Range-Drag oder Spinbox) -> Aggregation neu berechnen."""
-        if (self.ui.radio_aggregated.isChecked()
-                and self.ui.combobox_reduce.currentData() is not None):
+        """Selection geaendert (Range-Drag oder Spinbox) -> Frame auf Range-Start, Aggregation neu."""
+        s = self.ui.spinbox_crop_range_start.value()
+        self.ui.image_viewer.setCurrentIndex(s)
+        self.ui.image_viewer.timeLine.setPos((s, 0))
+        if self._is_aggregate_view():
             self.apply_aggregation()
 
     def apply_aggregation(self) -> None:
-        """Apply reduction over Selection [Start, End] when in Aggregated mode."""
-        if not self.ui.radio_aggregated.isChecked():
+        """Apply reduction over Selection [Start, End] when Reduce != None."""
+        if not self._is_aggregate_view():
             return
+        data = getattr(self.ui.image_viewer, "data", None)
+        if data is not None:
+            data.preview_frame = None
         op = self.ui.combobox_reduce.currentData()
         if op is None:  # "None - current frame"
             with LoadingManager(self, "Switching...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
@@ -1807,8 +1956,7 @@ class MainWindow(QMainWindow):
         with LoadingManager(self, f"Computing {op.name}...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0) as lm:
             self.ui.image_viewer.reduce(op, bounds=bounds)
         s, e = bounds
-        center = (s + e) / 2
-        self.ui.image_viewer.timeLine.setPos((center, 0))
+        self.ui.image_viewer.timeLine.setPos((s, 0))
         self.update_statusbar()
         self.update_bench()
         log(f"{op.name} in {lm.duration:.2f}s")

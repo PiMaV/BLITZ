@@ -5,7 +5,7 @@ from typing import Any, Callable, Optional
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtCore import QPoint, QPointF, pyqtSignal
-from PyQt6.QtGui import QDropEvent
+from PyQt6.QtGui import QDropEvent, QFont
 from pyqtgraph import RectROI
 from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 
@@ -48,6 +48,10 @@ class ImageViewer(pg.ImageView):
         self.ui.roiBtn.setChecked(True)
         self.roiClicked()
         self.ui.histogram.setMinimumWidth(220)
+        lut_axis_font = QFont()
+        lut_axis_font.setPointSize(10)
+        lut_axis_font.setWeight(QFont.Weight.DemiBold)
+        self.ui.histogram.axis.setStyle(tickFont=lut_axis_font)
         self.ui.roiPlot.plotItem.showGrid(  # type: ignore
             x=True, y=True, alpha=0.6,
         )
@@ -70,6 +74,7 @@ class ImageViewer(pg.ImageView):
         )
         self.setAcceptDrops(True)
         self._auto_colormap = True
+        self._auto_fit = True
         self._background_image: ImageData | None = None
         self._last_set_image_time = 0.0
         self._set_image_throttle_sec = 0.035
@@ -198,7 +203,7 @@ class ImageViewer(pg.ImageView):
             self.data.image,
             keep_timestep=True,
             autoRange=False,
-            autoLevels=False,
+            autoLevels=self._auto_fit,
         )
 
     def dragEnterEvent(self, e: QDropEvent):
@@ -226,6 +231,9 @@ class ImageViewer(pg.ImageView):
 
     def toggle_auto_colormap(self) -> None:
         self._auto_colormap = not self._auto_colormap
+
+    def set_auto_fit(self, enabled: bool) -> None:
+        self._auto_fit = enabled
 
     def autoLevels(self) -> None:
         if self.data.is_greyscale() and self._auto_colormap:
@@ -267,7 +275,7 @@ class ImageViewer(pg.ImageView):
             message_callback=message_callback,
             **load_kwargs,
         )
-        self.setImage(self.data.image, autoLevels=True)
+        self.setImage(self.data.image, autoLevels=self._auto_fit)
         self.autoRange()
         self.image_size_changed.emit()
 
@@ -284,12 +292,17 @@ class ImageViewer(pg.ImageView):
             self._last_set_image_time = now
             self.update_image(live_update=live_update)
 
-    def update_image(self, live_update: bool = False) -> None:
+    def update_image(self, live_update: bool = False, keep_timestep: bool = False) -> None:
         if live_update:
             self.setImage(self.data.image, skip_roi_init=True)
         else:
             img = self.data.image
-            self.setImage(img, autoRange=False, autoLevels=False)
+            self.setImage(
+                img,
+                autoRange=False,
+                autoLevels=self._auto_fit,
+                keep_timestep=keep_timestep,
+            )
             self._ensure_finite_levels(img)
             self.autoRange()
         self.image_size_changed.emit()
@@ -357,7 +370,7 @@ class ImageViewer(pg.ImageView):
         self.setImage(
             self.data.image,
             keep_timestep=(left < self.currentIndex < right),
-            autoLevels=False,
+            autoLevels=self._auto_fit,
         )
         self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
         self.image_crop_changed.emit()
@@ -367,9 +380,10 @@ class ImageViewer(pg.ImageView):
         if success:
             self.setImage(
                 self.data.image,
-                autoLevels=False,
+                autoLevels=self._auto_fit,
             )
             self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
+            self.image_crop_changed.emit()
         return success
 
     def unravel(self) -> None:
@@ -391,7 +405,7 @@ class ImageViewer(pg.ImageView):
         self.setImage(
             img,
             autoRange=False,
-            autoLevels=False,
+            autoLevels=self._auto_fit,
         )
         self.setLevels(min=mn, max=mx)
         self.ui.histogram.setHistogramRange(mn, mx)
@@ -411,7 +425,7 @@ class ImageViewer(pg.ImageView):
         self.setImage(
             img,
             autoRange=False,
-            autoLevels=False,
+            autoLevels=self._auto_fit,
         )
 
     def manipulate(self, operation: str) -> None:
@@ -423,7 +437,7 @@ class ImageViewer(pg.ImageView):
             self.data.image,
             keep_timestep=True,
             autoRange=False,
-            autoLevels=False,
+            autoLevels=self._auto_fit,
         )
         if operation == 'transpose':
             self.image_size_changed.emit()
@@ -435,7 +449,7 @@ class ImageViewer(pg.ImageView):
             self.setImage(
                 self.data.image,
                 keep_timestep=True,
-                autoLevels=False,
+                autoLevels=self._auto_fit,
             )
             self.image_size_changed.emit()
             self.image_mask_changed.emit()
@@ -445,7 +459,7 @@ class ImageViewer(pg.ImageView):
         if self.data.reset_mask():
             self.setImage(
                 self.data.image,
-                autoLevels=False,
+                autoLevels=self._auto_fit,
             )
             self.image_size_changed.emit()
             self.image_mask_changed.emit()

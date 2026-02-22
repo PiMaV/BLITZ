@@ -5,7 +5,7 @@
 ## Aktueller Stand
 
 - **App-Einstellungen**: Eigenes INIFile (vermutlich `settings.ini` oder aehnlich)
-- **Projektdateien**: `.blitz` pro Dataset (bei Sync oder explizitem Speichern)
+- **Projektdateien**: `.blitz` pro Dataset. **Load/Save-Checkbox voruebergehend entfernt** (war: bei aktivierter Checkbox beim Laden automatisch .blitz laden/speichern). Explizites Oeffnen einer .blitz-Datei (File -> Open) funktioniert weiterhin. Siehe TODO.md "Load/Save project file".
 - **Weitere Dateien**: LUT-Export/Import, evtl. Caches
 
 ## Diskussionspunkte (offen)
