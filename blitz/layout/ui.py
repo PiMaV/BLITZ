@@ -14,9 +14,11 @@ from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import __version__, settings
 from .. import resources  # noqa: F401  (import registers Qt resources)
-from ..data.ops import ReduceOperation
+from ..data.ops import ReduceOperation, reduce_display_name
 from ..theme import get_style
 from ..tools import LoggingTextEdit, get_available_ram, setup_logger
+from .bench_compact import BenchCompact
+from .bench_data import BenchData
 from .bench_sparklines import BenchSparklines
 from .viewer import ImageViewer
 from .widgets import ExtractionPlot, MeasureROI, TimePlot
@@ -224,17 +226,33 @@ class UI_MainWindow(QWidget):
         self.blocking_status = QLabel("IDLE")
         self.blocking_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.blocking_status.setMinimumWidth(64)
-        self.blocking_status.setMinimumHeight(42)
+        self.blocking_status.setMinimumHeight(36)
         self.blocking_status.setFrameShape(QFrame.Shape.StyledPanel)
         self.blocking_status.setFrameShadow(QFrame.Shadow.Sunken)
         self.blocking_status.setStyleSheet(get_style("idle"))
         self.blocking_status.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        self.bench_data = BenchData()
+        self.bench_compact = BenchCompact(self.bench_data)
+        self.bench_compact.setToolTip("CPU load (last ~30 s). Enable in Bench tab.")
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(2)
+        self.numba_dot = QLabel()
+        self.numba_dot.setFixedSize(10, 10)
+        self.numba_dot.setStyleSheet(
+            "background-color: #565f89; border-radius: 5px;"  # gray
+        )
+        self.numba_dot.setToolTip("Numba: —")
+        right_layout.addWidget(self.blocking_status, 1)
+        right_layout.addWidget(self.bench_compact, 0)
+        right_layout.addWidget(self.numba_dot, 0, Qt.AlignmentFlag.AlignCenter)
         lut_splitter = QSplitter(Qt.Orientation.Horizontal)
         lut_splitter.addWidget(lut_left)
-        lut_splitter.addWidget(self.blocking_status)
+        lut_splitter.addWidget(right_panel)
         lut_splitter.setStretchFactor(0, 1)
         lut_splitter.setStretchFactor(1, 0)
-        lut_splitter.setSizes([999, 64])
+        lut_splitter.setSizes([999, 96])
         self.dock_lookup.addWidget(lut_splitter)
 
     def create_option_tab(self, layout: QLayout, name: str) -> None:
@@ -443,6 +461,7 @@ class UI_MainWindow(QWidget):
         self.combobox_ops_subtract_src.addItem("Off", "off")
         self.combobox_ops_subtract_src.addItem("Aggregate", "aggregate")
         self.combobox_ops_subtract_src.addItem("File", "file")
+        self.combobox_ops_subtract_src.addItem("Sliding mean", "sliding_mean")
         sub_src_row.addWidget(self.combobox_ops_subtract_src)
         sub_lay.addLayout(sub_src_row)
         sub_amt_row = QHBoxLayout()
@@ -464,8 +483,32 @@ class UI_MainWindow(QWidget):
         self.combobox_ops_divide_src.addItem("Off", "off")
         self.combobox_ops_divide_src.addItem("Aggregate", "aggregate")
         self.combobox_ops_divide_src.addItem("File", "file")
+        self.combobox_ops_divide_src.addItem("Sliding mean", "sliding_mean")
         div_src_row.addWidget(self.combobox_ops_divide_src)
         div_lay.addLayout(div_src_row)
+        self.ops_norm_widget = QWidget()
+        ops_norm_row = QHBoxLayout(self.ops_norm_widget)
+        ops_norm_row.addWidget(QLabel("Window:"))
+        self.spinbox_ops_norm_window = QSpinBox()
+        self.spinbox_ops_norm_window.setMinimum(1)
+        self.spinbox_ops_norm_window.setValue(10)
+        self.spinbox_ops_norm_window.setMinimumWidth(52)
+        ops_norm_row.addWidget(self.spinbox_ops_norm_window)
+        ops_norm_row.addWidget(QLabel("Lag:"))
+        self.spinbox_ops_norm_lag = QSpinBox()
+        self.spinbox_ops_norm_lag.setMinimum(0)
+        self.spinbox_ops_norm_lag.setValue(0)
+        self.spinbox_ops_norm_lag.setMinimumWidth(52)
+        ops_norm_row.addWidget(self.spinbox_ops_norm_lag)
+        ops_norm_row.addStretch()
+        self.ops_norm_widget.setVisible(False)
+        div_lay.addWidget(self.ops_norm_widget)
+        self.checkbox_ops_sliding_apply_full = QCheckBox("Apply to full")
+        self.checkbox_ops_sliding_apply_full.setToolTip(
+            "Preview: keep timeline, show effect on valid frames. Full: reduce to N frames."
+        )
+        self.checkbox_ops_sliding_apply_full.setChecked(False)
+        div_lay.addWidget(self.checkbox_ops_sliding_apply_full)
         div_amt_row = QHBoxLayout()
         div_amt_row.addWidget(QLabel("Amount:"))
         self.slider_ops_divide = QSlider(Qt.Orientation.Horizontal)
@@ -507,7 +550,7 @@ class UI_MainWindow(QWidget):
         self.combobox_reduce = QComboBox()
         self.combobox_reduce.addItem("None - current frame")
         for op in ReduceOperation:
-            self.combobox_reduce.addItem(op.name)
+            self.combobox_reduce.addItem(reduce_display_name(op), op)
 
         self.radio_time_series = QRadioButton()
         self.radio_time_series.setChecked(True)
@@ -748,7 +791,17 @@ class UI_MainWindow(QWidget):
         bench_label.setStyleSheet(get_style("heading"))
         bench_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         bench_layout.addWidget(bench_label)
-        self.bench_sparklines = BenchSparklines()
+        self.checkbox_bench_show_stats = QCheckBox(
+            "Show CPU load below (might slow the system)"
+        )
+        self.checkbox_bench_show_stats.setChecked(
+            bool(settings.get("bench/show_stats"))
+        )
+        self.checkbox_bench_show_stats.setToolTip(
+            "CPU sparkline in LUT panel below IDLE. Disabled by default."
+        )
+        bench_layout.addWidget(self.checkbox_bench_show_stats)
+        self.bench_sparklines = BenchSparklines(self.bench_data)
         bench_layout.addWidget(self.bench_sparklines, 0, Qt.AlignmentFlag.AlignTop)
         self.label_bench_raw = QLabel("Raw matrix: —")
         bench_layout.addWidget(self.label_bench_raw)
@@ -758,6 +811,8 @@ class UI_MainWindow(QWidget):
         bench_layout.addWidget(self.label_bench_mode)
         self.label_bench_cache = QLabel("Result cache: —")
         bench_layout.addWidget(self.label_bench_cache)
+        self.label_bench_numba = QLabel("Numba: —")
+        bench_layout.addWidget(self.label_bench_numba)
         self.label_bench_live = QLabel("")
         self.label_bench_live.setStyleSheet(
             f"color: #9ece6a; font-weight: bold;"

@@ -9,11 +9,42 @@ from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 
 from .. import settings
 from ..theme import get_style
+from ..data import optimized
 from ..data.image import ImageData
 from ..data.load import DataLoader, get_image_metadata, get_sample_format
 from ..data.web import WebDataLoader
+from ..data.ops import ReduceOperation
 from ..tools import (LoadingManager, format_size_mb, get_available_ram,
                      get_cpu_percent, get_disk_io_mbs, get_used_ram, log)
+
+
+def _numba_active(data) -> bool:
+    """True if pipeline (subtract/divide) or aggregation (MEAN/MAX/MIN/STD) uses Numba."""
+    use_numba = getattr(data, "use_numba", True)
+    if not use_numba or not optimized.HAS_NUMBA:
+        return False
+    pipeline = getattr(data, "_ops_pipeline", None)
+    if pipeline:
+        for step in (pipeline.get("subtract"), pipeline.get("divide")):
+            if step and step.get("amount", 0) > 0:
+                return True
+    redop = getattr(data, "_redop", None)
+    if redop is not None:
+        name = redop.name if isinstance(redop, ReduceOperation) else str(redop)
+        if name.upper() in ("MEAN", "MAX", "MIN", "STD"):
+            return True
+    return False
+
+
+def _set_numba_status(label, data) -> None:
+    """Set Numba status label for Bench tab."""
+    if not optimized.HAS_NUMBA:
+        label.setText("Numba: unavailable")
+    elif data is None:
+        label.setText("Numba: —")
+    else:
+        on = _numba_active(data)
+        label.setText("Numba: on" if on else "Numba: off")
 from ..data.converters import get_ascii_metadata, load_ascii
 from .dialogs import (AsciiLoadOptionsDialog, ImageLoadOptionsDialog,
                      RealCameraDialog, VideoLoadOptionsDialog)
@@ -233,9 +264,18 @@ class MainWindow(QMainWindow):
         self.ui.combobox_ops_subtract_src.currentIndexChanged.connect(
             self._update_ops_file_visibility
         )
+        self.ui.combobox_ops_subtract_src.currentIndexChanged.connect(
+            self._update_ops_norm_visibility
+        )
         self.ui.combobox_ops_divide_src.currentIndexChanged.connect(
             self._update_ops_file_visibility
         )
+        self.ui.combobox_ops_divide_src.currentIndexChanged.connect(
+            self._update_ops_norm_visibility
+        )
+        self.ui.spinbox_ops_norm_window.valueChanged.connect(self.apply_ops)
+        self.ui.spinbox_ops_norm_lag.valueChanged.connect(self.apply_ops)
+        self.ui.checkbox_ops_sliding_apply_full.stateChanged.connect(self.apply_ops)
         for cb in (self.ui.combobox_ops_subtract_src, self.ui.combobox_ops_divide_src):
             cb.currentIndexChanged.connect(self.apply_ops)
         self.ui.slider_ops_subtract.valueChanged.connect(
@@ -339,7 +379,11 @@ class MainWindow(QMainWindow):
         self.ui.image_viewer.image_changed.connect(self._update_selection_visibility)
         self.ui.image_viewer.image_size_changed.connect(self.update_bench)
         self._bench_timer = QTimer(self)
-        self._bench_timer.timeout.connect(self.update_bench)
+        self._bench_timer.timeout.connect(self._bench_tick)
+        self.ui.checkbox_bench_show_stats.stateChanged.connect(
+            self._on_bench_show_stats_changed
+        )
+        self._on_bench_show_stats_changed()  # Apply initial state
         self.ui.option_tabwidget.currentChanged.connect(
             self._on_option_tab_changed
         )
@@ -597,6 +641,14 @@ class MainWindow(QMainWindow):
         div = self.ui.combobox_ops_divide_src.currentData() == "file"
         self.ui.ops_file_widget.setVisible(sub or div)
 
+    def _update_ops_norm_visibility(self) -> None:
+        """Show window/lag and Apply to full when Subtract or Divide uses Sliding mean."""
+        sub = self.ui.combobox_ops_subtract_src.currentData() == "sliding_mean"
+        div = self.ui.combobox_ops_divide_src.currentData() == "sliding_mean"
+        visible = sub or div
+        self.ui.ops_norm_widget.setVisible(visible)
+        self.ui.checkbox_ops_sliding_apply_full.setVisible(visible)
+
     def _update_ops_slider_labels(self) -> None:
         self.ui.label_ops_subtract.setText(
             f"{self.ui.slider_ops_subtract.value()}%"
@@ -628,6 +680,9 @@ class MainWindow(QMainWindow):
             self.ui.combobox_ops_divide_src,
             self.ui.slider_ops_subtract,
             self.ui.slider_ops_divide,
+            self.ui.spinbox_ops_norm_window,
+            self.ui.spinbox_ops_norm_lag,
+            self.ui.checkbox_ops_sliding_apply_full,
         ]
         for w in _batch:
             w.blockSignals(True)
@@ -653,6 +708,9 @@ class MainWindow(QMainWindow):
         self.ui.combobox_ops_divide_src.setCurrentIndex(0)
         self.ui.slider_ops_subtract.setValue(100)
         self.ui.slider_ops_divide.setValue(0)
+        self.ui.spinbox_ops_norm_window.setValue(10)
+        self.ui.spinbox_ops_norm_lag.setValue(0)
+        self.ui.checkbox_ops_sliding_apply_full.setChecked(False)
         self.ui.button_ops_load_file.setText("Load reference image")
         self.ui.image_viewer._background_image = None
         self.ui.checkbox_measure_roi.setChecked(False)
@@ -675,6 +733,7 @@ class MainWindow(QMainWindow):
             (0, self.ui.image_viewer.data.n_images - 1)
         )
         self._update_ops_file_visibility()
+        self._update_ops_norm_visibility()
         self._update_ops_slider_labels()
         self.apply_ops()
         self.ui.spinbox_selection_window.setMaximum(
@@ -1036,6 +1095,39 @@ class MainWindow(QMainWindow):
         x, y, value = self.ui.image_viewer.get_position_info(pos)
         self.ui.position_label.setText(f"X: {x} | Y: {y} | Value: {value}")
 
+    def _update_numba_dot(self) -> None:
+        """Update numba dot in LUT panel: green = active, gray = off/unavailable."""
+        data = getattr(self.ui.image_viewer, "data", None)
+        if data is None:
+            self.ui.numba_dot.setStyleSheet(
+                "background-color: #565f89; border-radius: 5px;"
+            )
+            self.ui.numba_dot.setToolTip(
+                "Green: Numba accelerating pipeline/aggregation. Gray: not in use."
+            )
+        elif not optimized.HAS_NUMBA:
+            self.ui.numba_dot.setStyleSheet(
+                "background-color: #565f89; border-radius: 5px;"
+            )
+            self.ui.numba_dot.setToolTip("Numba unavailable (not installed).")
+        else:
+            on = _numba_active(data)
+            if on:
+                self.ui.numba_dot.setStyleSheet(
+                    "background-color: #9ece6a; border-radius: 5px;"
+                )
+                self.ui.numba_dot.setToolTip(
+                    "Numba active: accelerating pipeline (subtract/divide) or "
+                    "aggregation (Mean/Max/Min/Std)."
+                )
+            else:
+                self.ui.numba_dot.setStyleSheet(
+                    "background-color: #565f89; border-radius: 5px;"
+                )
+                self.ui.numba_dot.setToolTip(
+                    "Numba not in use (no pipeline or aggregation, or using Median)."
+                )
+
     def update_statusbar(self) -> None:
         frame, max_frame, name = self.ui.image_viewer.get_frame_info()
         self.ui.frame_label.setText(f"Frame: {frame} / {max_frame}")
@@ -1045,45 +1137,64 @@ class MainWindow(QMainWindow):
         )
         x, y, value = self.ui.image_viewer.get_position_info()
         self.ui.position_label.setText(f"X: {x} | Y: {y} | Value: {value}")
+        self._update_numba_dot()
+
+    def _on_bench_show_stats_changed(self) -> None:
+        """Show/hide CPU load in LUT panel. Timer runs for Bench tab or compact."""
+        on = self.ui.checkbox_bench_show_stats.isChecked()
+        settings.set("bench/show_stats", on)
+        self.ui.bench_compact.setVisible(on)
+        self._update_bench_timer()
+
+    def _update_bench_timer(self) -> None:
+        """Start timer when Bench tab visible or compact enabled; else stop."""
+        bench_idx = getattr(self.ui, "bench_tab_index", self.ui.option_tabwidget.count() - 1)
+        bench_tab_visible = self.ui.option_tabwidget.currentIndex() == bench_idx
+        compact_enabled = self.ui.checkbox_bench_show_stats.isChecked()
+        if bench_tab_visible or compact_enabled:
+            self._bench_timer.start(500)
+        else:
+            self._bench_timer.stop()
+            self.ui.label_bench_live.setText("")
 
     def _on_option_tab_changed(self, index: int) -> None:
-        """Start/stop Bench live timer when Bench tab is visible."""
+        """Toggle LIVE indicator and timer when Bench tab visible."""
         bench_idx = getattr(
             self.ui, "bench_tab_index",
             self.ui.option_tabwidget.count() - 1,
         )
         if index == bench_idx:
             self._bench_live_tick = 0
-            self._bench_timer.start(200)  # 0.2 s
             self.update_bench()
         else:
-            self._bench_timer.stop()
             self.ui.label_bench_live.setText("")
+        self._update_bench_timer()
 
-    def update_bench(self) -> None:
-        """Update Bench tab labels (CPU, RAM, Disk + sparklines, matrix stats)."""
+    def _bench_tick(self) -> None:
+        """Sample CPU/RAM/Disk, feed shared BenchData, refresh Bench tab + compact (if shown)."""
         ram_free = get_available_ram()
         ram_used = get_used_ram()
         cpu = get_cpu_percent()
         disk_r, disk_w = get_disk_io_mbs()
-        if self._bench_timer.isActive():
-            self.ui.bench_sparklines.add_point(
-                cpu, ram_used, ram_free, disk_r, disk_w
-            )
-        if self._bench_timer.isActive():
+        self.ui.bench_data.add(cpu, ram_used, ram_free, disk_r, disk_w)
+        self.ui.bench_sparklines.refresh_from_data()
+        if self.ui.checkbox_bench_show_stats.isChecked():
+            self.ui.bench_compact.refresh()
+        bench_idx = getattr(self.ui, "bench_tab_index", self.ui.option_tabwidget.count() - 1)
+        if self.ui.option_tabwidget.currentIndex() == bench_idx:
             tick = getattr(self, "_bench_live_tick", 0)
             self._bench_live_tick = tick + 1
-            self.ui.label_bench_live.setText(
-                "\u25cb LIVE" if tick % 2 else "\u25cf LIVE"
-            )
-        else:
-            self.ui.label_bench_live.setText("")
+            self.ui.label_bench_live.setText("\u25cb LIVE" if tick % 2 else "\u25cf LIVE")
+
+    def update_bench(self) -> None:
+        """Update Bench tab labels (matrix stats, cache, numba). CPU/RAM/Disk via _bench_tick."""
         data = getattr(self.ui.image_viewer, "data", None)
         if data is None:
             self.ui.label_bench_raw.setText("Raw: —")
             self.ui.label_bench_result.setText("Result: —")
             self.ui.label_bench_mode.setText("View mode: —")
             self.ui.label_bench_cache.setText("Cache: —")
+            self.ui.label_bench_numba.setText("Numba: —")
             return
         shape = data._image.shape
         dtype = data._image.dtype.name
@@ -1093,14 +1204,21 @@ class MainWindow(QMainWindow):
         )
         result_cache = getattr(data, "_result_cache", {})
         is_aggregate = getattr(data, "_redop", None) is not None
-        ops_in_cache = sorted(set(k[0] for k in result_cache.keys())) if result_cache else []
-        cache_str = f"Ready: {', '.join(ops_in_cache)}" if ops_in_cache else "—"
+        ops_in_cache = (
+            sorted(set(k[0] for k in result_cache.keys()), key=lambda o: getattr(o, "name", str(o)))
+            if result_cache
+            else []
+        )
+        names = [getattr(o, "name", str(o)) for o in ops_in_cache]
+        cache_str = f"Ready: {', '.join(names)}" if names else "—"
         self.ui.label_bench_cache.setText(f"Result cache: {cache_str}")
 
         if is_aggregate:
             op = data._redop
             bounds = getattr(data, "_agg_bounds", None)
-            self.ui.label_bench_mode.setText(f"View mode: Aggregate ({op})")
+            self.ui.label_bench_mode.setText(
+                f"View mode: Aggregate ({getattr(op, 'name', op)})"
+            )
             key = (op, bounds)
             cached = result_cache.get(key) if result_cache else None
             if cached is not None:
@@ -1112,6 +1230,13 @@ class MainWindow(QMainWindow):
         else:
             self.ui.label_bench_mode.setText("View mode: Frame")
             self.ui.label_bench_result.setText("Result: —")
+
+        # Numba status: pipeline (subtract/divide) or aggregation (MEAN/MAX/MIN/STD)
+        if optimized.HAS_NUMBA:
+            on = _numba_active(data)
+            self.ui.label_bench_numba.setText("Numba: on" if on else "Numba: off")
+        else:
+            self.ui.label_bench_numba.setText("Numba: unavailable")
 
     def _load_ascii(self, path: Path) -> None:
         """Load ASCII (.asc, .dat) via options dialog. Path from Open File/Folder or drop."""
@@ -1588,18 +1713,29 @@ class MainWindow(QMainWindow):
             self.ui.spinbox_crop_range_start.value(),
             self.ui.spinbox_crop_range_end.value(),
         )
-        method = self.ui.combobox_reduce.currentText()
+        method = self.ui.combobox_reduce.currentData()  # ReduceOperation or None
         bg = self.ui.image_viewer._background_image
 
         def _step(src: str, amount: int) -> dict | None:
             if not src or src == "off" or amount <= 0:
                 return None
             if src == "aggregate":
-                if method == "None - current frame":
+                if method is None:  # "None - current frame"
                     return None
                 return {"source": "aggregate", "bounds": bounds, "method": method, "amount": amount / 100.0}
             if src == "file" and bg is not None:
                 return {"source": "file", "reference": bg, "amount": amount / 100.0}
+            if src == "sliding_mean":
+                window = max(1, self.ui.spinbox_ops_norm_window.value())
+                lag = max(0, self.ui.spinbox_ops_norm_lag.value())
+                apply_full = self.ui.checkbox_ops_sliding_apply_full.isChecked()
+                return {
+                    "source": "sliding_mean",
+                    "window": window,
+                    "lag": lag,
+                    "amount": amount / 100.0,
+                    "apply_full": apply_full,
+                }
             return None
 
         sub_src = self.ui.combobox_ops_subtract_src.currentData()
@@ -1618,7 +1754,9 @@ class MainWindow(QMainWindow):
             if "subtract" in pipeline:
                 parts.append("Subtracting")
             if "divide" in pipeline:
-                parts.append("Dividing")
+                parts.append(
+                    "Dividing" if div_src != "sliding_mean" else "Normalizing"
+                )
             msg = " & ".join(parts) + "..."
         else:
             msg = None
@@ -1648,15 +1786,15 @@ class MainWindow(QMainWindow):
     def _on_selection_changed(self) -> None:
         """Selection geaendert (Range-Drag oder Spinbox) -> Aggregation neu berechnen."""
         if (self.ui.radio_aggregated.isChecked()
-                and self.ui.combobox_reduce.currentText() != "None - current frame"):
+                and self.ui.combobox_reduce.currentData() is not None):
             self.apply_aggregation()
 
     def apply_aggregation(self) -> None:
         """Apply reduction over Selection [Start, End] when in Aggregated mode."""
         if not self.ui.radio_aggregated.isChecked():
             return
-        text = self.ui.combobox_reduce.currentText()
-        if text == "None - current frame":
+        op = self.ui.combobox_reduce.currentData()
+        if op is None:  # "None - current frame"
             with LoadingManager(self, "Switching...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
                 self.ui.image_viewer.unravel()
             self.update_statusbar()
@@ -1666,14 +1804,14 @@ class MainWindow(QMainWindow):
             self.ui.spinbox_crop_range_start.value(),
             self.ui.spinbox_crop_range_end.value(),
         )
-        with LoadingManager(self, f"Computing {text}...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0) as lm:
-            self.ui.image_viewer.reduce(text, bounds=bounds)
+        with LoadingManager(self, f"Computing {op.name}...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0) as lm:
+            self.ui.image_viewer.reduce(op, bounds=bounds)
         s, e = bounds
         center = (s + e) / 2
         self.ui.image_viewer.timeLine.setPos((center, 0))
         self.update_statusbar()
         self.update_bench()
-        log(f"{text} in {lm.duration:.2f}s")
+        log(f"{op.name} in {lm.duration:.2f}s")
 
     def update_roi_settings(self) -> None:
         self.ui.measure_roi.show_in_mm = self.ui.checkbox_mm.isChecked()

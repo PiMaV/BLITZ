@@ -5,6 +5,8 @@ import multiprocessing
 
 import numpy as np
 
+from . import optimized
+
 
 class _ReduceOperation(ABC):
 
@@ -18,6 +20,10 @@ class _ReduceOperation(ABC):
 
     def clear(self) -> None:
         self._saved = None
+
+    def _try_numba(self, x: np.ndarray) -> np.ndarray | None:
+        """Return Numba result or None to fall back to NumPy. Override in subclasses."""
+        return None
 
     @abstractmethod
     def _reduce(self, x: np.ndarray) -> np.ndarray:
@@ -63,6 +69,13 @@ class _ReduceOperation(ABC):
         if self._saved is not None:
             return self._saved
 
+        # Try Numba for MEAN, MAX, MIN, STD (single-pass, parallel)
+        numba_result = self._try_numba(x)
+        if numba_result is not None:
+            if self._cache:
+                self._saved = numba_result
+            return numba_result
+
         result = self._run_threaded(x)
 
         if self._cache:
@@ -80,11 +93,17 @@ class _ReduceOperation(ABC):
 
 class MEAN(_ReduceOperation):
 
+    def _try_numba(self, x: np.ndarray) -> np.ndarray | None:
+        return optimized._reduce_axis0_numba(x, "mean")
+
     def _reduce(self, x: np.ndarray) -> np.ndarray:
         return np.expand_dims(x.mean(axis=0), axis=0)
 
 
 class STD(_ReduceOperation):
+
+    def _try_numba(self, x: np.ndarray) -> np.ndarray | None:
+        return optimized._reduce_axis0_numba(x, "std")
 
     def _reduce(self, x: np.ndarray) -> np.ndarray:
         return np.expand_dims(x.std(axis=0), axis=0)
@@ -92,11 +111,17 @@ class STD(_ReduceOperation):
 
 class MAX(_ReduceOperation):
 
+    def _try_numba(self, x: np.ndarray) -> np.ndarray | None:
+        return optimized._reduce_axis0_numba(x, "max")
+
     def _reduce(self, x: np.ndarray) -> np.ndarray:
         return np.expand_dims(x.max(axis=0), axis=0)
 
 
 class MIN(_ReduceOperation):
+
+    def _try_numba(self, x: np.ndarray) -> np.ndarray | None:
+        return optimized._reduce_axis0_numba(x, "min")
 
     def _reduce(self, x: np.ndarray) -> np.ndarray:
         return np.expand_dims(x.min(axis=0), axis=0)
@@ -110,10 +135,15 @@ class MEDIAN(_ReduceOperation):
 
 class ReduceOperation(Enum):
     MEAN = auto()
-    MEDIAN = auto()
     MAX = auto()
     MIN = auto()
     STD = auto()
+    MEDIAN = auto()  # Last: no Numba, slower
+
+
+def reduce_display_name(op: ReduceOperation) -> str:
+    """Display name for combobox. MEDIAN marked as slower (no Numba)."""
+    return "Median (slower)" if op == ReduceOperation.MEDIAN else op.name.capitalize()
 
 
 def get(name: ReduceOperation | str) -> _ReduceOperation:

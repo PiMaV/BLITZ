@@ -34,6 +34,8 @@ _default_core_settings = {
 
     "app/restart_exit_code": -12341234,
     "app/theme": "dark",
+
+    "bench/show_stats": False,
 }
 
 _default_project_settings = {
