@@ -1,4 +1,4 @@
-"""LiveView handler: Mock mode - Lissajous and Lightning visualizers.
+"""LiveView handler: Simulated mode - Lissajous and Lightning visualizers.
 
 Architecture: Producer (worker) grabs as fast as possible into a ring buffer.
 Observer (BLITZ) pulls snapshots via get_snapshot() on a timer. No push of full
@@ -308,7 +308,7 @@ def _frames_to_imagedata(frames: np.ndarray, grayscale: bool) -> ImageData:
     return ImageData(image=arr, metadata=[meta] * t)
 
 
-def _mock_frame(
+def _simulated_frame(
     variant: str,
     t: float,
     width: int,
@@ -352,7 +352,7 @@ class _LissajousWorker(QObject):
         grayscale: bool,
         exposure_time_ms: float,
         variant: str,
-        handler: "MockLiveHandler",
+        handler: "SimulatedLiveHandler",
         lightning_segment_length: int = 33,
         lightning_thickness: int = 7,
         lightning_noise: int = 13,
@@ -381,12 +381,12 @@ class _LissajousWorker(QObject):
     def run(self) -> None:
         interval_ms = max(1, int(1000.0 / self._fps))
         log(
-            f"[LIVE] Mock ({self._variant}): {self._w}x{self._h} @ {self._fps:.0f} FPS, "
+            f"[LIVE] Simulated ({self._variant}): {self._w}x{self._h} @ {self._fps:.0f} FPS, "
             f"exposure={self._exposure_time_ms:.1f} ms, buffer={self._buffer_size}, "
             f"gray={self._grayscale} (ring buffer, observer pulls)"
         )
         while self._running:
-            frame = _mock_frame(
+            frame = _simulated_frame(
                 self._variant,
                 self._t,
                 self._w,
@@ -420,7 +420,7 @@ def buffer_frames_from_mb(
     return max(1, min(max_frames, frames))
 
 
-class MockLiveHandler(QObject):
+class SimulatedLiveHandler(QObject):
     """Ring-buffer live source. Producer writes; observer pulls via get_snapshot().
 
     Same contract for future LiveCam: grab as fast as possible into ring buffer;

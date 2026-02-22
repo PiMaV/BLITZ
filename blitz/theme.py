@@ -22,6 +22,26 @@ def get_plot_bg() -> tuple[int, int, int]:
     return PLOT_VIEWER_BG_LIGHT if _current_theme == "light" else PLOT_VIEWER_BG
 
 
+def get_agg_band_bg() -> tuple[int, int, int]:
+    """Green-tinted background for range band (clear separation from frame timeline)."""
+    return _AGG_BAND_BG_LIGHT if _current_theme == "light" else _AGG_BAND_BG
+
+
+def get_agg_section_stylesheet() -> str:
+    """Stylesheet for Reduce/range section: subtle green border, ties to agg band."""
+    return _AGG_SECTION_STYLE_LIGHT if _current_theme == "light" else _AGG_SECTION_STYLE
+
+
+def get_agg_heading_color() -> str:
+    """Color for 'Range' heading inside agg section."""
+    return "#598249" if _current_theme == "light" else "#9ece6a"
+
+
+def get_agg_separator_stylesheet() -> str:
+    """Tokyo green separator bar (between timelines, before Range section). 4px like Trenner."""
+    return f"background-color: {COLOR_GREEN}; border: none; margin: 0;"
+
+
 def get_viewer_bg() -> tuple[int, int, int]:
     return VIEWER_BG_LIGHT if _current_theme == "light" else VIEWER_BG
 
@@ -120,6 +140,48 @@ DIALOG_PREVIEW_BG = (45, 46, 58)
 # Viewer/plot background (warmer than pure black)
 VIEWER_BG = (26, 27, 38)  # ~COLOR_BG_DARKER
 PLOT_VIEWER_BG = (26, 27, 38)
+
+# Range band: green-tinted (clear separation from frame timeline)
+_AGG_BAND_BG = (22, 36, 30)
+_AGG_BAND_BG_LIGHT = (220, 242, 230)
+
+# Range section (Reduce, range controls): green border, no transparency on inputs
+_AGG_SECTION_STYLE = (
+    "QFrame#agg_section { "
+    "background-color: rgba(30, 45, 38, 100); "
+    "border: 2px solid rgba(158, 206, 106, 140); border-radius: 4px; "
+    "margin: 4px 0 0 0; padding: 6px; } "
+    "QFrame#agg_section QComboBox { "
+    "background-color: #1a1b26; border: 1px solid #3b4261; "
+    "border-radius: 3px; min-height: 20px; padding: 2px 6px; } "
+    "QFrame#agg_section QSpinBox { "
+    "background-color: #1a1b26; border: 1px solid #3b4261; "
+    "border-radius: 2px; padding: 2px 4px; } "
+    "QFrame#agg_section QLabel { color: #a9b1d6; } "
+    "QFrame#agg_section QCheckBox { color: #a9b1d6; } "
+    "QFrame#agg_section QPushButton { "
+    "background-color: #3b4261; border: 1px solid #565f89; "
+    "border-radius: 3px; padding: 4px 10px; } "
+    "QFrame#agg_section QPushButton:hover { background-color: #414868; } "
+)
+_AGG_SECTION_STYLE_LIGHT = (
+    "QFrame#agg_section { "
+    "background-color: rgba(200, 235, 210, 120); "
+    "border: 2px solid rgba(100, 160, 110, 200); border-radius: 4px; "
+    "margin: 4px 0 0 0; padding: 6px; } "
+    "QFrame#agg_section QComboBox { "
+    "background-color: white; border: 1px solid #a0a8c0; "
+    "border-radius: 3px; min-height: 20px; padding: 2px 6px; } "
+    "QFrame#agg_section QSpinBox { "
+    "background-color: white; border: 1px solid #a0a8c0; "
+    "border-radius: 2px; padding: 2px 4px; } "
+    "QFrame#agg_section QLabel { color: #1a1b26; } "
+    "QFrame#agg_section QCheckBox { color: #1a1b26; } "
+    "QFrame#agg_section QPushButton { "
+    "background-color: #e0e2e8; border: 1px solid #a0a8c0; "
+    "border-radius: 3px; padding: 4px 10px; } "
+    "QFrame#agg_section QPushButton:hover { background-color: #c8cad3; } "
+)
 
 # Load data placeholder text (BGR for cv2.putText)
 LOAD_DATA_COLOR = (247, 162, 122)  # Tokyo blue #7aa2f7 in BGR

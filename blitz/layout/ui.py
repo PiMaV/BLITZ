@@ -14,16 +14,18 @@ from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import __version__, settings
 from .. import resources  # noqa: F401  (import registers Qt resources)
-from ..data.ops import ReduceOperation
-from ..theme import get_style
+from ..data.ops import ReduceOperation, reduce_display_name
+from ..theme import get_style, get_agg_section_stylesheet, get_agg_heading_color, get_agg_separator_stylesheet
 from ..tools import LoggingTextEdit, get_available_ram, setup_logger
+from .bench_compact import BenchCompact
+from .bench_data import BenchData
 from .bench_sparklines import BenchSparklines
 from .viewer import ImageViewer
-from .widgets import ExtractionPlot, MeasureROI, TimePlot
+from .widgets import ExtractionPlot, MeasureROI, TimelineStack
 
 TITLE = (
     "BLITZ: (B)ulk (L)oading & (I)nteractive (T)ime series (Z)onal analysis "
-    f"- INP Greifswald [{__version__}]"
+    f"- M.E.S.S. Engineering [{__version__}]"
 )
 
 
@@ -119,10 +121,11 @@ class UI_MainWindow(QWidget):
         self.v_plot.couple(self.h_plot)
         self.h_plot.couple(self.v_plot)
 
-        self.roi_plot = TimePlot(
+        self.timeline_stack = TimelineStack(
             self.dock_t_line,
             self.image_viewer,
         )
+        self.roi_plot = self.timeline_stack.main_plot
         self.roi_plot.showGrid(x=True, y=True, alpha=0.4)
         self.image_viewer.ui.roiPlot.setParent(None)
         self.image_viewer.ui.roiPlot = self.roi_plot
@@ -133,7 +136,7 @@ class UI_MainWindow(QWidget):
         timeline_decoy = pg.PlotWidget(self.image_viewer.ui.splitter)
         timeline_decoy.hide()
         self.timeline_splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.timeline_splitter.addWidget(self.roi_plot)
+        self.timeline_splitter.addWidget(self.timeline_stack)
         self.timeline_splitter.setStretchFactor(0, 1)
         timeline_container = QWidget()
         timeline_vbox = QVBoxLayout(timeline_container)
@@ -167,7 +170,7 @@ class UI_MainWindow(QWidget):
         theme_menu = QMenu("Theme", self)
         theme_menu.setToolTipsVisible(True)
         self.action_theme_dark = theme_menu.addAction("Dark (Tokyo Night)")
-        self.action_theme_light = theme_menu.addAction("Light (Tokyo Day)")
+        self.action_theme_light = theme_menu.addAction("Light (Hans Inverted Vampire)")
         theme_menu.setToolTip("Restart to apply")
         _theme = settings.get("app/theme")
         self.action_theme_dark.setCheckable(True)
@@ -180,6 +183,7 @@ class UI_MainWindow(QWidget):
         about_menu.setToolTipsVisible(True)
         self.action_link_inp = about_menu.addAction("INP Greifswald")
         self.action_link_github = about_menu.addAction("GitHub")
+        self.action_link_mess = about_menu.addAction("M.E.S.S. Engineering")
         self.menubar.addMenu(about_menu)
 
         font_status = QFont()
@@ -207,6 +211,8 @@ class UI_MainWindow(QWidget):
         lut_left_vbox.setSpacing(0)
         lut_left_vbox.addWidget(self.image_viewer.ui.histogram)
         self.button_autofit = QPushButton("Fit")
+        self.checkbox_auto_fit = QCheckBox("Auto fit")
+        self.checkbox_auto_fit.setChecked(True)
         self.checkbox_auto_colormap = QCheckBox("Auto colormap")
         self.checkbox_auto_colormap.setChecked(True)
         lut_button_container = QWidget(self)
@@ -215,7 +221,10 @@ class UI_MainWindow(QWidget):
         self.button_load_lut.setVisible(False)
         self.button_export_lut.setVisible(False)
         lut_button_layout = QVBoxLayout()
-        lut_button_layout.addWidget(self.button_autofit)
+        lut_fit_row = QHBoxLayout()
+        lut_fit_row.addWidget(self.button_autofit)
+        lut_fit_row.addWidget(self.checkbox_auto_fit)
+        lut_button_layout.addLayout(lut_fit_row)
         lut_button_layout.addWidget(self.checkbox_auto_colormap)
         lut_button_layout.addWidget(self.button_load_lut)
         lut_button_layout.addWidget(self.button_export_lut)
@@ -224,17 +233,33 @@ class UI_MainWindow(QWidget):
         self.blocking_status = QLabel("IDLE")
         self.blocking_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.blocking_status.setMinimumWidth(64)
-        self.blocking_status.setMinimumHeight(42)
+        self.blocking_status.setMinimumHeight(36)
         self.blocking_status.setFrameShape(QFrame.Shape.StyledPanel)
         self.blocking_status.setFrameShadow(QFrame.Shadow.Sunken)
         self.blocking_status.setStyleSheet(get_style("idle"))
         self.blocking_status.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        self.bench_data = BenchData()
+        self.bench_compact = BenchCompact(self.bench_data)
+        self.bench_compact.setToolTip("CPU load (last ~30 s). Enable in Bench tab.")
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(2)
+        self.numba_dot = QLabel()
+        self.numba_dot.setFixedSize(10, 10)
+        self.numba_dot.setStyleSheet(
+            "background-color: #565f89; border-radius: 5px;"  # gray
+        )
+        self.numba_dot.setToolTip("Numba: —")
+        right_layout.addWidget(self.blocking_status, 1)
+        right_layout.addWidget(self.bench_compact, 0)
+        right_layout.addWidget(self.numba_dot, 0, Qt.AlignmentFlag.AlignCenter)
         lut_splitter = QSplitter(Qt.Orientation.Horizontal)
         lut_splitter.addWidget(lut_left)
-        lut_splitter.addWidget(self.blocking_status)
+        lut_splitter.addWidget(right_panel)
         lut_splitter.setStretchFactor(0, 1)
         lut_splitter.setStretchFactor(1, 0)
-        lut_splitter.setSizes([999, 64])
+        lut_splitter.setSizes([999, 96])
         self.dock_lookup.addWidget(lut_splitter)
 
     def create_option_tab(self, layout: QLayout, name: str) -> None:
@@ -263,7 +288,9 @@ class UI_MainWindow(QWidget):
         # --- File ---
         file_layout = QVBoxLayout()
 
-        self.checkbox_video_dialog_always = QCheckBox("Show load options dialog")
+        text = "Show load options dialog \n(when dropping files into viewer)"
+        self.checkbox_video_dialog_always = QCheckBox(text)
+        self.checkbox_video_dialog_always.setStyleSheet("font-size: 9pt;")
         self.checkbox_video_dialog_always.setChecked(
             bool(settings.get("default/show_load_dialog"))
         )
@@ -301,12 +328,6 @@ class UI_MainWindow(QWidget):
         self.spinbox_max_ram.setPrefix("max. RAM: ")
         self.spinbox_max_ram.setRange(.1, .8 * get_available_ram())
         import_layout.addWidget(self.spinbox_max_ram)
-        self.checkbox_sync_file = QCheckBox("load/save project file")
-        self.checkbox_sync_file.setChecked(False)
-        self.checkbox_sync_file.setStyleSheet(
-            f"QCheckBox:checked {{ color: {get_style('color_red')}; }}"
-        )
-        import_layout.addWidget(self.checkbox_sync_file)
         file_layout.addWidget(import_group)
 
         self.crop_section_widget = QWidget()
@@ -425,24 +446,20 @@ class UI_MainWindow(QWidget):
         view_layout.addStretch()
         self.create_option_tab(view_layout, "View")
 
-        # --- Ops: Subtract/Divide, Source Aggregate|File, Amount sliders ---
+        # --- Ops: Subtract/Divide, Source Range|File, Amount sliders ---
         ops_layout = QVBoxLayout()
         ops_label = QLabel("Ops")
         ops_label.setStyleSheet(get_style("heading"))
         ops_layout.addWidget(ops_label)
-        self.button_ops_open_aggregate = QPushButton("Open Aggregate")
-        self.button_ops_open_aggregate.setToolTip(
-            "Configure range and reduce method in Aggregate tab"
-        )
-        ops_layout.addWidget(self.button_ops_open_aggregate)
-        sub_grp = QGroupBox("1. Subtract")
+        sub_grp = QGroupBox("Subtract")
         sub_lay = QVBoxLayout()
         sub_src_row = QHBoxLayout()
         sub_src_row.addWidget(QLabel("Source:"))
         self.combobox_ops_subtract_src = QComboBox()
         self.combobox_ops_subtract_src.addItem("Off", "off")
-        self.combobox_ops_subtract_src.addItem("Aggregate", "aggregate")
+        self.combobox_ops_subtract_src.addItem("Range", "aggregate")
         self.combobox_ops_subtract_src.addItem("File", "file")
+        self.combobox_ops_subtract_src.addItem("Sliding range", "sliding_aggregate")
         sub_src_row.addWidget(self.combobox_ops_subtract_src)
         sub_lay.addLayout(sub_src_row)
         sub_amt_row = QHBoxLayout()
@@ -456,14 +473,15 @@ class UI_MainWindow(QWidget):
         sub_lay.addLayout(sub_amt_row)
         sub_grp.setLayout(sub_lay)
         ops_layout.addWidget(sub_grp)
-        div_grp = QGroupBox("2. Divide")
+        div_grp = QGroupBox("Divide")
         div_lay = QVBoxLayout()
         div_src_row = QHBoxLayout()
         div_src_row.addWidget(QLabel("Source:"))
         self.combobox_ops_divide_src = QComboBox()
         self.combobox_ops_divide_src.addItem("Off", "off")
-        self.combobox_ops_divide_src.addItem("Aggregate", "aggregate")
+        self.combobox_ops_divide_src.addItem("Range", "aggregate")
         self.combobox_ops_divide_src.addItem("File", "file")
+        self.combobox_ops_divide_src.addItem("Sliding range", "sliding_aggregate")
         div_src_row.addWidget(self.combobox_ops_divide_src)
         div_lay.addLayout(div_src_row)
         div_amt_row = QHBoxLayout()
@@ -477,12 +495,66 @@ class UI_MainWindow(QWidget):
         div_lay.addLayout(div_amt_row)
         div_grp.setLayout(div_lay)
         ops_layout.addWidget(div_grp)
+        self.ops_range_method_widget = QWidget()
+        ops_range_method_row = QHBoxLayout(self.ops_range_method_widget)
+        ops_range_method_row.addWidget(QLabel("Range method:"))
+        self.combobox_ops_range_method = QComboBox()
+        for op in ReduceOperation:
+            self.combobox_ops_range_method.addItem(reduce_display_name(op), op)
+        self.combobox_ops_range_method.setMinimumWidth(90)
+        ops_range_method_row.addWidget(self.combobox_ops_range_method)
+        ops_range_method_row.addStretch()
+        self.ops_range_method_widget.setVisible(False)
+        self.ops_range_method_widget.setToolTip(
+            "Reduce method for Range and Sliding range (Mean, Max, Min, etc.)."
+        )
+        ops_layout.addWidget(self.ops_range_method_widget)
+        self.ops_norm_widget = QWidget()
+        ops_norm_row = QHBoxLayout(self.ops_norm_widget)
+        ops_norm_row.addWidget(QLabel("Window:"))
+        self.spinbox_ops_norm_window = QSpinBox()
+        self.spinbox_ops_norm_window.setMinimum(1)
+        self.spinbox_ops_norm_window.setValue(10)
+        self.spinbox_ops_norm_window.setMinimumWidth(52)
+        ops_norm_row.addWidget(self.spinbox_ops_norm_window)
+        ops_norm_row.addWidget(QLabel("Lag:"))
+        self.spinbox_ops_norm_lag = QSpinBox()
+        self.spinbox_ops_norm_lag.setMinimum(0)
+        self.spinbox_ops_norm_lag.setValue(0)
+        self.spinbox_ops_norm_lag.setMinimumWidth(52)
+        ops_norm_row.addWidget(self.spinbox_ops_norm_lag)
+        ops_norm_row.addStretch()
+        self.ops_norm_widget.setVisible(False)
+        self.ops_norm_widget.setToolTip(
+            "Window/Lag for sliding range. Method from Range method above."
+        )
+        ops_layout.addWidget(self.ops_norm_widget)
+        self.checkbox_ops_sliding_apply_full = QCheckBox("Apply to full")
+        self.checkbox_ops_sliding_apply_full.setToolTip(
+            "Preview: keep timeline, show effect on valid frames. Full: reduce to N frames."
+        )
+        self.checkbox_ops_sliding_apply_full.setChecked(False)
+        ops_layout.addWidget(self.checkbox_ops_sliding_apply_full)
         self.button_ops_load_file = QPushButton("Load reference image")
         self.ops_file_widget = QWidget()
         self.ops_file_widget.setLayout(QHBoxLayout())
         self.ops_file_widget.layout().addWidget(self.button_ops_load_file)
         ops_layout.addWidget(self.ops_file_widget)
         self.ops_file_widget.setVisible(False)
+        crop_grp = QGroupBox("Crop Timeline")
+        crop_lay = QVBoxLayout()
+        self.button_ops_crop = QPushButton("Apply Crop...")
+        self.button_ops_crop.setToolTip(
+            "Crop to the range set above. Opens dialog for confirmation."
+        )
+        self.button_ops_undo_crop = QPushButton("Undo Crop")
+        self.button_ops_undo_crop.setToolTip(
+            "Restore full timeline (only when crop was applied with Keep in RAM)."
+        )
+        crop_lay.addWidget(self.button_ops_crop)
+        crop_lay.addWidget(self.button_ops_undo_crop)
+        crop_grp.setLayout(crop_lay)
+        ops_layout.addWidget(crop_grp)
         ops_layout.addStretch()
         self.create_option_tab(ops_layout, "Ops")
 
@@ -490,7 +562,7 @@ class UI_MainWindow(QWidget):
         self.spinbox_current_frame = QSpinBox()
         self.spinbox_current_frame.setMinimum(0)
         self.spinbox_current_frame.setPrefix("Idx: ")
-        self.spinbox_current_frame.setMinimumWidth(72)
+        self.spinbox_current_frame.setMinimumWidth(120)
         self.spinbox_crop_range_start = QSpinBox()
         self.spinbox_crop_range_start.setMinimum(0)
         self.spinbox_crop_range_start.setMinimumWidth(72)
@@ -507,36 +579,19 @@ class UI_MainWindow(QWidget):
         self.combobox_reduce = QComboBox()
         self.combobox_reduce.addItem("None - current frame")
         for op in ReduceOperation:
-            self.combobox_reduce.addItem(op.name)
+            self.combobox_reduce.addItem(reduce_display_name(op), op)
 
-        self.radio_time_series = QRadioButton()
-        self.radio_time_series.setChecked(True)
-        self.radio_aggregated = QRadioButton()
-        self.view_mode_group = QButtonGroup()
-        self.view_mode_group.addButton(self.radio_time_series)
-        self.view_mode_group.addButton(self.radio_aggregated)
-
-        frame_tab = QWidget()
-        frame_layout = QVBoxLayout(frame_tab)
-        frame_layout.setContentsMargins(4, 2, 4, 2)
-        frame_layout.addWidget(self.spinbox_current_frame)
         self.checkbox_timeline_bands = QCheckBox("Upper/lower band")
         self.checkbox_timeline_bands.setChecked(False)
         self.checkbox_timeline_bands.setToolTip(
             "Show min/max envelope in the timeline plot"
         )
-        frame_layout.addWidget(self.checkbox_timeline_bands)
-        timeline_agg_row = QHBoxLayout()
-        timeline_agg_row.addWidget(QLabel("Curve:"))
         self.combobox_timeline_aggregation = QComboBox()
         self.combobox_timeline_aggregation.addItem("Mean", "mean")
         self.combobox_timeline_aggregation.addItem("Median", "median")
         self.combobox_timeline_aggregation.setToolTip(
             "Aggregation within ROI per frame for the timeline curve"
         )
-        timeline_agg_row.addWidget(self.combobox_timeline_aggregation)
-        frame_layout.addLayout(timeline_agg_row)
-        frame_layout.addStretch()
 
         self.range_section_widget = QWidget()
         range_layout = QVBoxLayout(self.range_section_widget)
@@ -557,30 +612,43 @@ class UI_MainWindow(QWidget):
         self.checkbox_agg_update_on_drag = QCheckBox("Update on drag")
         self.checkbox_agg_update_on_drag.setChecked(False)
         self.checkbox_agg_update_on_drag.setToolTip(
-            "Aggregate updates live while dragging the range (off = update on drop)"
+            "Range updates live while dragging (off = update on drop)"
         )
-        agg_tab = QWidget()
-        agg_layout = QVBoxLayout(agg_tab)
-        agg_layout.setContentsMargins(4, 2, 4, 2)
+        self.selection_panel = QWidget()
+        sel_layout = QVBoxLayout(self.selection_panel)
+        sel_layout.setContentsMargins(4, 2, 4, 2)
+        sel_layout.setSpacing(4)
+        frame_row = QHBoxLayout()
+        frame_row.addWidget(self.spinbox_current_frame)
+        frame_row.addWidget(QLabel("Curve:"))
+        frame_row.addWidget(self.combobox_timeline_aggregation)
+        frame_row.addStretch()
+        sel_layout.addLayout(frame_row)
+        sel_layout.addWidget(self.checkbox_timeline_bands)
+        sel_layout.addStretch()
+        range_sep = QFrame()
+        range_sep.setObjectName("range_sep")
+        range_sep.setFixedHeight(4)
+        range_sep.setStyleSheet(f"QFrame#range_sep {{ {get_agg_separator_stylesheet()} }}")
+        sel_layout.addWidget(range_sep)
+        agg_section = QFrame()
+        agg_section.setObjectName("agg_section")
+        agg_section.setFrameShape(QFrame.Shape.StyledPanel)
+        agg_section.setStyleSheet(get_agg_section_stylesheet())
+        agg_layout = QVBoxLayout(agg_section)
+        agg_layout.setContentsMargins(6, 4, 6, 4)
+        agg_layout.setSpacing(2)
+        range_heading = QLabel("Range")
+        range_heading.setStyleSheet(
+            f"QLabel {{ font-weight: bold; font-size: 10pt; "
+            f"color: {get_agg_heading_color()}; padding-bottom: 2px; }}"
+        )
+        agg_layout.addWidget(range_heading)
         agg_layout.addWidget(QLabel("Reduce:"))
         agg_layout.addWidget(self.combobox_reduce)
         agg_layout.addWidget(self.range_section_widget)
         agg_layout.addWidget(self.checkbox_agg_update_on_drag)
-        agg_layout.addStretch()
-
-        self.timeline_tabwidget = QTabWidget()
-        self.timeline_tabwidget.addTab(frame_tab, "Frame")
-        self.timeline_tabwidget.addTab(agg_tab, "Aggregate")
-        self.timeline_tabwidget.setStyleSheet(
-            "QTabBar::tab { min-width: 72px; padding: 6px 12px; font-size: 10pt; } "
-            "QTabBar::tab:selected { font-weight: bold; background: #3b4261; "
-            "border-radius: 3px 3px 0 0; } "
-        )
-
-        self.selection_panel = QWidget()
-        sel_layout = QVBoxLayout(self.selection_panel)
-        sel_layout.setContentsMargins(0, 0, 0, 0)
-        sel_layout.addWidget(self.timeline_tabwidget)
+        sel_layout.addWidget(agg_section)
         w = max(800, self.width())
         border_size = int(0.25 * w / 2)
         self.selection_panel.setMinimumWidth(max(120, border_size))
@@ -803,7 +871,17 @@ class UI_MainWindow(QWidget):
         bench_label.setStyleSheet(get_style("heading"))
         bench_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         bench_layout.addWidget(bench_label)
-        self.bench_sparklines = BenchSparklines()
+        self.checkbox_bench_show_stats = QCheckBox(
+            "Show CPU load below"
+        )
+        self.checkbox_bench_show_stats.setChecked(
+            bool(settings.get("bench/show_stats"))
+        )
+        self.checkbox_bench_show_stats.setToolTip(
+            "CPU sparkline in LUT panel below IDLE. Disabled by default."
+        )
+        bench_layout.addWidget(self.checkbox_bench_show_stats)
+        self.bench_sparklines = BenchSparklines(self.bench_data)
         bench_layout.addWidget(self.bench_sparklines, 0, Qt.AlignmentFlag.AlignTop)
         self.label_bench_raw = QLabel("Raw matrix: —")
         bench_layout.addWidget(self.label_bench_raw)
@@ -813,6 +891,8 @@ class UI_MainWindow(QWidget):
         bench_layout.addWidget(self.label_bench_mode)
         self.label_bench_cache = QLabel("Result cache: —")
         bench_layout.addWidget(self.label_bench_cache)
+        self.label_bench_numba = QLabel("Numba: —")
+        bench_layout.addWidget(self.label_bench_numba)
         self.label_bench_live = QLabel("")
         self.label_bench_live.setStyleSheet(
             "color: #9ece6a; font-weight: bold;"
@@ -827,9 +907,9 @@ class UI_MainWindow(QWidget):
         stream_heading = QLabel("Stream")
         stream_heading.setStyleSheet(get_style("heading"))
         stream_layout.addWidget(stream_heading)
-        self.button_mock_live = QPushButton("Cam Mock")
-        self.button_mock_live.setToolTip("Simulated camera (Lissajous, Lightning). No real device.")
-        stream_layout.addWidget(self.button_mock_live)
+        self.button_simulated_live = QPushButton("Generate Synthetic Live Data Stream")
+        self.button_simulated_live.setToolTip("Generate synthetic live data stream (Lissajous, Lightning). No real device.")
+        stream_layout.addWidget(self.button_simulated_live)
         self.button_real_camera = QPushButton("Webcam")
         self.button_real_camera.setToolTip("Real camera (USB webcam)")
         stream_layout.addWidget(self.button_real_camera)

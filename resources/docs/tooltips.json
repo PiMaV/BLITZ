@@ -5,7 +5,8 @@
     "action_export": "Export the currently displayed images to the selected folder.",
     "action_restart": "Manually restart the application.",
 
-    "button_autofit": "Automatically fits the range of the colormap to the colors in the image.",
+    "button_autofit": "Fits the colormap range to the current image. Useful when Auto fit is off or to refresh levels after manual tweaks.",
+    "checkbox_auto_fit": "When checked, fits the colormap range to the image whenever data changes (load, crop, reduce, mask, etc.). Uncheck to keep a fixed range; use Fit to re-fit manually.",
     "checkbox_auto_colormap": "If set, uses plasma for normal data and switches to bipolar (diverging) colormap when negative values appear (e.g. through normalization or fluctuation around zero).",
     "button_load_lut": "Loads a LUT from a .json file.",
     "button_export_lut": "Saves the current LUT to a .json file. If an .blitz project file is selected, this LUT gets loaded automatically the next time the application is opened.",
@@ -18,11 +19,10 @@
     "spinbox_load_subset": "Adjust the relative number of images loaded.",
     "spinbox_max_ram": "Set an upper bound for memory used by the application.",
     "checkbox_video_dialog_always": "When checked: load options dialog opens for every load. When unchecked: last used settings are applied without asking (e.g. for repeated drag-and-drop).",
-    "checkbox_sync_file": "When loading data, also loads the corresponding .blitz project file if it exists.\nAlso saves .blitz project files automatically when loading new data.\nThe file is created in the same folder as the dataset with the same name.",
 
     "button_connect": "Connect to the given server address. Keeps listening until manually disconnected.",
     "button_disconnect": "Disconnect from the server.",
-    "button_mock_live": "Generate Winamp Lissajous viz, stream to viewer. No video file.",
+    "button_simulated_live": "Generate synthetic live data stream (Lissajous, Lightning). No video file.",
 
     "checkbox_mask": "Shows a rectangular selection area. Resize and apply for masking all images.",
     "button_reset_mask": "Resets the mask and shows the original image.",
@@ -39,7 +39,7 @@
     "button_crop_undo": "Reloads the last saved dataset. If uncropped data was not saved in RAM, instead loads it from the last loaded path again.",
     "checkbox_crop_keep": "If checked, crop is reversible: full data stays in RAM, Undo restores all.",
     "checkbox_crop_show_range": "Show a blue box in the timeline to select a time interval.",
-    "spinbox_current_frame": "Current frame index. Direct input to jump to a frame.",
+    "spinbox_current_frame": "Current frame index. Direct input to jump to a frame. Only active in Frame mode (Reduce = None); disabled in Aggregate mode since the displayed image is a summary over the range, not a single frame.",
     "spinbox_crop_range_start": "Index of the first image in the cropped dataset.",
     "spinbox_crop_range_end": "Index of the last image in the cropped dataset.",
     "checkbox_window_const": "Keep window length fixed when changing Start or End. Useful for scanning a fixed window along the timeline.",
@@ -50,7 +50,7 @@
     "spinbox_envelope_pct": "Envelope mode: 0 = Min/Max (hard), 1-49 = percentile (e.g. 5 gives 5th and 95th percentile). Applies to all three envelope types.",
 
     "label_reduce": "Temporal Dimensionality Reduction: Create summary images by aggregating pixel values (e.g. mean) across a time series of images.",
-    "combobox_reduce": "Calculate a metric on the time axis, e.g. mean of all images loaded. This visualizes a single image.",
+    "combobox_reduce": "Calculate a metric on the time axis, e.g. mean of all images loaded. None = frame-by-frame (Idx applies). Mean/Max/etc = single summary image over the range; Idx and the blue timeline cursor are hidden in that mode.",
 
     "checkbox_norm_show_range": "Show a blue box in the timeline to select a time interval.",
 

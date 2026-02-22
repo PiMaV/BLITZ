@@ -228,3 +228,10 @@ See [MULTICORE_AND_PROGRESS.md](MULTICORE_AND_PROGRESS.md) for discussion of: be
 
 ## Numba Candidates
 See [NUMBA_CANDIDATES.md](NUMBA_CANDIDATES.md) for a list of functions identified for future Numba optimization.
+
+## Future Concepts: Lightweight Autograd
+
+See [AUTOGRAD_POTENTIAL.md](AUTOGRAD_POTENTIAL.md) for a discussion on integrating a lightweight, dependency-free autograd engine (inspired by `microgpt.py`) to enable features like:
+*   **Automatic Parameter Tuning:** Gradient-based optimization for filter parameters (e.g., contrast maximization).
+*   **Corrupt File Detection:** Using a small language model to detect structural anomalies in file headers.
+*   **Configuration Repair:** Automatically fixing syntax errors in text-based configuration files.

@@ -6,8 +6,14 @@ import pyqtgraph as pg
 
 # from .. import settings
 from ..tools import log
-from . import ops
-from .tools import ensure_4d
+from . import ops, optimized
+from .tools import (
+    ensure_4d,
+    sliding_aggregate_at_frame,
+    sliding_aggregate_normalization,
+    sliding_mean_at_frame,
+    sliding_mean_normalization,
+)
 
 
 @dataclass(kw_only=True)
@@ -53,6 +59,8 @@ class ImageData:
         self._result_cache: dict[tuple[object, object], np.ndarray] = {}  # (op, bounds) -> result
         self._bench_cache_hits: int = 0  # For Bench tab
         self._bench_cache_misses: int = 0
+        self.use_numba: bool = True
+        self.preview_frame: Optional[int] | None = None
 
     def _compute_ref(
         self, step: dict, image: np.ndarray
@@ -71,6 +79,15 @@ class ImageData:
             if ref_img.shape[0] != 1 or ref_img.shape[1:] != image.shape[1:]:
                 return None
             return ref_img.astype(np.float32)
+        if src == "sliding_mean":
+            window = step.get("window", 1)
+            lag = step.get("lag", 0)
+            return sliding_mean_normalization(image, window, lag)
+        if src == "sliding_aggregate":
+            window = step.get("window", 1)
+            lag = step.get("lag", 0)
+            method = step.get("method", ops.ReduceOperation.MEAN)
+            return sliding_aggregate_normalization(image, window, lag, method)
         return None
 
     def _apply_ops_pipeline(self, image: np.ndarray) -> np.ndarray:
@@ -78,6 +95,98 @@ class ImageData:
         pipeline = self._ops_pipeline
         if not pipeline:
             return image.astype(np.float32) if image.dtype != np.float32 else image
+
+        sub_step = pipeline.get("subtract")
+        div_step = pipeline.get("divide")
+        sub_sm = sub_step and sub_step.get("source") in ("sliding_mean", "sliding_aggregate") and sub_step.get("amount", 0) > 0
+        div_sm = div_step and div_step.get("source") in ("sliding_mean", "sliding_aggregate") and div_step.get("amount", 0) > 0
+
+        if sub_sm or div_sm:
+            image = image.astype(np.float32)
+            window = (sub_step or div_step).get("window", 1)
+            lag = (sub_step or div_step).get("lag", 0)
+            apply_full = (sub_step or div_step).get("apply_full", False)
+
+            if apply_full:
+                # Full: reduce to N frames
+                sliding_mean = self._compute_ref(div_step if div_sm else sub_step, image)
+                if sliding_mean is None or sliding_mean.shape[0] == 0:
+                    return image
+                N = sliding_mean.shape[0]
+                img_slice = image[lag + 1 : lag + 1 + N].astype(np.float32)
+                if sub_sm:
+                    img_slice = img_slice - float(sub_step.get("amount", 1.0)) * sliding_mean
+                if div_sm:
+                    amt = np.float32(div_step.get("amount", 1.0))
+                    denom = amt * sliding_mean + (np.float32(1.0) - amt)
+                    denom = np.where(denom != 0, denom, np.float32(np.nan))
+                    img_slice = img_slice / denom
+                    np.nan_to_num(img_slice, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+                return img_slice
+
+            # Preview: keep T frames, process only current frame to avoid hangs
+            T, H, W, C = image.shape
+            result = image.copy()
+            valid_start = lag + 1
+            valid_end = T - window + 1
+            pf = getattr(self, "preview_frame", None)
+            if pf is not None and valid_start <= pf < valid_end:
+                f = pf
+                step = sub_step if sub_sm else div_step
+                method = step.get("method", ops.ReduceOperation.MEAN) if step.get("source") == "sliding_aggregate" else ops.ReduceOperation.MEAN
+                sm = sliding_aggregate_at_frame(image, f, window, method)
+                if sub_sm:
+                    result[f] -= float(sub_step.get("amount", 1.0)) * sm
+                if div_sm:
+                    amt = float(div_step.get("amount", 1.0))
+                    denom = amt * sm + (1.0 - amt)
+                    denom = np.where(denom != 0, denom, np.nan)
+                    result[f] = np.divide(result[f], denom, out=np.zeros_like(result[f]), where=denom != 0)
+            if div_sm:
+                np.nan_to_num(result, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+            return result
+
+        # Determine if we should use Numba
+        use_numba = optimized.HAS_NUMBA and getattr(self, "use_numba", True)
+
+        if use_numba:
+            # Prepare arguments for Numba kernel
+            sub_step = pipeline.get("subtract")
+            do_sub = False
+            sub_ref = np.empty((1, 1, 1, 1), dtype=np.float32)
+            sub_amt = 0.0
+
+            if sub_step and sub_step.get("amount", 0) > 0:
+                ref = self._compute_ref(sub_step, image)
+                if ref is not None:
+                    do_sub = True
+                    sub_ref = ref
+                    sub_amt = float(sub_step.get("amount", 1.0))
+
+            div_step = pipeline.get("divide")
+            do_div = False
+            div_ref = np.empty((1, 1, 1, 1), dtype=np.float32)
+            div_amt = 0.0
+
+            if div_step and div_step.get("amount", 0) > 0:
+                ref = self._compute_ref(div_step, image)
+                if ref is not None:
+                    do_div = True
+                    div_ref = ref
+                    div_amt = float(div_step.get("amount", 1.0))
+
+            if do_sub or do_div:
+                # Ensure float32 copy to avoid modifying source or non-float types
+                if image.dtype != np.float32 or np.shares_memory(image, self._image):
+                    image = image.astype(np.float32, copy=True)
+
+                optimized.apply_pipeline_fused(
+                    image,
+                    do_sub, sub_ref, sub_amt,
+                    do_div, div_ref, div_amt
+                )
+                return image
+
         image = image.astype(np.float32)
         eps = 1e-10
         for op_name in ("subtract", "divide"):
@@ -182,9 +291,21 @@ class ImageData:
 
     @property
     def n_images(self) -> int:
+        T = self._image.shape[0]
+        pipeline = self._ops_pipeline
+        if pipeline:
+            for step in (pipeline.get("subtract"), pipeline.get("divide")):
+                if step and step.get("source") in ("sliding_mean", "sliding_aggregate") and step.get("amount", 0) > 0:
+                    if not step.get("apply_full", False):
+                        return T  # Preview: keep full timeline
+                    window = step.get("window", 1)
+                    lag = step.get("lag", 0)
+                    return max(0, T - (lag + window))
         if self._cropped is not None:
-            return self._image[self._cropped[0]:self._cropped[1]+1].shape[0]
-        return self._image.shape[0]
+            return self._image[
+                self._cropped[0] : self._cropped[1] + 1
+            ].shape[0]
+        return T
 
     @property
     def shape(self) -> tuple[int, int]:
@@ -233,6 +354,7 @@ class ImageData:
         if self._cropped is None:
             return False
         self._cropped = None
+        self._save_cropped = None
         return True
 
     def unravel(self) -> None:
@@ -300,6 +422,10 @@ class ImageData:
 
     def set_mask(self, mask: tuple[slice, slice, slice] | None):
         self._mask = mask
+
+    def can_undo_crop(self) -> bool:
+        """True if crop was applied with keep=True (reversible)."""
+        return self._cropped is not None
 
     def get_crop(self) -> tuple[int, int] | None:
         return self._save_cropped

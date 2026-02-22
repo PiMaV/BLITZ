@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 # import numba
+from . import ops, optimized
 
 
 def resize_and_convert(
@@ -79,16 +80,46 @@ def sliding_mean_normalization(
     window: int,
     lag: int,
 ) -> np.ndarray:
-    """Computes sliding mean using cumulative sum.
+    """Computes sliding mean using Numba or cumulative sum (fallback).
+
+    Used by ImageData when Divide source is "Sliding mean" (Ops tab).
 
     Optimized for CPU and Memory:
-    - Uses np.cumsum for O(1) sliding window (vs O(window)).
-    - Processes row-by-row (spatial height) to avoid allocating a full
-      float32 cumsum array, keeping peak memory usage low.
+    - Uses Numba if available for parallel execution and minimal memory overhead.
+    - Fallback: Uses np.cumsum for O(1) sliding window (vs O(window)), processing
+      row-by-row to avoid allocating a full float32 cumsum array.
     """
     n = images.shape[0] - (lag + window)
     if n <= 0:
         return np.empty((0, *images.shape[1:]), dtype=np.float32)
+
+    if optimized.HAS_NUMBA:
+        # Ensure float32 for Numba
+        if images.dtype != np.float32:
+            # We must copy/convert because Numba expects specific type?
+            # optimized.sliding_mean_numba expects float32
+            # But creating a full float32 copy of 'images' (T,H,W,C) might OOM if images is huge uint8.
+            # existing implementation: sl = images[:, i, ...].astype(np.float32)
+            # It processes row by row, so it only allocates (T,W,C) float32 per row.
+
+            # If we pass huge uint8 array to Numba function expecting float32, Numba might
+            # 1. Reject it (signature mismatch if typed)
+            # 2. Try to cast?
+
+            # My Numba function signature is implicitly typed by usage or decorators?
+            # @jit(nopython=True) handles types dynamically unless specified.
+            # But inside I do `result = np.empty(..., dtype=np.float32)`.
+            # And `current_sum = 0.0`.
+            # If `images` is uint8, `images[...]` is uint8.
+            # `current_sum += uint8` works (promotes to float).
+            # So passing uint8 to Numba should work fine and be memory efficient!
+            # It reads uint8, adds to float accumulator.
+            # This is BETTER than astype(np.float32) which allocates huge array.
+
+            # So I just pass it.
+            pass
+
+        return optimized.sliding_mean_numba(images, window, lag)
 
     # Pre-allocate result
     result = np.empty((n, *images.shape[1:]), dtype=np.float32)
@@ -109,6 +140,67 @@ def sliding_mean_normalization(
 
         result[:, i, ...] = (upper - lower) / window
 
+    return result
+
+
+def sliding_mean_at_frame(
+    images: np.ndarray,
+    frame_idx: int,
+    window: int,
+) -> np.ndarray:
+    """Sliding mean for a single frame's window. Returns (H, W, C)."""
+    end = frame_idx + window
+    if end > images.shape[0]:
+        return np.zeros(images.shape[1:], dtype=np.float32)
+    sl = images[frame_idx:end]
+    return np.mean(sl.astype(np.float32), axis=0)
+
+
+def _reduce_window(w: np.ndarray, method) -> np.ndarray:
+    """Reduce (window,H,W,C) over axis 0. Returns (H,W,C)."""
+    redop = ops.get(method)
+    out = redop.reduce(w.astype(np.float32))
+    return out[0]  # (1,H,W,C) -> (H,W,C)
+
+
+def sliding_aggregate_at_frame(
+    images: np.ndarray,
+    frame_idx: int,
+    window: int,
+    method,
+) -> np.ndarray:
+    """Sliding aggregate for a single frame's window. Returns (H, W, C)."""
+    from .ops import ReduceOperation
+    if method == ReduceOperation.MEAN:
+        return sliding_mean_at_frame(images, frame_idx, window)
+    end = frame_idx + window
+    if end > images.shape[0]:
+        return np.zeros(images.shape[1:], dtype=np.float32)
+    sl = images[frame_idx:end]
+    return _reduce_window(sl, method)
+
+
+def sliding_aggregate_normalization(
+    images: np.ndarray,
+    window: int,
+    lag: int,
+    method,
+) -> np.ndarray:
+    """Sliding aggregate over time. Uses Reduce method (MEAN, MAX, MIN, STD, MEDIAN)."""
+    n = images.shape[0] - (lag + window)
+    if n <= 0:
+        return np.empty((0, *images.shape[1:]), dtype=np.float32)
+    from .ops import ReduceOperation
+    if method == ReduceOperation.MEAN and optimized.HAS_NUMBA:
+        return optimized.sliding_mean_numba(images, window, lag)
+    redop = ops.get(method)
+    result = np.empty((n, *images.shape[1:]), dtype=np.float32)
+    for i in range(n):
+        start = lag + 1 + i
+        end = start + window
+        window_slice = images[start:end].astype(np.float32)
+        reduced = redop.reduce(window_slice)
+        result[i] = reduced[0]
     return result
 
 

@@ -10,16 +10,49 @@ _PEN_MIN_PER_CROSSHAIR = pg.mkPen((60, 160, 160), width=2)
 _PEN_MAX_PER_CROSSHAIR = pg.mkPen((100, 200, 200), width=2)
 _PEN_MIN_PER_DATASET = pg.mkPen((60, 80, 160), width=2)
 _PEN_MAX_PER_DATASET = pg.mkPen((100, 130, 220), width=2)
-from PyQt6.QtCore import QPointF, QSize, Qt
+from PyQt6.QtCore import QPointF, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QKeyEvent, QMouseEvent, QShowEvent, QWheelEvent
-from PyQt6.QtWidgets import QSizePolicy, QWidget, QLineEdit
+from PyQt6.QtWidgets import QFrame, QSizePolicy, QVBoxLayout, QWidget, QLineEdit
 
 from .viewer import ImageViewer
 from .. import settings
-from ..theme import get_plot_bg, get_timeline_line_color
+from ..theme import get_plot_bg, get_timeline_line_color, get_agg_band_bg, get_agg_separator_stylesheet
+
+AGG_RANGE_BAND_HEIGHT = 32
+_AGG_RANGE_BRUSH = pg.mkBrush(100, 220, 130, 140)
+_AGG_RANGE_PEN = pg.mkPen((100, 220, 130), width=6)
+
+
+class AggregateRangeBand(pg.PlotWidget):
+    """
+    Second timeline: aggregate range only. No plot, no axes (uses first timeline).
+    X-linked to main timeline. Green-tinted bg for clear separation from frame.
+    """
+
+    def __init__(self, parent: QWidget, main_viewbox, **kargs) -> None:
+        super().__init__(parent, background=get_agg_band_bg(), **kargs)
+        for ax in ("left", "bottom", "top", "right"):
+            self.plotItem.hideAxis(ax)  # type: ignore
+        self.setMaximumHeight(AGG_RANGE_BAND_HEIGHT)
+        self.setMinimumHeight(AGG_RANGE_BAND_HEIGHT)
+        self.plotItem.vb.setYRange(0, 1, padding=0)  # type: ignore
+        self.plotItem.vb.setMouseEnabled(x=True, y=False)  # type: ignore
+        self.getViewBox().setXLink(main_viewbox)  # type: ignore
+        self.crop_range = pg.LinearRegionItem(
+            brush=_AGG_RANGE_BRUSH,
+            pen=_AGG_RANGE_PEN,
+        )
+        if hasattr(self.crop_range, "handleSize"):
+            self.crop_range.handleSize = 22
+        self.crop_range.setZValue(0)
+        self.addItem(self.crop_range)
+        self.crop_range.hide()
 
 
 class TimePlot(pg.PlotWidget):
+    """First timeline: curve, cursor, frame selection only."""
+
+    clicked_to_set_frame = pyqtSignal(int)  # frame index from click
 
     def __init__(
         self,
@@ -57,14 +90,6 @@ class TimePlot(pg.PlotWidget):
             self.norm_range.handleSize = 12
         self.addItem(self.norm_range)
         self.norm_range.hide()
-        self.crop_range = pg.LinearRegionItem(
-            brush=pg.mkBrush(158, 206, 106, 80),  # Tokyo green
-            pen=pg.mkPen((158, 206, 106), width=3),
-        )
-        if hasattr(self.crop_range, "handleSize"):
-            self.crop_range.handleSize = 12
-        self.crop_range.setZValue(0)
-        self.addItem(self.crop_range)
         self._accept_all_events = False
 
     def toggle_norm_range(self) -> None:
@@ -72,12 +97,6 @@ class TimePlot(pg.PlotWidget):
             self.norm_range.hide()
         else:
             self.norm_range.show()
-
-    def toggle_crop_range(self) -> None:
-        if self.crop_range.isVisible():
-            self.crop_range.hide()
-        else:
-            self.crop_range.show()
 
     def wheelEvent(self, event: QWheelEvent) -> None:
         if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
@@ -91,33 +110,23 @@ class TimePlot(pg.PlotWidget):
                 pos = self.timeline.getPos()
                 self.timeline.setPos((pos[0]-1, pos[1]))
 
-    def _is_hovering_crop(self) -> bool:
-        return (self.crop_range.mouseHovering
-                or self.crop_range.childItems()[0].mouseHovering
-                or self.crop_range.childItems()[1].mouseHovering)
-
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        """Click timeline -> set frame."""
         if (event.modifiers() == Qt.KeyboardModifier.NoModifier
                 and event.button() == Qt.MouseButton.LeftButton
                 and not (self.norm_range.isVisible()
                     and (self.norm_range.mouseHovering
                         or self.norm_range.childItems()[0].mouseHovering
-                        or self.norm_range.childItems()[1].mouseHovering))
-                and not self._is_hovering_crop()):
+                        or self.norm_range.childItems()[1].mouseHovering))):
             x = self.plotItem.vb.mapSceneToView(  # type: ignore
                 event.position()
             ).x()
-            self.image_viewer.setCurrentIndex(round(x))
+            idx = max(0, int(round(x)))
+            self.image_viewer.setCurrentIndex(idx)
+            self.clicked_to_set_frame.emit(idx)
             event.accept()
-        elif (((self.norm_range.isVisible()
-                    and (self.norm_range.mouseHovering
-                        or self.norm_range.childItems()[0].mouseHovering
-                        or self.norm_range.childItems()[1].mouseHovering))
-                or not self.norm_range.isVisible())
-                or self._is_hovering_crop()):
-            super().mousePressEvent(event)
         else:
-            event.ignore()
+            super().mousePressEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         super().keyPressEvent(event)
@@ -126,6 +135,30 @@ class TimePlot(pg.PlotWidget):
     def keyReleaseEvent(self, event: QKeyEvent) -> None:
         super().keyReleaseEvent(event)
         self.image_viewer.keyReleaseEvent(event)
+
+
+class TimelineStack(QWidget):
+    """Top: frame timeline (curve, cursor). Bottom: aggregate range only. Linked X."""
+
+    def __init__(self, parent: QWidget, image_viewer: pg.ImageView) -> None:
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        self.main_plot = TimePlot(self, image_viewer)
+        self.agg_sep = QFrame()
+        self.agg_sep.setFixedHeight(4)
+        self.agg_sep.setStyleSheet(get_agg_separator_stylesheet())
+        self.agg_sep_spacer = QWidget()
+        self.agg_sep_spacer.setFixedHeight(6)
+        self.agg_band = AggregateRangeBand(
+            self, self.main_plot.getViewBox(),
+        )
+        layout.addWidget(self.main_plot, 1)
+        layout.addWidget(self.agg_sep, 0)
+        layout.addWidget(self.agg_sep_spacer, 0)
+        layout.addWidget(self.agg_band, 0)
+        self.main_plot.crop_range = self.agg_band.crop_range  # backward compat
 
 
 class MeasureROI(pg.PolyLineROI):

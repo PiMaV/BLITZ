@@ -1,4 +1,4 @@
-"""Cam Mock: simulated live source (Lissajous, later e.g. Blitz). Winamp 5.x style UI."""
+"""Synthetic Live: generated data stream (Lissajous, Lightning). Compact dark-theme UI."""
 
 import random
 from typing import Callable, Optional
@@ -11,104 +11,104 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFrame,
                              QSpinBox, QVBoxLayout, QWidget)
 
 from .. import resources  # noqa: F401
-from ..data.live import MockLiveHandler, buffer_frames_from_mb
+from ..data.live import SimulatedLiveHandler, buffer_frames_from_mb
 
-# Winamp 5.x homage colors (gray/silver main, black viz, green on black)
-WINAMP_MAIN_BG = "#3d3d3d"
-WINAMP_PANEL_BG = "#2d2d2d"
-WINAMP_BORDER = "#5a5a5a"
-WINAMP_BORDER_DARK = "#1a1a1a"
-WINAMP_FG = "#e0e0e0"
-WINAMP_FG_DIM = "#a0a0a0"
-WINAMP_GREEN = "#00ff00"      # classic Winamp green
-WINAMP_GREEN_DIM = "#00aa00"
-WINAMP_BLACK = "#0a0a0a"     # viz background
-WINAMP_BTN_UP = "#4a4a4a"
-WINAMP_BTN_DOWN = "#252525"
-WINAMP_BTN_BORDER = "#6a6a6a"
+# Dark theme colors (gray main, black viz area, green accent)
+SIMULATED_LIVE_MAIN_BG = "#3d3d3d"
+SIMULATED_LIVE_PANEL_BG = "#2d2d2d"
+SIMULATED_LIVE_BORDER = "#5a5a5a"
+SIMULATED_LIVE_BORDER_DARK = "#1a1a1a"
+SIMULATED_LIVE_FG = "#e0e0e0"
+SIMULATED_LIVE_FG_DIM = "#a0a0a0"
+SIMULATED_LIVE_GREEN = "#00ff00"
+SIMULATED_LIVE_GREEN_DIM = "#00aa00"
+SIMULATED_LIVE_BLACK = "#0a0a0a"
+SIMULATED_LIVE_BTN_UP = "#4a4a4a"
+SIMULATED_LIVE_BTN_DOWN = "#252525"
+SIMULATED_LIVE_BTN_BORDER = "#6a6a6a"
 
-STYLE_MOCK_LIVE = f"""
-    QWidget#MockLiveMain {{
-        background-color: {WINAMP_MAIN_BG};
-        border: 1px solid {WINAMP_BORDER};
+STYLE_SIMULATED_LIVE = f"""
+    QWidget#SimulatedLiveMain {{
+        background-color: {SIMULATED_LIVE_MAIN_BG};
+        border: 1px solid {SIMULATED_LIVE_BORDER};
         border-radius: 2px;
     }}
-    QLabel#MockLiveTitle {{
+    QLabel#SimulatedLiveTitle {{
         background-color: transparent;
-        color: {WINAMP_FG};
+        color: {SIMULATED_LIVE_FG};
         font-weight: bold;
         font-size: 10px;
     }}
-    QLabel#MockLiveHint {{
+    QLabel#SimulatedLiveHint {{
         background-color: transparent;
-        color: {WINAMP_FG_DIM};
+        color: {SIMULATED_LIVE_FG_DIM};
         font-size: 9px;
     }}
-    QLabel#MockLiveDisplay {{
-        background-color: {WINAMP_BLACK};
-        color: {WINAMP_GREEN};
+    QLabel#SimulatedLiveDisplay {{
+        background-color: {SIMULATED_LIVE_BLACK};
+        color: {SIMULATED_LIVE_GREEN};
         font-family: "Consolas", "Lucida Console", monospace;
         font-size: 10px;
         padding: 4px 6px;
-        border: 1px solid {WINAMP_BORDER_DARK};
+        border: 1px solid {SIMULATED_LIVE_BORDER_DARK};
         border-radius: 0;
         min-height: 24px;
     }}
-    QPushButton#MockLiveBtn {{
-        background-color: {WINAMP_BTN_UP};
-        color: {WINAMP_FG};
-        border: 1px solid {WINAMP_BTN_BORDER};
+    QPushButton#SimulatedLiveBtn {{
+        background-color: {SIMULATED_LIVE_BTN_UP};
+        color: {SIMULATED_LIVE_FG};
+        border: 1px solid {SIMULATED_LIVE_BTN_BORDER};
         border-radius: 0;
         min-width: 26px;
         max-width: 26px;
         min-height: 20px;
         font-size: 10px;
     }}
-    QPushButton#MockLiveBtn:hover {{
+    QPushButton#SimulatedLiveBtn:hover {{
         background-color: #555555;
         border-color: #7a7a7a;
     }}
-    QPushButton#MockLiveBtn:pressed {{
-        background-color: {WINAMP_BTN_DOWN};
-        border-color: {WINAMP_BORDER_DARK};
+    QPushButton#SimulatedLiveBtn:pressed {{
+        background-color: {SIMULATED_LIVE_BTN_DOWN};
+        border-color: {SIMULATED_LIVE_BORDER_DARK};
     }}
-    QPushButton#MockLiveBtn:disabled {{ color: #606060; }}
+    QPushButton#SimulatedLiveBtn:disabled {{ color: #606060; }}
     QComboBox, QSlider {{
-        background-color: {WINAMP_PANEL_BG};
-        color: {WINAMP_FG};
-        border: 1px solid {WINAMP_BORDER};
+        background-color: {SIMULATED_LIVE_PANEL_BG};
+        color: {SIMULATED_LIVE_FG};
+        border: 1px solid {SIMULATED_LIVE_BORDER};
         border-radius: 0;
         min-height: 20px;
     }}
     QComboBox::drop-down {{
-        border-left: 1px solid {WINAMP_BORDER};
-        background-color: {WINAMP_BTN_UP};
+        border-left: 1px solid {SIMULATED_LIVE_BORDER};
+        background-color: {SIMULATED_LIVE_BTN_UP};
         width: 18px;
     }}
     QCheckBox {{
-        color: {WINAMP_FG};
+        color: {SIMULATED_LIVE_FG};
         font-size: 9px;
     }}
     QLabel {{
-        color: {WINAMP_FG};
+        color: {SIMULATED_LIVE_FG};
         font-size: 9px;
     }}
-    QPushButton#MockLiveBtnPlay {{
+    QPushButton#SimulatedLiveBtnPlay {{
         background-color: #2a4a2a;
-        color: {WINAMP_GREEN};
+        color: {SIMULATED_LIVE_GREEN};
         border: 1px solid #3a6a3a;
     }}
-    QPushButton#MockLiveBtnPlay:hover {{
+    QPushButton#SimulatedLiveBtnPlay:hover {{
         background-color: #3a5a3a;
         border-color: #4a7a4a;
     }}
-    QPushButton#MockLiveBtnPlay:pressed {{
+    QPushButton#SimulatedLiveBtnPlay:pressed {{
         background-color: #1a3a1a;
     }}
 """
 
 
-class _WinampViz(QWidget):
+class _SimulatedViz(QWidget):
     """Mini preview: Lissajous (green) or Lightning (blue zigzag) depending on variant."""
 
     def __init__(self, parent: Optional[QWidget] = None):
@@ -178,16 +178,16 @@ class _WinampViz(QWidget):
         p.end()
 
 
-class WinampMockLiveWidget(QFrame):
-    """Mock Live: generates Winamp Lissajous viz, streams to BLITZ viewer."""
+class SimulatedLiveWidget(QFrame):
+    """Simulated live source: generates Lissajous/Lightning viz, streams to BLITZ viewer."""
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
-        self.setObjectName("MockLiveMain")
-        self.setStyleSheet(STYLE_MOCK_LIVE)
-        self.setWindowTitle("Cam Mock")
+        self.setObjectName("SimulatedLiveMain")
+        self.setStyleSheet(STYLE_SIMULATED_LIVE)
+        self.setWindowTitle("Synthetic Live")
         self.setFixedWidth(280)
-        self._handler: Optional[MockLiveHandler] = None
+        self._handler: Optional[SimulatedLiveHandler] = None
         self._on_frame: Optional[Callable[[object], None]] = None
         self._pull_timer: Optional[QTimer] = None
         self._setup_ui()
@@ -197,23 +197,23 @@ class WinampMockLiveWidget(QFrame):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
-        title = QLabel("BLITZ Cam Mock")
-        title.setObjectName("MockLiveTitle")
+        title = QLabel("BLITZ Synthetic Live")
+        title.setObjectName("SimulatedLiveTitle")
         layout.addWidget(title)
-        hint = QLabel("Simulated camera: FPS, exposure, resolution, buffer. No real device.")
-        hint.setObjectName("MockLiveHint")
-        hint.setToolTip("Cam Mock: Lissajous (and later e.g. Blitz). Same pull/ring-buffer as real Live.")
+        hint = QLabel("Synthetic data stream: FPS, exposure, resolution, buffer. No real device.")
+        hint.setObjectName("SimulatedLiveHint")
+        hint.setToolTip("Synthetic Live: Lissajous (and later e.g. Blitz). Same pull/ring-buffer as real Live.")
         layout.addWidget(hint)
         qd = QLabel("Quick & Dirty – ROI/View preserved. Real streamer later (e.g. Network).")
-        qd.setObjectName("MockLiveHint")
+        qd.setObjectName("SimulatedLiveHint")
         qd.setStyleSheet("color: #666; font-size: 8pt;")
         layout.addWidget(qd)
 
         row1 = QHBoxLayout()
         self.display = QLabel("Ready.")
-        self.display.setObjectName("MockLiveDisplay")
+        self.display.setObjectName("SimulatedLiveDisplay")
         row1.addWidget(self.display, 1)
-        self.spectrum = _WinampViz(self)
+        self.spectrum = _SimulatedViz(self)
         row1.addWidget(self.spectrum)
         layout.addLayout(row1)
 
@@ -331,7 +331,7 @@ class WinampMockLiveWidget(QFrame):
         self.spin_buffer_mb.setToolTip("Ring buffer size in MB. Frames derived from resolution and grayscale.")
         buf_row.addWidget(self.spin_buffer_mb, 1)
         self.label_buffer_frames = QLabel("")
-        self.label_buffer_frames.setObjectName("MockLiveHint")
+        self.label_buffer_frames.setObjectName("SimulatedLiveHint")
         self.label_buffer_frames.setFixedWidth(56)
         buf_row.addWidget(self.label_buffer_frames)
         layout.addLayout(buf_row)
@@ -347,12 +347,12 @@ class WinampMockLiveWidget(QFrame):
 
         btn_row = QHBoxLayout()
         self.btn_toggle = QPushButton("\u25b6 Play")
-        self.btn_toggle.setObjectName("MockLiveBtnPlay")
+        self.btn_toggle.setObjectName("SimulatedLiveBtnPlay")
         self.btn_toggle.setToolTip("Start / Stop stream (toggle)")
         self.btn_toggle.clicked.connect(self._on_toggle)
         btn_row.addWidget(self.btn_toggle)
         self.btn_close = QPushButton("\u2715")
-        self.btn_close.setObjectName("MockLiveBtn")
+        self.btn_close.setObjectName("SimulatedLiveBtn")
         self.btn_close.setToolTip("Close dialog")
         self.btn_close.setFixedWidth(28)
         self.btn_close.clicked.connect(self.close)
@@ -394,7 +394,7 @@ class WinampMockLiveWidget(QFrame):
         # UI "Top" -> start left / grow right; "Left" -> start top / grow down (for 90deg-rotated display)
         src = self.combo_source_origin.currentText().lower()
         source_origin = "left" if src == "top" else "top"
-        self._handler = MockLiveHandler(
+        self._handler = SimulatedLiveHandler(
             width=w,
             height=h,
             fps=fps,
