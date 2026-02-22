@@ -1,9 +1,8 @@
 [project]
 name = "BLITZ"
-version = "1.4.3"
+version = "1.5.0"
 description = "Bulk Loading and Interactive Time series Zonal analysis"
 authors = [
-    { name = "Richard Krieg", email = "alienkrieg@gmail.com" },
     { name = "Philipp Mattern", email = "mattern@mess.engineering" },
 ]
 requires-python = ">=3.12,<3.15"
