@@ -1,0 +1,18 @@
+services:
+  blitz:
+    build: .
+    container_name: blitz
+    image: blitz:latest
+    security_opt:
+      - seccomp:unconfined #optional
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - ./config:/config
+      - ./data:/data # Map local data folder for easy access
+    ports:
+      - 3000:3000
+    shm_size: "1gb" #important for GUI apps
+    restart: unless-stopped
