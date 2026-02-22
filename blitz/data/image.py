@@ -6,7 +6,7 @@ import pyqtgraph as pg
 
 # from .. import settings
 from ..tools import log
-from . import ops
+from . import ops, optimized
 from .tools import ensure_4d
 
 
@@ -53,6 +53,7 @@ class ImageData:
         self._result_cache: dict[tuple[object, object], np.ndarray] = {}  # (op, bounds) -> result
         self._bench_cache_hits: int = 0  # For Bench tab
         self._bench_cache_misses: int = 0
+        self.use_numba: bool = True
 
     def _compute_ref(
         self, step: dict, image: np.ndarray
@@ -78,6 +79,48 @@ class ImageData:
         pipeline = self._ops_pipeline
         if not pipeline:
             return image.astype(np.float32) if image.dtype != np.float32 else image
+
+        # Determine if we should use Numba
+        use_numba = optimized.HAS_NUMBA and getattr(self, "use_numba", True)
+
+        if use_numba:
+            # Prepare arguments for Numba kernel
+            sub_step = pipeline.get("subtract")
+            do_sub = False
+            sub_ref = np.empty((1, 1, 1, 1), dtype=np.float32)
+            sub_amt = 0.0
+
+            if sub_step and sub_step.get("amount", 0) > 0:
+                ref = self._compute_ref(sub_step, image)
+                if ref is not None:
+                    do_sub = True
+                    sub_ref = ref
+                    sub_amt = float(sub_step.get("amount", 1.0))
+
+            div_step = pipeline.get("divide")
+            do_div = False
+            div_ref = np.empty((1, 1, 1, 1), dtype=np.float32)
+            div_amt = 0.0
+
+            if div_step and div_step.get("amount", 0) > 0:
+                ref = self._compute_ref(div_step, image)
+                if ref is not None:
+                    do_div = True
+                    div_ref = ref
+                    div_amt = float(div_step.get("amount", 1.0))
+
+            if do_sub or do_div:
+                # Ensure float32 copy to avoid modifying source or non-float types
+                if image.dtype != np.float32 or np.shares_memory(image, self._image):
+                    image = image.astype(np.float32, copy=True)
+
+                optimized.apply_pipeline_fused(
+                    image,
+                    do_sub, sub_ref, sub_amt,
+                    do_div, div_ref, div_amt
+                )
+                return image
+
         image = image.astype(np.float32)
         eps = 1e-10
         for op_name in ("subtract", "divide"):
