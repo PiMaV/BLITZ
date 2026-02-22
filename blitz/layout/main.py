@@ -21,7 +21,6 @@ from .rosee import ROSEEAdapter
 from .winamp_mock import WinampMockLiveWidget
 from .tof import TOFAdapter
 from .ui import UI_MainWindow
-from .filter_stack import FilterItemWidget
 
 URL_GITHUB = QUrl("https://github.com/CodeSchmiedeHGW/BLITZ")
 URL_INP = QUrl("https://www.inp-greifswald.de/")
@@ -224,14 +223,26 @@ class MainWindow(QMainWindow):
         self.ui.button_ops_open_aggregate.clicked.connect(
             self._ops_open_aggregate_tab
         )
-
-        # New Filter Stack Connections
-        self.ui.filter_stack.pipeline_changed.connect(self.apply_ops)
-        self.ui.filter_stack.load_reference_requested.connect(self.load_reference_for_filter)
+        self.ui.combobox_ops_subtract_src.currentIndexChanged.connect(
+            self._update_ops_file_visibility
+        )
+        self.ui.combobox_ops_divide_src.currentIndexChanged.connect(
+            self._update_ops_file_visibility
+        )
+        for cb in (self.ui.combobox_ops_subtract_src, self.ui.combobox_ops_divide_src):
+            cb.currentIndexChanged.connect(self.apply_ops)
+        self.ui.slider_ops_subtract.valueChanged.connect(
+            self._update_ops_slider_labels
+        )
+        self.ui.slider_ops_subtract.valueChanged.connect(self.apply_ops)
+        self.ui.slider_ops_divide.valueChanged.connect(
+            self._update_ops_slider_labels
+        )
+        self.ui.slider_ops_divide.valueChanged.connect(self.apply_ops)
+        self.ui.button_ops_load_file.clicked.connect(self.load_ops_file)
         self.ui.spinbox_crop_range_start.editingFinished.connect(self.apply_ops)
         self.ui.spinbox_crop_range_end.editingFinished.connect(self.apply_ops)
         self.ui.combobox_reduce.currentIndexChanged.connect(self.apply_ops)
-
         self.ui.timeline_tabwidget.currentChanged.connect(
             self._on_timeline_tab_changed
         )
@@ -594,6 +605,10 @@ class MainWindow(QMainWindow):
             self.ui.spinbox_current_frame,
             self.ui.combobox_reduce,
             self.ui.timeline_tabwidget,
+            self.ui.combobox_ops_subtract_src,
+            self.ui.combobox_ops_divide_src,
+            self.ui.slider_ops_subtract,
+            self.ui.slider_ops_divide,
         ]
         for w in _batch:
             w.blockSignals(True)
@@ -614,11 +629,10 @@ class MainWindow(QMainWindow):
             self.ui.timeline_tabwidget.setTabEnabled(1, False)
         else:
             self.ui.timeline_tabwidget.setTabEnabled(1, True)
-
-        # Reset Filter Stack
-        self.ui.filter_stack.set_pipeline([])
-
-        # Legacy
+        self.ui.combobox_ops_subtract_src.setCurrentIndex(0)
+        self.ui.combobox_ops_divide_src.setCurrentIndex(0)
+        self.ui.slider_ops_subtract.setValue(100)
+        self.ui.slider_ops_divide.setValue(0)
         self.ui.button_ops_load_file.setText("Load reference image")
         self.ui.image_viewer._background_image = None
         self.ui.checkbox_measure_roi.setChecked(False)
@@ -640,6 +654,8 @@ class MainWindow(QMainWindow):
         self.ui.roi_plot.crop_range.setRegion(
             (0, self.ui.image_viewer.data.n_images - 1)
         )
+        self._update_ops_file_visibility()
+        self._update_ops_slider_labels()
         self.apply_ops()
         self.ui.spinbox_selection_window.setMaximum(
             self.ui.image_viewer.data.n_images
@@ -956,131 +972,19 @@ class MainWindow(QMainWindow):
         )
 
     def load_ops_file(self) -> None:
-        """Legacy method for old UI button (kept for safety if called dynamically)."""
-        pass
-
-    def load_reference_for_filter(self, item_widget: FilterItemWidget) -> None:
-        """Handle request from FilterItemWidget to load a reference file."""
-        # If already loaded, remove it
-        if item_widget.params.get("reference_loaded"):
-            item_widget.set_reference(None)
+        """Load or remove reference image for Ops (subtract/divide)."""
+        if "Remove" not in self.ui.button_ops_load_file.text():
+            file, _ = QFileDialog.getOpenFileName(
+                caption="Choose Reference File",
+                directory=str(self.last_file_dir),
+            )
+            if file and self.ui.image_viewer.load_background_file(Path(file)):
+                self.ui.button_ops_load_file.setText("[Remove]")
+                self.apply_ops()
+        else:
+            self.ui.image_viewer.unload_background_file()
+            self.ui.button_ops_load_file.setText("Load reference image")
             self.apply_ops()
-            return
-
-        file, _ = QFileDialog.getOpenFileName(
-            caption="Choose Reference File",
-            directory=str(self.last_file_dir),
-        )
-        if not file:
-            return
-
-        with LoadingManager(self, f"Loading reference {Path(file).name}", blocking_label=self.ui.blocking_status) as lm:
-             # Use a temporary viewer/loader to load the data
-             # We can reuse ImageData/DataLoader logic
-             # But we need to load it into an ImageData object
-             # DataLoader.load_data is usually coupled to viewer.
-             # We can use the existing viewer to load it as background file?
-             # No, because that sets it on self.ui.image_viewer._background_image
-             # But we need it for THIS specific filter item.
-             # So we should load it into a separate ImageData object.
-
-             # Using DataLoader directly might be tricky as it calls back to viewer usually.
-             # Let's see: DataLoader is in blitz/data/load.py. It has methods.
-             # Actually `viewer.load_background_file` does logic:
-             # meta = get_image_metadata(path)
-             # image = _load_image(path, ...)
-             # return ImageData(image, [meta])
-
-             # I should replicate that.
-             try:
-                 # Minimal replication of load logic
-                 # Check if video or image
-                 # For simplicity, assume image or single frame, or same dimensions as current data
-                 # Reuse `self.ui.image_viewer` logic if possible, or extract it.
-                 # `viewer.load_background_file` calls `DataLoader.load_single_image_as_array` or similar?
-                 # It calls `DataLoader._load_image` etc.
-
-                 # Let's import what we need
-                 from ..data.load import DataLoader
-
-                 # We need to respect current viewer settings (8bit, etc) if possible, or just load raw.
-                 # Usually reference should match main image in dimensions.
-
-                 # Let's use `ImageData` from existing code if available or just load new.
-                 # The existing `load_background_file` on viewer was:
-                 # 1. get meta
-                 # 2. load array
-                 # 3. create ImageData
-                 # 4. set _background_image
-
-                 # We will do 1-3.
-
-                 # Simplified load:
-                 # We assume the user wants to load a file that matches current data shape (H, W).
-                 # If it's a stack, we might only use first frame or average?
-                 # Legacy `load_background_file` checks `img.shape`.
-
-                 # Let's use DataLoader. But DataLoader methods are instance methods of viewer usually or mixed.
-                 # Actually `DataLoader` is a mixin or base class? No, `ImageViewer` inherits `DataLoader`.
-                 # So `self.ui.image_viewer` IS a `DataLoader`.
-
-                 # We can use a temporary method on viewer or just use the viewer to load it but not set it as main image?
-                 # `viewer` has `load_data` which sets main image.
-                 # `viewer` has `load_background_file` which sets `_background_image`.
-
-                 # I can adapt `load_background_file` to return the ImageData instead of setting it.
-                 # But I shouldn't change `ImageViewer` public API too much if I can avoid it.
-                 # Or I can just call `self.ui.image_viewer.load_reference_data(path)` if I add such a method.
-
-                 # Let's implement the load logic here briefly using `DataLoader` static methods if any?
-                 # `DataLoader` has `_load_image`, `_load_video`, `_load_folder`. They are static-ish?
-                 # No, they are methods.
-
-                 # Accessing private methods `_load_image` from `image_viewer` instance.
-                 viewer = self.ui.image_viewer
-                 path = Path(file)
-
-                 if DataLoader._is_video(path):
-                     # Not supported for reference usually in legacy?
-                     # Legacy `load_background_file` supported it via `load_data` logic replication?
-                     # Actually `load_background_file` in `blitz/data/load.py` (if it exists there)
-                     # No, `load_background_file` is in `ImageViewer`.
-                     pass
-
-                 # Let's try to reuse `viewer`'s loading capabilities.
-                 # Since `viewer` logic is complex (handling different file types),
-                 # and I don't want to duplicate it.
-                 # But `viewer` statefully sets `self.image`.
-
-                 # Strategy:
-                 # 1. Inspect `blitz/data/load.py` to see if I can use `DataLoader` cleanly.
-                 # 2. Or, use `cv2` directly for simple image loading if that's 99% of use cases.
-                 # 3. Or, refactor `ImageViewer.load_background_file` to be `load_auxiliary_file(path) -> ImageData`.
-
-                 # Given I can't easily see `load.py` right now (I read it earlier but cache might be fuzzy on exact signatures).
-                 # I recall `_load_image` returns `np.ndarray`.
-
-                 # Let's check `load_background_file` in `viewer.py` if I could?
-                 # No, I didn't read `viewer.py`.
-
-                 # I'll implement a safe generic loader using `self.ui.image_viewer` methods if possible.
-                 # `self.ui.image_viewer` has `load_background_file`. It returns boolean.
-                 # And sets `self._background_image`.
-                 # I can use that!
-                 # 1. Call `viewer.load_background_file(path)`.
-                 # 2. Grab `viewer._background_image`.
-                 # 3. Set it to `item_widget`.
-                 # 4. Clear `viewer._background_image` (set to None).
-
-                 if viewer.load_background_file(path):
-                     ref_data = viewer._background_image
-                     viewer._background_image = None # Detach from global slot
-                     item_widget.set_reference(ref_data)
-                     self.apply_ops()
-
-            except Exception as e:
-                log(f"Failed to load reference: {e}", color="red")
-
 
     def on_strgC(self) -> None:
         cb = QApplication.clipboard()
@@ -1635,34 +1539,45 @@ class MainWindow(QMainWindow):
         """Build Ops pipeline from UI and set on data."""
         if self.ui.image_viewer.data.is_single_image():
             return
-
-        pipeline = self.ui.filter_stack.get_pipeline()
-
-        # Inject global aggregate settings if needed
-        # The new stack items for subtract/divide specify "aggregate" source.
-        # ImageData handles looking up the aggregate result based on bounds.
-        # We need to ensure bounds are set?
-        # Actually ImageData.compute_ref looks up "aggregate" using step["bounds"].
-        # But filter_stack doesn't know bounds.
-        # We should inject current bounds into steps that need it.
-
-        current_bounds = (
+        bounds = (
             self.ui.spinbox_crop_range_start.value(),
             self.ui.spinbox_crop_range_end.value(),
         )
-        current_reduce_method = self.ui.combobox_reduce.currentText()
+        method = self.ui.combobox_reduce.currentText()
+        bg = self.ui.image_viewer._background_image
 
-        # Pass bounds/method to steps that use aggregate
-        active_parts = []
-        for step in pipeline:
-            if step.get("source") == "aggregate":
-                step["bounds"] = current_bounds
-                step["method"] = current_reduce_method
+        def _step(src: str, amount: int) -> dict | None:
+            if not src or src == "off" or amount <= 0:
+                return None
+            if src == "aggregate":
+                if method == "None - current frame":
+                    return None
+                return {"source": "aggregate", "bounds": bounds, "method": method, "amount": amount / 100.0}
+            if src == "file" and bg is not None:
+                return {"source": "file", "reference": bg, "amount": amount / 100.0}
+            return None
 
-            active_parts.append(step.get("type"))
+        sub_src = self.ui.combobox_ops_subtract_src.currentData()
+        sub_amt = self.ui.slider_ops_subtract.value()
+        div_src = self.ui.combobox_ops_divide_src.currentData()
+        div_amt = self.ui.slider_ops_divide.value()
+
+        pipeline: dict = {}
+        if sub := _step(sub_src, sub_amt):
+            pipeline["subtract"] = sub
+        if div := _step(div_src, div_amt):
+            pipeline["divide"] = div
 
         if pipeline:
-            msg = f"Applying: {', '.join(active_parts)}..."
+            parts = []
+            if "subtract" in pipeline:
+                parts.append("Subtracting")
+            if "divide" in pipeline:
+                parts.append("Dividing")
+            msg = " & ".join(parts) + "..."
+        else:
+            msg = None
+        if msg:
             with LoadingManager(self, msg, blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
                 self.ui.image_viewer.data.set_ops_pipeline(pipeline)
                 self.ui.image_viewer.update_image()

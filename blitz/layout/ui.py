@@ -20,7 +20,6 @@ from ..tools import LoggingTextEdit, get_available_ram, setup_logger
 from .bench_sparklines import BenchSparklines
 from .viewer import ImageViewer
 from .widgets import ExtractionPlot, MeasureROI, TimePlot
-from .filter_stack import FilterStackWidget
 
 TITLE = (
     "BLITZ: (B)ulk (L)oading & (I)nteractive (T)ime series (Z)onal analysis "
@@ -426,7 +425,7 @@ class UI_MainWindow(QWidget):
         view_layout.addStretch()
         self.create_option_tab(view_layout, "View")
 
-        # --- Ops: Filter Stack ---
+        # --- Ops: Subtract/Divide, Source Aggregate|File, Amount sliders ---
         ops_layout = QVBoxLayout()
         ops_label = QLabel("Ops")
         ops_label.setStyleSheet(get_style("heading"))
@@ -436,11 +435,55 @@ class UI_MainWindow(QWidget):
             "Configure range and reduce method in Aggregate tab"
         )
         ops_layout.addWidget(self.button_ops_open_aggregate)
-
-        self.filter_stack = FilterStackWidget()
-        ops_layout.addWidget(self.filter_stack)
-
-        # ops_layout.addStretch() # FilterStack has its own stretch
+        sub_grp = QGroupBox("1. Subtract")
+        sub_lay = QVBoxLayout()
+        sub_src_row = QHBoxLayout()
+        sub_src_row.addWidget(QLabel("Source:"))
+        self.combobox_ops_subtract_src = QComboBox()
+        self.combobox_ops_subtract_src.addItem("Off", "off")
+        self.combobox_ops_subtract_src.addItem("Aggregate", "aggregate")
+        self.combobox_ops_subtract_src.addItem("File", "file")
+        sub_src_row.addWidget(self.combobox_ops_subtract_src)
+        sub_lay.addLayout(sub_src_row)
+        sub_amt_row = QHBoxLayout()
+        sub_amt_row.addWidget(QLabel("Amount:"))
+        self.slider_ops_subtract = QSlider(Qt.Orientation.Horizontal)
+        self.slider_ops_subtract.setRange(0, 100)
+        self.slider_ops_subtract.setValue(100)
+        self.label_ops_subtract = QLabel("100%")
+        sub_amt_row.addWidget(self.slider_ops_subtract)
+        sub_amt_row.addWidget(self.label_ops_subtract)
+        sub_lay.addLayout(sub_amt_row)
+        sub_grp.setLayout(sub_lay)
+        ops_layout.addWidget(sub_grp)
+        div_grp = QGroupBox("2. Divide")
+        div_lay = QVBoxLayout()
+        div_src_row = QHBoxLayout()
+        div_src_row.addWidget(QLabel("Source:"))
+        self.combobox_ops_divide_src = QComboBox()
+        self.combobox_ops_divide_src.addItem("Off", "off")
+        self.combobox_ops_divide_src.addItem("Aggregate", "aggregate")
+        self.combobox_ops_divide_src.addItem("File", "file")
+        div_src_row.addWidget(self.combobox_ops_divide_src)
+        div_lay.addLayout(div_src_row)
+        div_amt_row = QHBoxLayout()
+        div_amt_row.addWidget(QLabel("Amount:"))
+        self.slider_ops_divide = QSlider(Qt.Orientation.Horizontal)
+        self.slider_ops_divide.setRange(0, 100)
+        self.slider_ops_divide.setValue(0)
+        self.label_ops_divide = QLabel("0%")
+        div_amt_row.addWidget(self.slider_ops_divide)
+        div_amt_row.addWidget(self.label_ops_divide)
+        div_lay.addLayout(div_amt_row)
+        div_grp.setLayout(div_lay)
+        ops_layout.addWidget(div_grp)
+        self.button_ops_load_file = QPushButton("Load reference image")
+        self.ops_file_widget = QWidget()
+        self.ops_file_widget.setLayout(QHBoxLayout())
+        self.ops_file_widget.layout().addWidget(self.button_ops_load_file)
+        ops_layout.addWidget(self.ops_file_widget)
+        self.ops_file_widget.setVisible(False)
+        ops_layout.addStretch()
         self.create_option_tab(ops_layout, "Ops")
 
         # --- Timeline Panel: 2 Tabs Frame | Agg (Tab-Wechsel = Modus) ---
