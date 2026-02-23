@@ -19,7 +19,8 @@ No installation needed—just a single, standalone *.exe file. Linux and Docker 
 * **Easy Data Handling:** Drag-and-drop functionality for various image and video formats, including NUMPY matrices (*.npy).
 * **Easy-to-use:** Automatic resource management for large and small datasets.
 * **User-Friendly Interface:** Intuitive GUI with mouse-based navigation and shortcut capabilities.
-* **Advanced Image Processing:** Matrix-based processing with fast statistical calculations.
+* **Advanced Image Processing:** Matrix-based processing with fast statistical calculations (Numba-accelerated).
+* **Live View:** Support for Real USB Cameras and Simulated data streams.
 * **Built on Python:** Using Qt and PyQtGraph for high performance and flexibility.
 
 ![BLITZ Interface](docs/images/overview.png)
@@ -34,7 +35,10 @@ No installation needed—just a single, standalone *.exe file. Linux and Docker 
 ## Documentation
 
 * [Quick Start Guide](docs/walkthrough.md)
-* [Core Functionalities](docs/Tabs_explained.md)
+* [Features & Tabs Explained](docs/Tabs_explained.md)
+* [Missing & Planned Features](docs/MISSING_FEATURES.md)
+* [Optimization Report](docs/OPTIMIZATION.md)
+* [Data Sources & Build Variants](docs/SOURCES_AND_VARIANTS.md)
 
 ## Development
 
