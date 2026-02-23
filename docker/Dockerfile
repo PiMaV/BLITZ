@@ -8,7 +8,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Install system dependencies
 # - python3-venv for uv
-# - libgl1-mesa-glx for OpenGL (PyQt6/cv2)
+# - libgl1 and libglx-mesa0 for OpenGL (PyQt6/cv2) - replaced deprecated libgl1-mesa-glx
 # - libglib2.0-0, libsm6, libxext6, libxrender-dev for cv2
 # - libxcb-cursor0 for Qt6
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -16,7 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-venv \
     git \
     ffmpeg \
-    libgl1-mesa-glx \
+    libgl1 \
+    libglx-mesa0 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
