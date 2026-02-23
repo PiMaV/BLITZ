@@ -1,5 +1,5 @@
-# Use the linuxserver/webtop image based on Ubuntu 24.04 (Noble) which includes Python 3.12
-FROM lscr.io/linuxserver/webtop:ubuntu-xfce
+# Use the linuxserver/webtop image based on Ubuntu 24.04 (Noble) with Openbox (Lightweight Kiosk)
+FROM lscr.io/linuxserver/webtop:ubuntu-openbox
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -8,7 +8,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Install system dependencies
 # - python3-venv for uv
-# - libgl1 and libglx-mesa0 for OpenGL (PyQt6/cv2) - replaced deprecated libgl1-mesa-glx
+# - libgl1 and libglx-mesa0 for OpenGL (PyQt6/cv2)
 # - libglib2.0-0, libsm6, libxext6, libxrender-dev for cv2
 # - libxcb-cursor0 for Qt6
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -38,31 +38,39 @@ WORKDIR /app/blitz
 COPY . .
 
 # Create a virtual environment and install dependencies
-# We use --system to install into the system python or --python to specify version if needed
-# But here we want to use a venv in the project directory for isolation
 RUN uv sync --frozen
 
 # Install the startup script
 COPY docker/start-blitz.sh /usr/local/bin/start-blitz.sh
 RUN chmod +x /usr/local/bin/start-blitz.sh
 
-# Install the desktop shortcut
+# Configure Openbox for Kiosk mode
+# Copy configuration files (rc.xml, menu.xml, autostart) to system defaults and /defaults for user init
+RUN mkdir -p /etc/xdg/openbox /defaults/openbox && \
+    cp docker/openbox/* /etc/xdg/openbox/ && \
+    cp docker/openbox/* /defaults/openbox/ && \
+    chmod +x /etc/xdg/openbox/autostart /defaults/openbox/autostart
+
+# Install the desktop shortcut (optional backup)
 COPY docker/BLITZ.desktop /usr/share/applications/BLITZ.desktop
 RUN chmod +x /usr/share/applications/BLITZ.desktop
 
 # Ensure permissions for the app directory
 RUN chown -R abc:abc /app/blitz
 
-# Copy the desktop shortcut to the user's desktop (needs to be done at runtime via init, or baked in)
-# Webtop populates /config/Desktop from /defaults/Desktop if it exists? No, it doesn't.
-# But we can add a custom service or just rely on the menu entry.
-# However, for "noob proven", a desktop icon is best.
-# We can create a script in /etc/cont-init.d/99-blitz-shortcut
+# Copy the desktop shortcut to the user's desktop (via init script)
 RUN mkdir -p /etc/cont-init.d && \
     echo '#!/bin/bash\n\
 mkdir -p /config/Desktop\n\
 cp /usr/share/applications/BLITZ.desktop /config/Desktop/BLITZ.desktop\n\
 chown abc:abc /config/Desktop/BLITZ.desktop\n\
 chmod +x /config/Desktop/BLITZ.desktop\n\
-' > /etc/cont-init.d/99-blitz-shortcut && \
-    chmod +x /etc/cont-init.d/99-blitz-shortcut
+# Ensure Openbox config is populated if missing\n\
+mkdir -p /config/.config/openbox\n\
+if [ ! -f /config/.config/openbox/rc.xml ]; then\n\
+    cp /defaults/openbox/* /config/.config/openbox/\n\
+    chown -R abc:abc /config/.config/openbox\n\
+    chmod +x /config/.config/openbox/autostart\n\
+fi\n\
+' > /etc/cont-init.d/99-blitz-config && \
+    chmod +x /etc/cont-init.d/99-blitz-config

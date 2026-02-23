@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_menu xmlns="http://openbox.org/3.4/menu">
+    <menu id="root-menu" label="BLITZ">
+        <item label="Restart BLITZ">
+            <action name="Execute">
+                <command>pkill -f "python -m blitz"</command>
+            </action>
+        </item>
+    </menu>
+</openbox_menu>

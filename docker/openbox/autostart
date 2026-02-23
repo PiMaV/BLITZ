@@ -1,0 +1,11 @@
+# Disable screensaver and power management
+xset s off
+xset s noblank
+xset -dpms
+
+# Start BLITZ in a loop (Kiosk mode)
+# If the application crashes or is closed, it will restart automatically.
+while true; do
+    /usr/local/bin/start-blitz.sh
+    sleep 1
+done &
