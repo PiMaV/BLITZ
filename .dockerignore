@@ -20,5 +20,4 @@ tests/
 scripts/
 TODO.md
 profile_load.prof
-pyinstaller_command.md
 resources/public/

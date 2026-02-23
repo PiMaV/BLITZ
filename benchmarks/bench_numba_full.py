@@ -200,7 +200,9 @@ def _print_results(times_numba, times_numpy):
 
 def main() -> None:
     # Use larger dimensions for more realistic benchmark
-    run_benchmark(T=200, H=512, W=512, C=1)
+    run_benchmark(T=200, H=512, W=512, C=1) # 200MB
+    # run_benchmark(T=300, H=800, W=600, C=1) # 580MB
+    # run_benchmark(T=500, H=1200, W=900, C=1) # 2.2GB
 
 
 if __name__ == "__main__":

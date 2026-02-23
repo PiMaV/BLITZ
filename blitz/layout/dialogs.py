@@ -1310,20 +1310,21 @@ class RealCameraDialog(QDialog):
         self._set_stream_controls_enabled(False)
 
     def _stop(self) -> None:
-        if self._handler is None:
+        handler = self._handler
+        self._handler = None  # clear immediately to avoid re-entrancy (e.g. closeEvent)
+        if handler is None:
             return
-        self._handler.stop()
-        if not self._handler.wait_stopped(4000):
+        handler.stop()
+        if not handler.wait_stopped(4000):
             from ..tools import log
             log("[CAM] Timeout beim Stoppen", color="orange")
         try:
             if self._on_frame:
-                self._handler.frame_ready.disconnect(self._on_frame)
-            self._handler.buffer_status.disconnect(self._on_buffer_status)
-            self._handler.buffer_time_span_sec.disconnect(self._on_buffer_time_span)
+                handler.frame_ready.disconnect(self._on_frame)
+            handler.buffer_status.disconnect(self._on_buffer_status)
+            handler.buffer_time_span_sec.disconnect(self._on_buffer_time_span)
         except (TypeError, RuntimeError):
             pass
-        self._handler = None
         self._buffer_actual_sec = None
         self._update_fps_label()
         if self._on_stop:

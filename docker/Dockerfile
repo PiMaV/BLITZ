@@ -42,11 +42,11 @@ COPY . .
 RUN uv sync --frozen
 
 # Install the startup script
-COPY start-blitz.sh /usr/local/bin/start-blitz.sh
+COPY docker/start-blitz.sh /usr/local/bin/start-blitz.sh
 RUN chmod +x /usr/local/bin/start-blitz.sh
 
 # Install the desktop shortcut
-COPY BLITZ.desktop /usr/share/applications/BLITZ.desktop
+COPY docker/BLITZ.desktop /usr/share/applications/BLITZ.desktop
 RUN chmod +x /usr/share/applications/BLITZ.desktop
 
 # Ensure permissions for the app directory

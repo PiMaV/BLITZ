@@ -961,6 +961,7 @@ class UI_MainWindow(QWidget):
 
         pca_layout.addStretch()
         self.create_option_tab(pca_layout, "PCA")
+        self.pca_tab_index = self.option_tabwidget.count() - 1
 
         # --- Bench ---
         bench_layout = QVBoxLayout()

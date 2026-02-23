@@ -1290,8 +1290,22 @@ class MainWindow(QMainWindow):
             self._bench_timer.stop()
             self.ui.label_bench_live.setText("")
 
+    def _sync_pca_target_comp_to_data(self) -> None:
+        """Update Target Comp max and default from current data (e.g. when PCA tab is shown)."""
+        data = getattr(self.ui.image_viewer, "data", None)
+        n_frames = max(1, data.n_images) if data else 1
+        target_max = min(n_frames, 500)
+        target = self.ui.spinbox_pcacomp_target
+        target.setMaximum(target_max)
+        current = target.value()
+        if current < 1 or current > target_max or (current == 1 and target_max > 1):
+            default_target = min(n_frames // 2, 50, target_max)
+            default_target = max(1, default_target)
+            target.setValue(default_target)
+        self._pca_update_target_spinner_state()
+
     def _on_option_tab_changed(self, index: int) -> None:
-        """Toggle LIVE indicator and timer when Bench tab visible."""
+        """Toggle LIVE indicator and timer when Bench tab visible. Sync PCA Target Comp when PCA tab shown."""
         bench_idx = getattr(
             self.ui, "bench_tab_index",
             self.ui.option_tabwidget.count() - 1,
@@ -1302,6 +1316,9 @@ class MainWindow(QMainWindow):
         else:
             self.ui.label_bench_live.setText("")
         self._update_bench_timer()
+        pca_idx = getattr(self.ui, "pca_tab_index", -1)
+        if index == pca_idx:
+            self._sync_pca_target_comp_to_data()
 
     def _bench_tick(self) -> None:
         """Sample CPU/RAM/Disk, feed shared BenchData, refresh Bench tab + compact (if shown)."""

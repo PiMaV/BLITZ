@@ -8,7 +8,8 @@ __pycache__/
 
 # BLITZ related stuff:
 _cache.ini
-# QSettings atomic-write temp files (leftover if app was killed during save)
+# QSettings and user config (created at CWD when app runs)
+settings.blitz
 settings.blitz.*
 boot_bench_results.json
 boot_bench_results/

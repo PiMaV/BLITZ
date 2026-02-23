@@ -274,7 +274,8 @@ class ImageViewer(pg.ImageView):
         self.image_changed.emit()
 
     def updateImage(self, autoHistogramRange: bool = False) -> None:
-        super().updateImage(autoHistogramRange)
+        """Override: when Auto fit is off, never recalc LUT on frame change (timeline click/drag)."""
+        super().updateImage(autoHistogramRange=self._auto_fit)
 
     def toggle_auto_colormap(self) -> None:
         self._auto_colormap = not self._auto_colormap
@@ -454,8 +455,9 @@ class ImageViewer(pg.ImageView):
             autoRange=False,
             autoLevels=self._auto_fit,
         )
-        self.setLevels(min=mn, max=mx)
-        self.ui.histogram.setHistogramRange(mn, mx)
+        if self._auto_fit:
+            self.setLevels(min=mn, max=mx)
+            self.ui.histogram.setHistogramRange(mn, mx)
         self.image_size_changed.emit()
 
     def reduce(
