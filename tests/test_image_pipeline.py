@@ -121,6 +121,8 @@ class TestOpsPipeline:
         # Frames in valid range [2, 7] should be subtracted
         from blitz.data.tools import sliding_mean_at_frame
         for f in range(2, 8):
+            img.preview_frame = f
+            out = img.image
             sm = sliding_mean_at_frame(data, f, 3)
             expected = data[f] - sm
             np.testing.assert_allclose(out[f], expected, rtol=1e-5, atol=1e-5)
