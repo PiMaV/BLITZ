@@ -3,9 +3,10 @@ import numpy as np
 import psutil
 import os
 import sys
+from pathlib import Path
 
 # Ensure blitz is importable
-sys.path.append(os.getcwd())
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 try:
     from blitz.data.image import ImageData, MetaData
