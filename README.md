@@ -2,12 +2,17 @@
 
 ## TL;DR
 
-**BLITZ** is a high-performance, matrix-based image viewer built for efficiently managing massive datasets but equally suitable for single-image analysis.
+**BLITZ** is a high-performance, matrix-based image viewer for efficiently managing massive datasets and single-image analysis.  
+Version 2.0 introduces a fully refactored architecture with improved performance, stability, and maintainability.
 
 ## Download
 
-[Download the latest release for Windows](https://github.com/PiMaV/BLITZ/releases/latest)
-No installation needed—just a single, standalone *.exe file. Linux and Docker in the making.
+[Download the latest release for Windows and Ubuntu](https://github.com/PiMaV/BLITZ/releases/latest)
+
+No installation needed — just a single, standalone binary.  
+For Ubuntu, make the file executable:
+
+    chmod +x BLITZ
 
 ## Overview
 
@@ -15,15 +20,15 @@ No installation needed—just a single, standalone *.exe file. Linux and Docker 
 
 **Key Features:**
 
-* **Fast Data Handling:** Handles very large datasets efficiently (e.g. 21,000 images (~25GB) in ~35 seconds on a standard gaming laptop).
-* **Easy Data Handling:** Drag-and-drop functionality for various image and video formats, including NUMPY matrices (*.npy).
-* **Easy-to-use:** Automatic resource management for large and small datasets.
-* **User-Friendly Interface:** Intuitive GUI with mouse-based navigation and shortcut capabilities.
-* **Advanced Image Processing:** Matrix-based processing with fast statistical calculations (Numba-accelerated).
-* **Live View:** Support for Real USB Cameras and Simulated data streams.
-* **Built on Python:** Using Qt and PyQtGraph for high performance and flexibility.
+- **Fast Data Handling:** Handles very large datasets efficiently (e.g. 21,000 images (~25GB) in ~35 seconds on a standard gaming laptop).
+- **Easy Data Handling:** Drag-and-drop support for image, video, and NUMPY matrix (*.npy) formats.
+- **Easy-to-use:** Automatic resource management for small and large datasets.
+- **User-Friendly Interface:** Intuitive GUI with mouse-based navigation and shortcuts.
+- **Advanced Image Processing:** Matrix-based processing with fast, Numba-accelerated statistics.
+- **Live View:** Support for real USB cameras and simulated data streams.
+- **Built on Python:** Using Qt and PyQtGraph for high performance and flexibility.
 
-![BLITZ Interface](docs/images/overview.png)
+![BLITZ Interface](docs/images/BLITZ_overview_V2.png)
 
 ---
 
@@ -39,6 +44,10 @@ No installation needed—just a single, standalone *.exe file. Linux and Docker 
 * [Missing & Planned Features](docs/MISSING_FEATURES.md)
 * [Optimization Report](docs/OPTIMIZATION.md)
 * [Data Sources & Build Variants](docs/SOURCES_AND_VARIANTS.md)
+
+## Docker
+
+Run BLITZ in a browser via Docker. See: [docker/README.md](docker/README.md)
 
 ## Development
 
@@ -62,10 +71,6 @@ To compile and develop locally:
 ## Acknowledgements
 
 Early development of BLITZ was supported by Richard Krieg (student assistant) until v1.3.0 / January 2025, including refactoring, bug fixing, and feature development during the INP-funded project phase.
-
-## Docker
-
-Run BLITZ in a browser via Docker: see [docker/README.md](docker/README.md).
 
 ## Additional Resources
 

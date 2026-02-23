@@ -47,7 +47,7 @@ Property in `blitz/data/image.py`:
 - Returns the **full stack** (norm + mask, **without** reduce).
 - Used only in Aggregate mode (`_redop` is set).
 - Calculated on-the-fly – no permanent RAM overhead.
-- Respects: Norm pipeline, Mask (`_image_mask`, `_mask`), Crop, Transpose, Flip.
+- Respects: Norm pipeline, Mask (`_image_mask`, `_mask`), Crop, Rotate 90°, Flip.
 
 ### Implementation (`blitz/layout/viewer.py`)
 

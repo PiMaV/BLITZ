@@ -50,7 +50,7 @@ class ImageData:
         self._image_mask: np.ndarray | None = None
         self._cropped: tuple[int, int] | None = None
         self._save_cropped: tuple[int, int] | None = None
-        self._transposed = False
+        self._rotated_90 = False
         self._flipped_x = False
         self._flipped_y = False
         self._redop: ops.ReduceOperation | str | None = None
@@ -256,8 +256,8 @@ class ImageData:
             image[:, ~self._image_mask] = np.nan
         if self._mask is not None:
             image = image[self._mask]
-        if self._transposed:
-            image = np.swapaxes(image, 1, 2)
+        if self._rotated_90:
+            image = np.rot90(image, k=-1, axes=(1, 2))
         if self._flipped_x:
             image = np.flip(image, 1)
         if self._flipped_y:
@@ -281,8 +281,8 @@ class ImageData:
             image[:, ~self._image_mask] = np.nan
         if self._mask is not None:
             image = image[self._mask]
-        if self._transposed:
-            image = np.swapaxes(image, 1, 2)
+        if self._rotated_90:
+            image = np.rot90(image, k=-1, axes=(1, 2))
         if self._flipped_x:
             image = np.flip(image, 1)
         if self._flipped_y:
@@ -363,8 +363,8 @@ class ImageData:
         self._agg_bounds = None
 
     def mask(self, roi: pg.ROI) -> bool:
-        if self._transposed or self._flipped_x or self._flipped_y:
-            log("Masking not available while data is flipped or transposed",
+        if self._rotated_90 or self._flipped_x or self._flipped_y:
+            log("Masking not available while data is flipped or rotated",
                 color="red")
             return False
         pos = roi.pos()
@@ -378,7 +378,7 @@ class ImageData:
             x_stop += self._mask[1].start
             y_start += self._mask[2].start
             y_stop += self._mask[2].start
-        self._transposed = False
+        self._rotated_90 = False
         self._flipped_x = False
         self._flipped_y = False
         self._mask = (
@@ -408,8 +408,9 @@ class ImageData:
             return True
         return False
 
-    def transpose(self) -> None:
-        self._transposed = not self._transposed
+    def rotate_90(self) -> None:
+        """Toggle 90 deg clockwise rotation. Uses np.rot90, not transpose."""
+        self._rotated_90 = not self._rotated_90
 
     def flip_x(self) -> None:
         self._flipped_x = not self._flipped_x

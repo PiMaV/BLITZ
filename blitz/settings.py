@@ -17,11 +17,10 @@ _default_core_settings = {
 
     "default/multicore_size_threshold": 600 * (1024**2),
     "default/multicore_files_threshold": 1000,
-    "default/first_start_welcome_shown": False,
     "default/load_8bit": False,
     "default/load_grayscale": True,
     "default/max_ram": 2.,
-    "default/show_load_dialog": False,
+    "default/show_load_dialog": True,
     "default/colormap": "plasma",
 
     "data/sync": False,
@@ -47,7 +46,7 @@ _default_project_settings = {
     "cropped": (),
     "flipped_x": False,
     "flipped_y": False,
-    "transposed": False,
+    "rotated_90": False,
 
     "measure_tool_pixels": 1,
     "measure_tool_au": 1.0,

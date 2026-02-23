@@ -3,9 +3,7 @@ import sys
 
 import pyqtgraph as pg
 from PyQt6.QtCore import QCoreApplication
-from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import (QApplication, QDialog, QLabel, QPushButton,
-                              QVBoxLayout)
+from PyQt6.QtWidgets import QApplication
 
 # PyQt6 + pyqtgraph: when a ViewBox is destroyed, forgetView() calls updateAllViewLists()
 # on every remaining ViewBox; some menus' QComboBox may already be deleted -> RuntimeError.
@@ -34,21 +32,6 @@ from .layout.main import MainWindow
 from .theme import get_stylesheet, set_theme
 
 
-def _show_first_start_welcome(app: QApplication) -> None:
-    """First start: welcome. Reserved for important info later."""
-    dlg = QDialog()
-    dlg.setWindowIcon(QIcon(":/icon/blitz.ico"))
-    dlg.setWindowTitle("Welcome to BLITZ")
-    dlg.setMinimumWidth(420)
-    layout = QVBoxLayout(dlg)
-    layout.addWidget(QLabel("<b>Hallo und viel Spass!</b>"))
-    btn = QPushButton("Got it")
-    btn.setStyleSheet("background-color: #7aa2f7; color: #1a1b26;")
-    btn.clicked.connect(dlg.accept)
-    layout.addWidget(btn)
-    dlg.exec()
-
-
 def run() -> int:
     multiprocessing.freeze_support()
     pg.setConfigOptions(useNumba=False)
@@ -58,21 +41,6 @@ def run() -> int:
     theme = settings.get("app/theme")
     set_theme("light" if theme == "light" else "dark")
     app.setStyleSheet(get_stylesheet())
-
-    # Migration: boot_bench_done -> first_start_welcome_shown
-    shown = settings.get("default/first_start_welcome_shown")
-    if not shown:
-        try:
-            from .settings import SETTINGS
-            if SETTINGS is not None and SETTINGS.settings.contains("default/boot_bench_done"):
-                if SETTINGS.settings.value("default/boot_bench_done", False, type=bool):
-                    shown = True
-                    settings.set("default/first_start_welcome_shown", True)
-        except Exception:
-            pass
-    if not shown:
-        _show_first_start_welcome(app)
-        settings.set("default/first_start_welcome_shown", True)
 
     while True:
         app = QCoreApplication.instance()

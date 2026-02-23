@@ -16,12 +16,14 @@
 *   **Proper Exporter:** Dialog with Options to export as *.npy or image for Raw / Pipeline / PCA data
 *   **RoSEE:** Check Isolines and normalization (Autozoom should activate).
 *   **Mouse Wheel Zoom:** Allow zooming only on one axis (in extraction plots?).
-*   **Docker:** Verify Docker deployment.
-*   **Ubuntu:** Verify Ubuntu deployment.
 
 ## Low Priority / Long Term / Discussion
 
 *   **Project Files:** Restore Load/Save project file functionality in a different way than before?. See `docs/MISSING_FEATURES.md`.
+
+- LUT autorefresh / zoom?
+- PCA Compoenten Table smaller 
+- Binary Mask Eval?
 
 ## Notes on "Missing" Features
 

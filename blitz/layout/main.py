@@ -222,8 +222,8 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_flipy.clicked.connect(
             lambda: self.ui.image_viewer.manipulate("flip_y")
         )
-        self.ui.checkbox_transpose.clicked.connect(
-            lambda: self.ui.image_viewer.manipulate("transpose")
+        self.ui.checkbox_rotate_90.clicked.connect(
+            lambda: self.ui.image_viewer.manipulate("rotate_90")
         )
         self.ui.checkbox_mask.clicked.connect(self.ui.image_viewer.toggle_mask)
         self.ui.button_apply_mask.pressed.connect(self.apply_mask)
@@ -654,11 +654,11 @@ class MainWindow(QMainWindow):
             True,
         )
         settings.connect_sync_project(
-            "transposed",
-            self.ui.checkbox_transpose.stateChanged,
-            self.ui.checkbox_transpose.isChecked,
-            self.ui.checkbox_transpose.setChecked,
-            lambda: self.ui.image_viewer.manipulate("transpose"),
+            "rotated_90",
+            self.ui.checkbox_rotate_90.stateChanged,
+            self.ui.checkbox_rotate_90.isChecked,
+            self.ui.checkbox_rotate_90.setChecked,
+            lambda: self.ui.image_viewer.manipulate("rotate_90"),
             True,
         )
         settings.connect_sync_project(
@@ -774,7 +774,7 @@ class MainWindow(QMainWindow):
         self.ui.combobox_reduce.setCurrentIndex(0)
         self.ui.checkbox_flipx.setChecked(False)
         self.ui.checkbox_flipy.setChecked(False)
-        self.ui.checkbox_transpose.setChecked(False)
+        self.ui.checkbox_rotate_90.setChecked(False)
         self.ui.combobox_ops_subtract_src.setCurrentIndex(0)
         self.ui.combobox_ops_divide_src.setCurrentIndex(0)
         self.ui.combobox_ops_range_method.setCurrentIndex(0)  # Mean
@@ -2235,11 +2235,16 @@ class MainWindow(QMainWindow):
             txt.setPos(kx, ky)
             pi.addItem(txt)
         pi.showGrid(x=True, y=True, alpha=0.4)
-        self.ui.table_pca_results.setRowCount(max_modes)
+        self.ui.table_pca_results.setRowCount(3)
+        self.ui.table_pca_results.setColumnCount(max_modes + 1)
+        self.ui.table_pca_results.setItem(0, 0, QTableWidgetItem("[%]"))
+        self.ui.table_pca_results.setItem(1, 0, QTableWidgetItem("Var"))
+        self.ui.table_pca_results.setItem(2, 0, QTableWidgetItem("Cumul"))
         for i in range(max_modes):
-            self.ui.table_pca_results.setItem(i, 0, QTableWidgetItem(str(int(x[i]))))
-            self.ui.table_pca_results.setItem(i, 1, QTableWidgetItem(f"{indiv[i]:.2f}"))
-            self.ui.table_pca_results.setItem(i, 2, QTableWidgetItem(f"{cumul[i]:.1f}"))
+            self.ui.table_pca_results.setItem(0, i + 1, QTableWidgetItem(str(int(x[i]))))
+            self.ui.table_pca_results.setItem(1, i + 1, QTableWidgetItem(f"{indiv[i]:.2f}"))
+            self.ui.table_pca_results.setItem(2, i + 1, QTableWidgetItem(f"{cumul[i]:.1f}"))
+        self.ui.table_pca_results.setColumnWidth(0, 48)
 
     def _pca_update_timeline_label(self) -> None:
         """Set timeline mode label (top-right overlay): Component vs Frame."""

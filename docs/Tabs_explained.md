@@ -44,7 +44,7 @@ Controls for visualization and non-destructive image manipulation.
 
 ### View
 - **Flip x / Flip y:** Mirrors the image.
-- **Transpose:** Swaps X/Y axes (90-degree rotation + flip).
+- **Rotate 90°:** Rotates the image 90 degrees clockwise.
 
 ### Display Mask
 Define regions to exclude from analysis and display.
