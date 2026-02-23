@@ -68,8 +68,63 @@ jobs:
           name: BLITZ-Windows
           path: dist/BLITZ.exe
 
+  linux:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        shell: bash
+        run: pip install uv
+
+      - name: Sync dependencies
+        shell: bash
+        run: uv sync --dev
+
+      - name: Read version from pyproject.toml
+        id: ver
+        shell: bash
+        run: |
+          python -c "import re; print('version=' + re.search(r'(?m)^version\s*=\s*\"([^\"]+)\"', open('pyproject.toml').read()).group(1))" >> $GITHUB_OUTPUT
+
+      - name: Create release tag name
+        id: tag
+        shell: bash
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          TAG="build-$VERSION-${{ github.run_number }}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Build with PyInstaller
+        shell: bash
+        run: uv run pyinstaller BLITZ.spec --noconfirm --clean
+
+      - name: Verify output
+        shell: bash
+        run: |
+          if [ -f "dist/BLITZ" ]; then
+            echo "Build success: dist/BLITZ found."
+          else
+            echo "Build failed: dist/BLITZ not found."
+            exit 1
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BLITZ-Linux
+          path: dist/BLITZ
+
   release:
-    needs: windows
+    needs: [windows, linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -80,6 +135,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: BLITZ-Windows
+          path: dist
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: BLITZ-Linux
           path: dist
 
       - name: Create tag (manual run only)
@@ -107,5 +168,7 @@ jobs:
           tag_name: ${{ needs.windows.outputs.tag }}
           name: BLITZ ${{ needs.windows.outputs.version }}
           target_commitish: ${{ github.sha }}
-          files: dist/BLITZ.exe
+          files: |
+            dist/BLITZ.exe
+            dist/BLITZ
           fail_on_unmatched_files: true
