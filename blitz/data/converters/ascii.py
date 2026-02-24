@@ -264,24 +264,38 @@ def load_ascii(
         h, w = sample_meta.size
         bytes_per = 1 if convert_to_8_bit else 8
         total_size_estimate = n * h * w * bytes_per
-    use_multicore = (
-        n > settings.get("default/multicore_files_threshold")
-        or total_size_estimate > settings.get("default/multicore_size_threshold")
-    )
+    files_thresh = settings.get("default/multicore_files_threshold")
+    size_thresh = settings.get("default/multicore_size_threshold")
+    use_multicore = n > files_thresh or total_size_estimate > size_thresh
 
     args = [(fp, delimiter, first_col_is_row_number, size_ratio, mask, convert_to_8_bit) for fp in files]
     if use_multicore:
+        reason = []
+        if n > files_thresh:
+            reason.append(f"{n} files > {files_thresh}")
+        if total_size_estimate > size_thresh:
+            reason.append(f"{total_size_estimate / (1024**2):.0f} MB > {size_thresh / (1024**2):.0f} MB")
+        msg = "ASCII parallel (" + " or ".join(reason) + ")"
+        log(msg, color="green")
         if message_callback:
-            message_callback("Loading in parallel (progress not available)...")
+            message_callback(msg)
         with Pool(physical_cpu_count()) as pool:
             results = pool.starmap(_load_single_ascii_file, args)
         if progress_callback:
             progress_callback(100)
     else:
+        msg = (
+            f"ASCII sequential ({n} files, "
+            f"{total_size_estimate / (1024**2):.0f} MB; below "
+            f"{files_thresh} files / {size_thresh / (1024**2):.0f} MB threshold)"
+        )
+        log(msg, color="green")
+        if message_callback:
+            message_callback(msg)
         results = []
         for i, fp in enumerate(files):
             if message_callback:
-                message_callback(f"Loading {fp.name}...")
+                message_callback(f"Loading {fp.name}..." + (f" ({i+1}/{n})" if n > 1 else ""))
             results.append(_load_single_ascii_file(fp, delimiter, first_col_is_row_number, size_ratio, mask, convert_to_8_bit))
             if progress_callback and n > 0:
                 progress_callback(int(100 * (i + 1) / n))

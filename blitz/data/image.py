@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 import numpy as np
 import pyqtgraph as pg
@@ -53,6 +53,7 @@ class ImageData:
         self._rotated_90 = False
         self._flipped_x = False
         self._flipped_y = False
+        self._transposed = False
         self._redop: ops.ReduceOperation | str | None = None
         self._ops_pipeline: dict | None = None  # {subtract, divide} steps
         self._agg_bounds: tuple[int, int] | None = None  # Non-destructive agg range
@@ -256,6 +257,15 @@ class ImageData:
             image[:, ~self._image_mask] = np.nan
         if self._mask is not None:
             image = image[self._mask]
+
+        # Transforms: Order matters. Transpose first?
+        # Standard: Transpose, then Rotate, then Flip?
+        # User controls: Flip XY (Transpose) and Rotate 90.
+        # If both checked: Transpose then Rotate 90.
+
+        if self._transposed:
+            image = np.transpose(image, (0, 2, 1, 3))
+
         if self._rotated_90:
             image = np.rot90(image, k=-1, axes=(1, 2))
         if self._flipped_x:
@@ -281,6 +291,10 @@ class ImageData:
             image[:, ~self._image_mask] = np.nan
         if self._mask is not None:
             image = image[self._mask]
+
+        if self._transposed:
+            image = np.transpose(image, (0, 2, 1, 3))
+
         if self._rotated_90:
             image = np.rot90(image, k=-1, axes=(1, 2))
         if self._flipped_x:
@@ -363,8 +377,8 @@ class ImageData:
         self._agg_bounds = None
 
     def mask(self, roi: pg.ROI) -> bool:
-        if self._rotated_90 or self._flipped_x or self._flipped_y:
-            log("Masking not available while data is flipped or rotated",
+        if self._rotated_90 or self._flipped_x or self._flipped_y or self._transposed:
+            log("Masking not available while data is flipped, rotated or transposed",
                 color="red")
             return False
         pos = roi.pos()
@@ -381,6 +395,7 @@ class ImageData:
         self._rotated_90 = False
         self._flipped_x = False
         self._flipped_y = False
+        self._transposed = False
         self._mask = (
             slice(None, None), slice(x_start, x_stop), slice(y_start, y_stop),
         )
@@ -417,6 +432,10 @@ class ImageData:
 
     def flip_y(self) -> None:
         self._flipped_y = not self._flipped_y
+
+    def transpose(self) -> None:
+        """Toggle transpose (Flip XY)."""
+        self._transposed = not self._transposed
 
     def get_mask(self) -> tuple[slice, slice, slice] | None:
         return self._mask

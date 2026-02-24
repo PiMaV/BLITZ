@@ -2,6 +2,8 @@
 
 ## Known Issues (Bugs)
 
+- Mean wird doppelt berechnet?
+- Rangwe panel bruacht mehr minimal width
 - ...
 
 ## High Priority Features

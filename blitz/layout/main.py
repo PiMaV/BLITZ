@@ -461,14 +461,18 @@ class MainWindow(QMainWindow):
 
     def _on_timeline_clicked_to_frame(self, idx: int) -> None:
         """User clicked main timeline -> switch to frame (Reduce = None)."""
-        self.ui.combobox_reduce.blockSignals(True)
-        self.ui.combobox_reduce.setCurrentIndex(0)
-        self.ui.combobox_reduce.blockSignals(False)
-        self.update_view_mode()
+        was_agg = self._is_aggregate_view()
+        if was_agg:
+            self.ui.combobox_reduce.blockSignals(True)
+            self.ui.combobox_reduce.setCurrentIndex(0)
+            self.ui.combobox_reduce.blockSignals(False)
+            self.update_view_mode()
         n = self.ui.image_viewer.image.shape[0]
         idx = max(0, min(idx, n - 1))
         self.ui.image_viewer.setCurrentIndex(idx)
         self.ui.image_viewer.timeLine.setPos((idx, 0))
+        if not was_agg:
+            self.update_statusbar()
 
     def _on_reduce_changed(self) -> None:
         """Reduce dropdown changed -> update view (frame vs aggregate)."""
@@ -1403,12 +1407,16 @@ class MainWindow(QMainWindow):
         if not dlg.exec():
             return
         user_params = dlg.get_params()
-        params = {k: v for k, v in user_params.items() if k != "mask_rel"}
+        skip_keys = {"mask_rel", "roi_state", "flip_xy"}
+        params = {k: v for k, v in user_params.items() if k not in skip_keys}
+        flip_xy = user_params.get("flip_xy", False)
+        target_roi_state = user_params.get("roi_state")
         self._ascii_session_defaults = {
             "size_ratio": user_params["size_ratio"],
             "convert_to_8_bit": user_params["convert_to_8_bit"],
             "delimiter": user_params["delimiter"],
             "first_col_is_row_number": user_params["first_col_is_row_number"],
+            "flip_xy": user_params.get("flip_xy", False),
         }
         if "subset_ratio" in user_params:
             self._ascii_session_defaults["subset_ratio"] = user_params["subset_ratio"]
@@ -1416,6 +1424,10 @@ class MainWindow(QMainWindow):
             self._ascii_session_defaults["mask_rel"] = user_params["mask_rel"]
         else:
             self._ascii_session_defaults.pop("mask_rel", None)
+        if "roi_state" in user_params:
+            self._ascii_session_defaults["roi_state"] = user_params["roi_state"]
+        else:
+            self._ascii_session_defaults.pop("roi_state", None)
 
         with LoadingManager(self, f"Loading {path}", blocking_label=self.ui.blocking_status) as lm:
             img = load_ascii(
@@ -1426,6 +1438,10 @@ class MainWindow(QMainWindow):
             )
         log(f"Loaded in {lm.duration:.2f}s")
         self.ui.image_viewer.set_image(img)
+
+        # Apply transforms from dialog
+        if flip_xy:
+            self.ui.image_viewer.manipulate("transpose")
         self.last_file_dir = path.parent
         self.last_file = path.name
         self.update_statusbar()
@@ -1783,7 +1799,12 @@ class MainWindow(QMainWindow):
                             "step": user_params["step"],
                             "grayscale": user_params["grayscale"],
                             "convert_to_8_bit": user_params.get("convert_to_8_bit", False),
+                            "flip_xy": user_params.get("flip_xy", False),
                         }
+                        if "roi_state" in user_params:
+                            self._video_session_defaults["roi_state"] = user_params["roi_state"]
+                        else:
+                            self._video_session_defaults.pop("roi_state", None)
                         if "mask_rel" in user_params:
                             self._video_session_defaults["mask_rel"] = user_params["mask_rel"]
                         else:
@@ -1818,6 +1839,7 @@ class MainWindow(QMainWindow):
                         params["convert_to_8_bit"] = self._video_session_defaults.get(
                             "convert_to_8_bit", params["convert_to_8_bit"]
                         )
+                        params["flip_xy"] = self._video_session_defaults.get("flip_xy", False)
                         self.ui.spinbox_load_size.setValue(params["size_ratio"])
                         self.ui.spinbox_load_subset.setValue(params["subset_ratio"])
                         self.ui.checkbox_load_grayscale.setChecked(params["grayscale"])
@@ -1856,7 +1878,12 @@ class MainWindow(QMainWindow):
                                 "size_ratio": user_params["size_ratio"],
                                 "grayscale": user_params["grayscale"],
                                 "convert_to_8_bit": user_params.get("convert_to_8_bit", False),
+                                "flip_xy": user_params.get("flip_xy", False),
                             }
+                            if "roi_state" in user_params:
+                                self._image_session_defaults["roi_state"] = user_params["roi_state"]
+                            else:
+                                self._image_session_defaults.pop("roi_state", None)
                             if "subset_ratio" in user_params:
                                 self._image_session_defaults["subset_ratio"] = user_params["subset_ratio"]
                             if "mask_rel" in user_params:
@@ -1891,6 +1918,7 @@ class MainWindow(QMainWindow):
                             params["convert_to_8_bit"] = self._image_session_defaults.get(
                                 "convert_to_8_bit", params["convert_to_8_bit"]
                             )
+                            params["flip_xy"] = self._image_session_defaults.get("flip_xy", False)
                             self.ui.spinbox_load_size.setValue(params["size_ratio"])
                             self.ui.spinbox_load_subset.setValue(params["subset_ratio"])
                             self.ui.checkbox_load_grayscale.setChecked(params["grayscale"])
@@ -1910,7 +1938,13 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 log(f"Error reading image metadata: {e}", color="red")
 
+        # Pop dialog-only params (DataLoader does not accept these)
         params.pop("mask_rel", None)
+        target_roi_state = params.pop("roi_state", None)
+        flip_xy = params.pop("flip_xy", False)
+        if "step" in params:
+            params["subset_ratio"] = 1.0 / params.pop("step")
+        params.pop("frame_range", None)
 
         with LoadingManager(self, f"Loading {path}", blocking_label=self.ui.blocking_status) as lm:
             self.ui.image_viewer.load_data(
@@ -1920,6 +1954,12 @@ class MainWindow(QMainWindow):
                 **params,
             )
         log(f"Loaded in {lm.duration:.2f}s")
+
+        # Apply transforms from load dialog (flip_xy)
+        if flip_xy:
+            self.ui.image_viewer.manipulate("transpose")
+        # ROI (target_roi_state) determines mask at load time; no post-load crop.
+        # Program ROI stays independent (init_roi default).
         self.last_file_dir = path.parent
         self.last_file = path.name
         self.update_statusbar()

@@ -522,8 +522,15 @@ class DataLoader:
             or total_size_estimate > size_thresh
         )
         if use_multicore:
+            reason = []
+            if len(content) > files_thresh:
+                reason.append(f"{len(content)} files > {files_thresh}")
+            if total_size_estimate > size_thresh:
+                reason.append(f"{total_size_estimate / (1024**2):.0f} MB > {size_thresh / (1024**2):.0f} MB")
+            msg = "Parallel load (" + " or ".join(reason) + ")"
+            log(msg, color="green")
             if message_callback is not None:
-                message_callback("Loading in parallel (progress not available)...")
+                message_callback(msg)
             n_workers = physical_cpu_count()
             # Chunking reduces pickle/IPC overhead (esp. on Windows spawn). ~4 batches per worker.
             chunksize = max(1, n_content // (n_workers * 4))
@@ -544,6 +551,14 @@ class DataLoader:
             if progress_callback is not None:
                 progress_callback(100)
         else:
+            msg = (
+                f"Sequential load ({len(content)} files, "
+                f"{total_size_estimate / (1024**2):.0f} MB; below "
+                f"{files_thresh} files / {size_thresh / (1024**2):.0f} MB threshold)"
+            )
+            log(msg, color="green")
+            if message_callback is not None:
+                message_callback(msg)
             matrices, metadata = [], []
             failed = []
             for i, f in enumerate(content):
