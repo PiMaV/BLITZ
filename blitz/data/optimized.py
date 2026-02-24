@@ -91,7 +91,7 @@ def apply_pipeline_fused(
 @jit(nopython=True, parallel=True, fastmath=True, cache=_JIT_CACHE)
 def sliding_mean_numba(images, window, lag):
     """
-    Compute sliding mean over time dimension T.
+    Compute sliding mean over time dimension T. Optimized for cache locality.
 
     images: (T, H, W, C) float32
     window: int
@@ -105,42 +105,42 @@ def sliding_mean_numba(images, window, lag):
     # Allocate result
     result = np.empty((N, H, W, C), dtype=np.float32)
 
-    # Parallelize over spatial dimensions
-    # Using prange on H is usually sufficient parallelism
+    # Parallelize over spatial dimension H
     for h in prange(H):
+        # Local sum accumulator for the current row to maintain state of sliding window.
+        # This (W, C) array fits in L1/L2 cache, ensuring fast updates.
+        sums = np.zeros((W, C), dtype=np.float32)
+
+        # Initialize sums for the first window [lag+1 : lag+1+window]
+        start_idx = lag + 1
+        for k in range(window):
+            t_idx = start_idx + k
+            for w in range(W):
+                for c in range(C):
+                    sums[w, c] += images[t_idx, h, w, c]
+
+        # Write first result (n=0)
+        # For a fixed h and n, the loop over w and c writes contiguously.
         for w in range(W):
             for c in range(C):
-                # Sliding window sum
-                # Initialize first window sum
-                # Window range for output t=0 corresponds to input indices [lag : lag+window]
-                # Actually, standard definition:
-                # mean[t] = mean(input[t+lag : t+lag+window])
+                result[0, h, w, c] = sums[w, c] / window
 
-                # Compute sum for first window
-                # Corresponds to input indices [lag+1 : lag+window] (inclusive-exclusive?)
-                # Legacy implementation: cs[lag+window] - cs[lag] -> sums elements lag+1 to lag+window (1-based count?)
-                # Actually indices: lag+1, lag+2, ..., lag+window.
-                current_sum = 0.0
-                start_idx = lag + 1
-                for k in range(window):
-                    current_sum += images[start_idx + k, h, w, c]
+        # Sliding update for subsequent time steps n=1...N-1
+        for n in range(1, N):
+            leaving_idx = lag + n
+            entering_idx = lag + window + n
 
-                result[0, h, w, c] = current_sum / window
-
-                # Sliding update
-                for n in range(1, N):
-                    # Remove element leaving the window
-                    leaving_idx = lag + n
-                    # Add element entering the window
-                    entering_idx = lag + window + n
-
+            # Process all pixels in the row for this time step.
+            # Innermost loops over w and c ensure contiguous memory access
+            # for images (reads), sums (updates), and result (writes).
+            for w in range(W):
+                for c in range(C):
                     val_leaving = images[leaving_idx, h, w, c]
                     val_entering = images[entering_idx, h, w, c]
 
-                    current_sum -= val_leaving
-                    current_sum += val_entering
-
-                    result[n, h, w, c] = current_sum / window
+                    s = sums[w, c] - val_leaving + val_entering
+                    sums[w, c] = s
+                    result[n, h, w, c] = s / window
 
     return result
 
