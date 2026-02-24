@@ -16,7 +16,8 @@ from .. import settings
 from ..theme import get_style
 from ..data import optimized
 from ..data.image import ImageData
-from ..data.load import DataLoader, get_image_metadata, get_sample_format
+from ..data.load import (DataLoader, get_image_metadata, get_matrix_metadata,
+                         get_sample_format)
 from ..data.web import WebDataLoader
 from ..data.ops import ReduceOperation
 from ..tools import (LoadingManager, format_size_mb, get_available_ram,
@@ -62,8 +63,8 @@ def _set_numba_status(label, data) -> None:
         label.setText("Numba: on" if on else "Numba: off")
 from ..data.converters import get_ascii_metadata, load_ascii
 from .dialogs import (AsciiLoadOptionsDialog, CropTimelineDialog,
-                     ImageLoadOptionsDialog, RealCameraDialog,
-                     VideoLoadOptionsDialog)
+                     ImageLoadOptionsDialog, MatrixLoadOptionsDialog,
+                     RealCameraDialog, VideoLoadOptionsDialog)
 from .rosee import ROSEEAdapter
 from .simulated_live import SimulatedLiveWidget
 from .tof import TOFAdapter
@@ -92,6 +93,7 @@ class MainWindow(QMainWindow):
         self._video_session_defaults: dict = {}
         self._image_session_defaults: dict = {}
         self._ascii_session_defaults: dict = {}
+        self._matrix_session_defaults: dict = {}
         self._simulated_live: SimulatedLiveWidget | None = None
         self._real_camera_dialog: RealCameraDialog | None = None
         self._aggregate_first_open: bool = True
@@ -1747,7 +1749,8 @@ class MainWindow(QMainWindow):
         if (
             DataLoader._is_video(path)
             or (path.is_file() and DataLoader._is_image(path))
-            or (path.is_dir() and get_image_metadata(path) is not None)
+            or (path.is_file() and DataLoader._is_array(path))
+            or (path.is_dir() and (get_image_metadata(path) is not None or get_matrix_metadata(path) is not None))
         ):
             is_gray, is_uint8 = get_sample_format(path)
             if is_uint8:
@@ -1909,6 +1912,69 @@ class MainWindow(QMainWindow):
                                     params["mask"] = (slice(x0, x1), slice(y0, y1))
             except Exception as e:
                 log(f"Error reading image metadata: {e}", color="red")
+
+        elif (
+            (path.is_file() and DataLoader._is_array(path))
+            or (path.is_dir() and get_matrix_metadata(path) is not None)
+        ):
+            try:
+                meta = get_matrix_metadata(path, allow_pickle=self._matrix_session_defaults.get("allow_pickle", False))
+                if meta is None and path.is_file():
+                    # Might be pickled or corrupt. Show dialog anyway if user explicitly tried to open it.
+                    meta = {"file_name": path.name, "size": (0, 0), "file_count": 1}
+
+                if meta is not None:
+                    show_dialog = self.ui.checkbox_video_dialog_always.isChecked()
+                    if show_dialog:
+                        dlg = MatrixLoadOptionsDialog(
+                            path, meta, parent=self,
+                            initial_params=self._matrix_session_defaults,
+                        )
+                        if dlg.exec():
+                            user_params = dlg.get_params()
+                            params.update(user_params)
+                            self._matrix_session_defaults = {
+                                "size_ratio": user_params["size_ratio"],
+                                "grayscale": user_params["grayscale"],
+                                "convert_to_8_bit": user_params.get("convert_to_8_bit", False),
+                                "allow_pickle": user_params.get("allow_pickle", False),
+                            }
+                            if "subset_ratio" in user_params:
+                                self._matrix_session_defaults["subset_ratio"] = user_params["subset_ratio"]
+                            if "mask_rel" in user_params:
+                                self._matrix_session_defaults["mask_rel"] = user_params["mask_rel"]
+                            else:
+                                self._matrix_session_defaults.pop("mask_rel", None)
+
+                            self.ui.spinbox_load_size.setValue(user_params["size_ratio"])
+                            self.ui.spinbox_load_subset.setValue(user_params.get("subset_ratio", params["subset_ratio"]))
+                            self.ui.checkbox_load_grayscale.setChecked(user_params["grayscale"])
+                            self.ui.checkbox_load_8bit.setChecked(user_params.get("convert_to_8_bit", False))
+                        else:
+                            return
+                    else:
+                        if self._matrix_session_defaults:
+                            params.update({
+                                "size_ratio": self._matrix_session_defaults.get("size_ratio", params["size_ratio"]),
+                                "grayscale": self._matrix_session_defaults.get("grayscale", params["grayscale"]),
+                                "subset_ratio": self._matrix_session_defaults.get("subset_ratio", params["subset_ratio"]),
+                                "convert_to_8_bit": self._matrix_session_defaults.get("convert_to_8_bit", params["convert_to_8_bit"]),
+                                "allow_pickle": self._matrix_session_defaults.get("allow_pickle", False),
+                            })
+                            self.ui.spinbox_load_size.setValue(params["size_ratio"])
+                            self.ui.spinbox_load_subset.setValue(params["subset_ratio"])
+                            self.ui.checkbox_load_grayscale.setChecked(params["grayscale"])
+                            self.ui.checkbox_load_8bit.setChecked(params["convert_to_8_bit"])
+                            if "mask_rel" in self._matrix_session_defaults:
+                                r = self._matrix_session_defaults["mask_rel"]
+                                sr = params["size_ratio"]
+                                h_m, w_m = meta["size"]
+                                h, w = int(h_m * sr), int(w_m * sr)
+                                x0, y0, x1, y1 = int(r[0]*w), int(r[1]*h), int(r[2]*w), int(r[3]*h)
+                                if x1 > x0 and y1 > y0 and (x1 - x0 < w or y1 - y0 < h):
+                                    params["mask"] = (slice(x0, x1), slice(y0, y1))
+            except Exception as e:
+                log(f"Error reading matrix metadata: {e}", color="red")
 
         params.pop("mask_rel", None)
 

@@ -21,6 +21,7 @@ from ..data.converters.ascii import (
     parse_ascii_raw,
 )
 from ..data.load import (get_image_metadata, get_image_preview,
+                         get_matrix_metadata, get_matrix_preview,
                          get_sample_bytes_per_pixel, get_sample_format,
                          get_sample_format_display, get_video_preview)
 from ..data.image import VideoMetaData
@@ -401,6 +402,293 @@ class _ImagePreviewLoader(QThread):
             normalize=self._normalize,
         )
         self.finished.emit(img)
+
+
+class _MatrixPreviewLoader(QThread):
+    finished = pyqtSignal(object)
+
+    def __init__(self, path: Path, size_ratio: float, grayscale: bool,
+                 mode: str = "max", normalize: bool = True, allow_pickle: bool = False):
+        super().__init__()
+        self._path = path
+        self._size_ratio = size_ratio
+        self._grayscale = grayscale
+        self._mode = mode
+        self._normalize = normalize
+        self._allow_pickle = allow_pickle
+
+    def run(self):
+        img = get_matrix_preview(
+            self._path,
+            size_ratio=self._size_ratio,
+            grayscale=self._grayscale,
+            mode=self._mode,
+            normalize=self._normalize,
+            allow_pickle=self._allow_pickle,
+        )
+        self.finished.emit(img)
+
+
+class MatrixLoadOptionsDialog(QDialog):
+    def __init__(
+        self,
+        path: Path,
+        metadata: dict,
+        parent: Optional[QWidget] = None,
+        initial_params: Optional[dict] = None,
+    ):
+        super().__init__(parent)
+        self.setWindowIcon(QIcon(":/icon/blitz.ico"))
+        self.setWindowTitle("Matrix Loading Options (.npy)")
+        self._path = path
+        self.metadata = metadata
+        self._is_folder = metadata["file_count"] > 1
+        self._preview: Optional[np.ndarray] = None
+        self._roi: Optional[pg.RectROI] = None
+        self._preview_loader: Optional[_MatrixPreviewLoader] = None
+        self._preview_options_changed = False
+        self._setup_ui()
+        self._initial_mask_rel = initial_params.get("mask_rel") if initial_params else None
+
+        # Matrix specific defaults
+        is_gray, is_uint8 = get_sample_format(path)
+        if initial_params:
+            self.spin_resize.setValue(int(initial_params.get("size_ratio", 1.0) * 100))
+            self.chk_grayscale.setChecked(initial_params.get("grayscale", is_gray))
+            self.chk_8bit.setChecked(initial_params.get("convert_to_8_bit", is_uint8))
+            self.chk_pickle.setChecked(initial_params.get("allow_pickle", False))
+            if self._is_folder and "subset_ratio" in initial_params:
+                self.spin_subset.setValue(initial_params["subset_ratio"])
+        else:
+            self.chk_grayscale.setChecked(is_gray)
+            self.chk_8bit.setChecked(is_uint8)
+            self.chk_pickle.setChecked(False)
+
+        self._sample_bytes = get_sample_bytes_per_pixel(path)
+        self._update_estimates()
+        self._start_preview_load()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+
+        info_layout = QFormLayout()
+        self.lbl_file = QLabel(self.metadata["file_name"])
+        h, w = self.metadata["size"]
+        self.lbl_dims = QLabel(f"{h} x {w}")
+        self.lbl_count = QLabel(str(self.metadata["file_count"]))
+        self.lbl_format = QLabel(get_sample_format_display(self._path))
+        info_layout.addRow("File:", self.lbl_file)
+        info_layout.addRow("Dimensions:", self.lbl_dims)
+        info_layout.addRow("Frames/Files:", self.lbl_count)
+        info_layout.addRow("Source format:", self.lbl_format)
+        layout.addLayout(info_layout)
+
+        layout.addWidget(QLabel("<b>Loading Options</b>"))
+        controls_layout = QFormLayout()
+
+        self.spin_resize = QSpinBox()
+        self.spin_resize.setRange(1, 100)
+        self.spin_resize.setValue(100)
+        self.spin_resize.setSuffix(" %")
+        resize_row = QHBoxLayout()
+        resize_row.addWidget(self.spin_resize)
+        self.lbl_size_px = QLabel("")
+        resize_row.addWidget(self.lbl_size_px)
+        resize_row.addStretch()
+        controls_layout.addRow("Resize:", resize_row)
+
+        if self._is_folder:
+            self.spin_subset = QDoubleSpinBox()
+            self.spin_subset.setRange(0.01, 1.0)
+            self.spin_subset.setValue(1.0)
+            self.spin_subset.setSingleStep(0.1)
+            self.spin_subset.setPrefix("Subset: ")
+            subset_row = QHBoxLayout()
+            subset_row.addWidget(self.spin_subset)
+            self.lbl_num_frames = QLabel("")
+            subset_row.addWidget(self.lbl_num_frames)
+            subset_row.addStretch()
+            controls_layout.addRow("", subset_row)
+
+        self.chk_grayscale = QCheckBox("Load as Grayscale")
+        self.chk_8bit = QCheckBox("Convert to 8 bit")
+        controls_layout.addRow("", self.chk_grayscale)
+        controls_layout.addRow("", self.chk_8bit)
+
+        # Pickle Option (The Security Toggle)
+        self.chk_pickle = QCheckBox("Allow Pickle (potential security risk!)")
+        self.chk_pickle.setToolTip(
+            "Only enable if you trust the source. "
+            "Allows loading .npy files containing arbitrary Python objects."
+        )
+        self.chk_pickle.setStyleSheet("QCheckBox { color: #f7768e; }") # Reddish color
+        controls_layout.addRow("", self.chk_pickle)
+
+        layout.addLayout(controls_layout)
+
+        layout.addWidget(QLabel("<b>Preview / Crop</b>"))
+        preview_opts = QHBoxLayout()
+        self.cmb_preview_mode = QComboBox()
+        self.cmb_preview_mode.addItems(["MAX (across frames)", "Single frame"])
+        preview_opts.addWidget(QLabel("Mode:"))
+        preview_opts.addWidget(self.cmb_preview_mode)
+        self.chk_preview_norm = QCheckBox("Normalize")
+        self.chk_preview_norm.setChecked(True)
+        preview_opts.addWidget(self.chk_preview_norm)
+        self.btn_roi_reset = QPushButton("Reset ROI")
+        self.btn_roi_reset.pressed.connect(self._reset_roi)
+        preview_opts.addWidget(self.btn_roi_reset)
+        preview_opts.addStretch()
+        layout.addLayout(preview_opts)
+
+        preview_frame = QFrame()
+        preview_frame.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Sunken)
+        preview_layout = QVBoxLayout(preview_frame)
+        self.lbl_preview_status = QLabel("Loading preview...")
+        preview_layout.addWidget(self.lbl_preview_status)
+        self._plot_widget = pg.PlotWidget(background=get_dialog_preview_bg())
+        self._plot_widget.setMinimumSize(400, 320)
+        self._plot_widget.hideAxis("left")
+        self._plot_widget.hideAxis("bottom")
+        self._img_item = pg.ImageItem()
+        self._plot_widget.addItem(self._img_item)
+        preview_layout.addWidget(self._plot_widget)
+        layout.addWidget(preview_frame)
+
+        self.lbl_ram_usage = QLabel("Estimated RAM: Calculating...")
+        self.lbl_ram_available = QLabel(f"Available RAM: {get_available_ram():.2f} GB")
+        layout.addWidget(self.lbl_ram_usage)
+        layout.addWidget(self.lbl_ram_available)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        # Connections
+        self.spin_resize.valueChanged.connect(self._update_estimates)
+        self.chk_grayscale.toggled.connect(self._update_estimates)
+        self.chk_grayscale.toggled.connect(self._on_preview_option_changed)
+        self.chk_8bit.toggled.connect(self._update_estimates)
+        self.chk_pickle.toggled.connect(self._on_preview_option_changed)
+        self.cmb_preview_mode.currentTextChanged.connect(self._on_preview_option_changed)
+        self.chk_preview_norm.toggled.connect(self._on_preview_option_changed)
+        if self._is_folder:
+            self.spin_subset.valueChanged.connect(self._update_estimates)
+
+    def _on_preview_option_changed(self):
+        if self._preview_loader is not None:
+            self._preview_options_changed = True
+            return
+        self._start_preview_load()
+
+    def _start_preview_load(self):
+        if self._preview_loader is not None:
+            return
+        size_ratio = self.spin_resize.value() / 100.0
+        grayscale = self.chk_grayscale.isChecked()
+        mode = "max" if self.cmb_preview_mode.currentIndex() == 0 else "single"
+        normalize = self.chk_preview_norm.isChecked()
+        allow_pickle = self.chk_pickle.isChecked()
+        self.lbl_preview_status.setText("Loading preview...")
+        self._preview_loader = _MatrixPreviewLoader(
+            self._path, size_ratio, grayscale, mode=mode, normalize=normalize, allow_pickle=allow_pickle
+        )
+        self._preview_loader.finished.connect(self._on_preview_loaded)
+        self._preview_loader.start()
+
+    def _on_preview_loaded(self, img: np.ndarray | None):
+        self._preview_loader = None
+        if getattr(self, "_preview_options_changed", False):
+            self._preview_options_changed = False
+            self._start_preview_load()
+            return
+        if img is None:
+            self.lbl_preview_status.setText("Preview failed (check allow pickle if needed)")
+            return
+        self._preview = img
+        self.lbl_preview_status.setText("Preview loaded")
+        h, w = img.shape[0], img.shape[1]
+        display_img = np.swapaxes(img, 0, 1) if img.ndim == 3 else img.T
+        self._img_item.setImage(display_img)
+        self._img_item.setRect(pg.QtCore.QRectF(0, 0, w, h))
+        if img.ndim == 2:
+            self._img_item.setLookupTable(_plasma_lut())
+            self._img_item.setLevels([0, 255])
+        else:
+            self._img_item.setLookupTable(None)
+
+        vb = self._plot_widget.getViewBox()
+        vb.invertY(True)
+        vb.setAspectLocked(lock=True, ratio=1.0)
+
+        if self._roi is not None:
+            self._plot_widget.removeItem(self._roi)
+        if self._initial_mask_rel is not None:
+            r = self._initial_mask_rel
+            x0, y0, x1, y1 = int(r[0]*w), int(r[1]*h), int(r[2]*w), int(r[3]*h)
+            self._roi = pg.RectROI((x0, y0), (x1-x0, y1-y0), pen=pg.mkPen("lime", width=2))
+        else:
+            self._roi = pg.RectROI((0, 0), (w, h), pen=pg.mkPen("lime", width=2))
+        self._roi.sigRegionChanged.connect(self._update_estimates)
+        self._plot_widget.addItem(self._roi)
+
+    def _reset_roi(self) -> None:
+        if self._preview is not None and self._roi is not None:
+            h, w = self._preview.shape[0], self._preview.shape[1]
+            self._roi.setPos((0, 0))
+            self._roi.setSize((w, h))
+            self._update_estimates()
+
+    def _update_estimates(self):
+        resize = self.spin_resize.value() / 100.0
+        grayscale = self.chk_grayscale.isChecked()
+        subset = self.spin_subset.value() if self._is_folder else 1.0
+        h_f, w_f = self.metadata["size"]
+        h_out, w_out = int(h_f * resize), int(w_f * resize)
+
+        if self._preview is not None and self._roi is not None:
+            pos, sz = self._roi.pos(), self._roi.size()
+            x0, y0 = max(0, int(pos.x())), max(0, int(pos.y()))
+            x1, y1 = min(self._preview.shape[1], int(pos.x()+sz.x())), min(self._preview.shape[0], int(pos.y()+sz.y()))
+            if x1 > x0 and y1 > y0:
+                h_out, w_out = y1-y0, x1-x0
+
+        num_frames = max(1, int(self.metadata["file_count"] * subset))
+        channels = 1 if grayscale else 3
+        dtype_size = 1 if self.chk_8bit.isChecked() else getattr(self, "_sample_bytes", 8)
+        total_bytes = h_out * w_out * channels * num_frames * dtype_size
+        gb = total_bytes / (1024**3)
+        self.lbl_size_px.setText(f"-> {h_out} x {w_out} px")
+        if self._is_folder:
+            self.lbl_num_frames.setText(f"-> {num_frames} frames")
+
+        available = get_available_ram()
+        color = "green"
+        if gb > available * 0.9: color = "red"
+        elif gb > available * 0.7: color = "orange"
+        self.lbl_ram_usage.setText(f"Estimated RAM: <font color='{color}'><b>{gb:.2f} GB</b></font>")
+
+    def get_params(self) -> dict[str, Any]:
+        out = {
+            "size_ratio": self.spin_resize.value() / 100.0,
+            "grayscale": self.chk_grayscale.isChecked(),
+            "convert_to_8_bit": self.chk_8bit.isChecked(),
+            "allow_pickle": self.chk_pickle.isChecked(),
+        }
+        if self._is_folder:
+            out["subset_ratio"] = self.spin_subset.value()
+        if self._preview is not None and self._roi is not None:
+            pos, sz = self._roi.pos(), self._roi.size()
+            h_p, w_p = self._preview.shape[0], self._preview.shape[1]
+            x0, y0 = max(0, int(pos.x())), max(0, int(pos.y()))
+            x1, y1 = min(w_p, int(pos.x()+sz.x())), min(h_p, int(pos.y()+sz.y()))
+            if x1 > x0 and y1 > y0:
+                out["mask"] = (slice(y0, y1), slice(x0, x1))
+                out["mask_rel"] = (x0/w_p, y0/h_p, x1/w_p, y1/h_p)
+        return out
 
 
 class ImageLoadOptionsDialog(QDialog):

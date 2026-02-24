@@ -109,6 +109,92 @@ def get_video_preview(
     return out
 
 
+def get_matrix_preview(
+    path: Path,
+    size_ratio: float = 0.3,
+    grayscale: bool = False,
+    mode: str = "max",
+    normalize: bool = True,
+    n_samples: int = 10,
+    allow_pickle: bool = False,
+) -> np.ndarray | None:
+    """Load a fast preview from a .npy file or folder of .npy files."""
+    def _load_one(p: Path) -> np.ndarray | None:
+        try:
+            arr = np.load(p, allow_pickle=allow_pickle)
+            # If 4D, take middle frame for preview
+            if arr.ndim == 4:
+                arr = arr[arr.shape[0] // 2]
+            elif arr.ndim == 3 and arr.shape[2] != 3:
+                # assume (T, H, W) -> take middle frame
+                arr = arr[arr.shape[0] // 2]
+
+            if grayscale and arr.ndim == 3 and arr.shape[2] == 3:
+                arr = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
+            elif not grayscale and arr.ndim == 2:
+                # already gray
+                pass
+
+            h, w = arr.shape[:2]
+            ratio = size_ratio
+            if h > 0 and w > 0 and (int(h * ratio) < 1 or int(w * ratio) < 1):
+                ratio = max(1.0 / h, 1.0 / w, size_ratio)
+            return resize_and_convert(arr, ratio, convert_to_8_bit=False)
+        except Exception:
+            return None
+
+    if path.is_file():
+        if not DataLoader._is_array(path):
+            return None
+        # For single 4D file, we want to sample across it if mode=="max"
+        try:
+            arr = np.load(path, allow_pickle=allow_pickle)
+            if arr.ndim == 4:
+                indices = np.linspace(0, arr.shape[0] - 1, min(n_samples, arr.shape[0]), dtype=int)
+                collected = []
+                for i in indices:
+                    frame = arr[i]
+                    if grayscale and frame.ndim == 3:
+                        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+                    collected.append(resize_and_convert(frame, size_ratio, False))
+                stack = np.stack(collected)
+                out = np.max(stack, axis=0).astype(np.uint8)
+            else:
+                img = _load_one(path)
+                if img is None: return None
+                out = img.astype(np.uint8)
+        except Exception:
+            return None
+    else:
+        content = [f for f in path.iterdir() if not f.is_dir() and DataLoader._is_array(f)]
+        content = natsorted(content)
+        if not content:
+            return None
+        if mode == "single" or len(content) == 1:
+            img = _load_one(content[0])
+            if img is None: return None
+            out = img.astype(np.uint8)
+        else:
+            indices = np.linspace(0, len(content) - 1, min(n_samples, len(content)), dtype=int)
+            collected = []
+            for i in indices:
+                img = _load_one(content[i])
+                if img is not None:
+                    collected.append(img)
+            if not collected:
+                return None
+            stack = np.stack(collected)
+            out = np.max(stack, axis=0).astype(np.uint8)
+
+    if normalize and out.size > 0:
+        p_lo, p_hi = np.percentile(out, (2, 98))
+        if p_hi > p_lo:
+            out = np.clip(
+                (out.astype(np.float32) - p_lo) / (p_hi - p_lo) * 255, 0, 255
+            ).astype(np.uint8)
+    return out
+
+
 def get_image_preview(
     path: Path,
     size_ratio: float = 0.3,
@@ -296,6 +382,35 @@ def get_sample_bytes_per_pixel(path: Path) -> int:
     return get_sample_bytes_per_pixel(content[0])
 
 
+def get_matrix_metadata(path: Path, allow_pickle: bool = False) -> dict | None:
+    """Get metadata for .npy file or folder of .npy files."""
+    if path.is_file():
+        if not DataLoader._is_array(path):
+            return None
+        try:
+            array = np.load(path, mmap_mode="r", allow_pickle=allow_pickle)
+
+            match array.ndim:
+                case 4: h, w, count = array.shape[1], array.shape[2], array.shape[0]
+                case 3: h, w, count = array.shape[0], array.shape[1], 1
+                case 2: h, w, count = array.shape[0], array.shape[1], 1
+                case _: return None
+            return {"file_name": path.name, "size": (h, w), "file_count": count}
+        except Exception:
+            return None
+    else:
+        content = [f for f in path.iterdir() if not f.is_dir() and DataLoader._is_array(f)]
+        content = natsorted(content)
+        if not content:
+            return None
+        try:
+            array = np.load(content[0], mmap_mode="r", allow_pickle=allow_pickle)
+            h, w = array.shape[:2]
+            return {"file_name": path.name, "size": (h, w), "file_count": len(content)}
+        except Exception:
+            return None
+
+
 def get_image_metadata(path: Path) -> dict | None:
     """Get metadata for image file or folder. Returns dict with file_name, size (h,w), file_count."""
     if path.is_file():
@@ -368,7 +483,8 @@ class DataLoader:
         convert_to_8_bit: bool = False,
         grayscale: bool = False,
         mask: Optional[tuple[slice, slice]] = None,
-        crop: Optional[tuple[int, int]] = None
+        crop: Optional[tuple[int, int]] = None,
+        allow_pickle: bool = False
     ) -> None:
         self.max_ram = max_ram
         self.size_ratio = size_ratio
@@ -376,6 +492,7 @@ class DataLoader:
         self.convert_to_8_bit = convert_to_8_bit
         self.grayscale = grayscale
         self.mask = mask
+        self.allow_pickle = allow_pickle
         if mask is not None:
             self.mask = (mask[1], mask[0])
         self.crop = crop
@@ -760,7 +877,7 @@ class DataLoader:
         return done
 
     def _load_array(self, path: Path) -> ImageData:
-        array: np.ndarray = np.load(path, allow_pickle=False)
+        array: np.ndarray = np.load(path, allow_pickle=self.allow_pickle)
         gray = True
         match array.ndim:
             case 4:
@@ -829,7 +946,7 @@ class DataLoader:
         self,
         path: Path,
     ) -> tuple[np.ndarray, MetaData]:
-        array: np.ndarray = np.load(path, allow_pickle=False)
+        array: np.ndarray = np.load(path, allow_pickle=self.allow_pickle)
         if array.ndim >= 4 or (array.ndim == 3 and array.shape[2] != 3):
             log(f"Error: Unsupported array shape {array.shape}", color="red")
             data = DataLoader.from_text(
