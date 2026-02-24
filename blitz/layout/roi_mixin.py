@@ -3,14 +3,15 @@ from typing import Any, Optional, Tuple
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (
-    QCheckBox, QDoubleSpinBox, QHBoxLayout, QLabel, QSpinBox, QVBoxLayout, QWidget
+    QCheckBox, QGroupBox, QHBoxLayout, QLabel,
+    QSpinBox, QVBoxLayout, QWidget
 )
 
 
 class ROIMixin:
     """
-    Mixin for Load Dialogs to provide ROI spinners (X, Y, W, H, Angle)
-    and transformation checkboxes (Flip XY, Rotate 90).
+    Mixin for Load Dialogs to provide ROI spinners (X, Y, W, H)
+    and Flip XY checkbox.
 
     Requires the consuming class to have:
     - self._preview: np.ndarray (the raw loaded preview image)
@@ -26,68 +27,67 @@ class ROIMixin:
         transform_layout = QHBoxLayout()
         self.chk_flip_xy = QCheckBox("Flip XY (Transpose)")
         self.chk_flip_xy.setToolTip("Transpose image (swap X/Y axes)")
-        self.chk_rotate_90 = QCheckBox("Rotate 90°")
-        self.chk_rotate_90.setToolTip("Rotate 90 degrees clockwise")
         transform_layout.addWidget(self.chk_flip_xy)
-        transform_layout.addWidget(self.chk_rotate_90)
         transform_layout.addStretch()
         layout.addLayout(transform_layout)
 
-        # ROI Spinners
-        roi_layout = QHBoxLayout()
+        # ROI Spinners (grouped to avoid overlap)
+        roi_group = QGroupBox("Crop Region (ROI)")
+        roi_group.setToolTip("Select region to load. X,Y = top-left; W,H = size. Clamped to image.")
+        roi_inner = QVBoxLayout(roi_group)
+        roi_row1 = QHBoxLayout()
+        roi_row1.addWidget(QLabel("X:"))
         self.spin_roi_x = self._create_spinner("X Position", 0, 99999)
+        roi_row1.addWidget(self.spin_roi_x)
+        roi_row1.addWidget(QLabel("Y:"))
         self.spin_roi_y = self._create_spinner("Y Position", 0, 99999)
+        roi_row1.addWidget(self.spin_roi_y)
+        roi_row1.addStretch()
+        roi_inner.addLayout(roi_row1)
+        roi_row2 = QHBoxLayout()
+        roi_row2.addWidget(QLabel("W:"))
         self.spin_roi_w = self._create_spinner("Width", 1, 99999)
+        roi_row2.addWidget(self.spin_roi_w)
+        roi_row2.addWidget(QLabel("H:"))
         self.spin_roi_h = self._create_spinner("Height", 1, 99999)
-
-        self.spin_roi_angle = QDoubleSpinBox()
-        self.spin_roi_angle.setRange(-360, 360)
-        self.spin_roi_angle.setSuffix("°")
-        self.spin_roi_angle.setToolTip("Rotation Angle")
-        self.spin_roi_angle.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
-        self.spin_roi_angle.setMaximumWidth(60)
-
-        # Add labels and widgets
-        roi_layout.addWidget(QLabel("ROI:"))
-        roi_layout.addWidget(QLabel("X"))
-        roi_layout.addWidget(self.spin_roi_x)
-        roi_layout.addWidget(QLabel("Y"))
-        roi_layout.addWidget(self.spin_roi_y)
-        roi_layout.addWidget(QLabel("W"))
-        roi_layout.addWidget(self.spin_roi_w)
-        roi_layout.addWidget(QLabel("H"))
-        roi_layout.addWidget(self.spin_roi_h)
-        roi_layout.addWidget(QLabel("∠"))
-        roi_layout.addWidget(self.spin_roi_angle)
-        roi_layout.addStretch()
-        layout.addLayout(roi_layout)
+        roi_row2.addWidget(self.spin_roi_h)
+        roi_row2.addStretch()
+        roi_inner.addLayout(roi_row2)
+        layout.addWidget(roi_group)
 
         # Connections
         self.chk_flip_xy.stateChanged.connect(self._on_transform_changed)
-        self.chk_rotate_90.stateChanged.connect(self._on_transform_changed)
 
         for spin in (self.spin_roi_x, self.spin_roi_y, self.spin_roi_w, self.spin_roi_h):
             spin.valueChanged.connect(self._on_spin_roi_changed)
-        self.spin_roi_angle.valueChanged.connect(self._on_spin_roi_changed)
 
     def _create_spinner(self, tooltip: str, min_val: int, max_val: int) -> QSpinBox:
         s = QSpinBox()
         s.setRange(min_val, max_val)
         s.setToolTip(tooltip)
         # Compact style
-        s.setMaximumWidth(70)
+        s.setMaximumWidth(95)
         return s
 
     def _connect_roi_signals(self) -> None:
-        """Call this after self._roi is created."""
-        if getattr(self, "_roi", None) is not None:
-            self._roi.sigRegionChanged.connect(self._on_roi_changed)
-            # Add rotation handle if not present
-            # Default RectROI has scale handles. We add a rotate handle.
-            self._roi.addRotateHandle([0.5, 0], [0.5, 0.5])
-
-            # Initial sync
-            self._on_roi_changed()
+        """Call this after self._roi is created. Configures corner scale handles."""
+        if getattr(self, "_roi", None) is None:
+            return
+        # Remove any handles (from dialogs or defaults) to avoid "whole thing scaling" when grabbing a corner
+        for h in list(self._roi.getHandles()):
+            try:
+                self._roi.removeHandle(h)
+            except (KeyError, TypeError):
+                pass
+        # Translate handle at center: drag center to move without resizing
+        self._roi.addTranslateHandle([0.5, 0.5])
+        # Corner scale handles: drag corner to resize (opposite stays fixed)
+        self._roi.addScaleHandle([1, 1], [0, 0])
+        self._roi.addScaleHandle([0, 0], [1, 1])
+        self._roi.addScaleHandle([1, 0], [0, 1])
+        self._roi.addScaleHandle([0, 1], [1, 0])
+        self._roi.sigRegionChanged.connect(self._on_roi_changed)
+        self._on_roi_changed()
 
     def _on_transform_changed(self) -> None:
         """Update preview image based on checkboxes."""
@@ -122,32 +122,39 @@ class ROIMixin:
             self._update_estimates()
 
     def _get_transformed_preview(self) -> np.ndarray:
-        """Return the preview image with Flip/Rotate applied."""
+        """Return the preview image with Flip XY applied."""
         img = self._preview
         if self.chk_flip_xy.isChecked():
             img = np.transpose(img, (1, 0, 2)) if img.ndim == 3 else img.T
-        if self.chk_rotate_90.isChecked():
-            # Rotate 90 CW (k=-1)
-            img = np.rot90(img, k=-1, axes=(0, 1))
         return img
 
+    def _get_transformed_bounds(self) -> tuple[int, int]:
+        """Return (width, height) of transformed preview. (0,0) if no preview."""
+        if getattr(self, "_preview", None) is None:
+            return 0, 0
+        img = self._get_transformed_preview()
+        h, w = img.shape[:2]
+        return w, h
+
     def _on_spin_roi_changed(self) -> None:
-        """Update ROI object from spinners."""
+        """Update ROI object from spinners. Clamp to image bounds."""
         if getattr(self, "_roi", None) is None:
             return
 
-        # Avoid feedback
+        tw, th = self._get_transformed_bounds()
+        if tw <= 0 or th <= 0:
+            return
+
         self._roi.sigRegionChanged.disconnect(self._on_roi_changed)
 
-        x = self.spin_roi_x.value()
-        y = self.spin_roi_y.value()
-        w = self.spin_roi_w.value()
-        h = self.spin_roi_h.value()
-        angle = self.spin_roi_angle.value()
+        x = max(0, min(self.spin_roi_x.value(), tw - 1))
+        y = max(0, min(self.spin_roi_y.value(), th - 1))
+        w = max(1, min(self.spin_roi_w.value(), tw - x))
+        h = max(1, min(self.spin_roi_h.value(), th - y))
 
         self._roi.setPos((x, y))
         self._roi.setSize((w, h))
-        self._roi.setAngle(angle)
+        self._roi.setAngle(0)
 
         self._roi.sigRegionChanged.connect(self._on_roi_changed)
 
@@ -155,25 +162,42 @@ class ROIMixin:
             self._update_estimates()
 
     def _on_roi_changed(self) -> None:
-        """Update spinners from ROI object."""
+        """Update spinners from ROI object. Clamp ROI to image bounds."""
         if getattr(self, "_roi", None) is None:
             return
 
-        state = self._roi.getState()
-        pos = state['pos']
-        size = state['size']
-        angle = state['angle']
+        tw, th = self._get_transformed_bounds()
+        if tw <= 0 or th <= 0:
+            return
 
-        for s in (self.spin_roi_x, self.spin_roi_y, self.spin_roi_w, self.spin_roi_h, self.spin_roi_angle):
+        state = self._roi.getState()
+        pos = state["pos"]
+        size = state["size"]
+
+        x = max(0, min(int(pos.x()), tw - 1))
+        y = max(0, min(int(pos.y()), th - 1))
+        w = max(1, min(int(size.x()), tw - x))
+        h = max(1, min(int(size.y()), th - y))
+
+        if x != pos.x() or y != pos.y() or w != size.x() or h != size.y():
+            self._roi.blockSignals(True)
+            self._roi.setPos((x, y))
+            self._roi.setSize((w, h))
+            self._roi.blockSignals(False)
+
+        for s in (self.spin_roi_x, self.spin_roi_y, self.spin_roi_w, self.spin_roi_h):
             s.blockSignals(True)
 
-        self.spin_roi_x.setValue(int(pos.x()))
-        self.spin_roi_y.setValue(int(pos.y()))
-        self.spin_roi_w.setValue(int(size.x()))
-        self.spin_roi_h.setValue(int(size.y()))
-        self.spin_roi_angle.setValue(angle)
+        self.spin_roi_x.setMaximum(max(0, tw - 1))
+        self.spin_roi_y.setMaximum(max(0, th - 1))
+        self.spin_roi_w.setMaximum(tw)
+        self.spin_roi_h.setMaximum(th)
+        self.spin_roi_x.setValue(x)
+        self.spin_roi_y.setValue(y)
+        self.spin_roi_w.setValue(w)
+        self.spin_roi_h.setValue(h)
 
-        for s in (self.spin_roi_x, self.spin_roi_y, self.spin_roi_w, self.spin_roi_h, self.spin_roi_angle):
+        for s in (self.spin_roi_x, self.spin_roi_y, self.spin_roi_w, self.spin_roi_h):
             s.blockSignals(False)
 
         if hasattr(self, "_update_estimates"):
@@ -192,9 +216,8 @@ class ROIMixin:
 
         # 1. Get ROI corners in Transformed Preview space
         state = self._roi.getState()
-        pos = state['pos'] # Point
-        size = state['size'] # Point
-        angle = state['angle'] # float degrees
+        pos = state['pos']
+        size = state['size']
 
         w, h = size.x(), size.y()
         # Unrotated corners relative to pos
@@ -205,41 +228,21 @@ class ROIMixin:
             pg.Point(0, h),
         ]
 
-        # Rotate corners around origin (0,0) - because pos/angle define transform from origin
-        theta = np.radians(angle)
-        c, s = np.cos(theta), np.sin(theta)
-
-        transformed_corners = []
-        for p in corners:
-            x_r = p.x() * c - p.y() * s
-            y_r = p.x() * s + p.y() * c
-            transformed_corners.append(pg.Point(x_r + pos.x(), y_r + pos.y()))
+        # Angle is 0 (rotation disabled). Corners = transformed_corners.
+        transformed_corners = [pg.Point(p.x() + pos.x(), p.y() + pos.y()) for p in corners]
 
         # 2. Map corners from Transformed Preview -> Source Image
-        # Dimensions of Transformed Preview
         preview_img = self._get_transformed_preview()
-        initial_H_t, initial_W_t = preview_img.shape[:2]
+        H_t, W_t = preview_img.shape[:2]
 
         source_corners = []
         for p in transformed_corners:
             x, y = p.x(), p.y()
-            W_t, H_t = initial_W_t, initial_H_t
-
-            # Un-Rotate 90 CW (inverse of Rot90 k=-1)
-            # Forward: x_new = H_old - y_old; y_new = x_old
-            # Inverse: x_old = y_new; y_old = H_old - x_new (H_old = W_new)
-            if self.chk_rotate_90.isChecked():
-                x_prev = y
-                y_prev = W_t - x
-                x, y = x_prev, y_prev
-                # Dims of previous step (Inverse of W,H = H,W is W,H = H,W)
-                W_t, H_t = H_t, W_t
-
+            x = max(0, min(x, W_t - 1e-6))
+            y = max(0, min(y, H_t - 1e-6))
             # Un-Flip XY (inverse of Transpose)
             if self.chk_flip_xy.isChecked():
                 x, y = y, x
-                W_t, H_t = H_t, W_t
-
             source_corners.append((x, y))
 
         # 3. Calculate Bounding Box in Source Space

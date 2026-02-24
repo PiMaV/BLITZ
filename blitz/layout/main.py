@@ -440,28 +440,957 @@ class MainWindow(QMainWindow):
         self._update_selection_visibility()
         self.update_bench()
 
-    def _is_roi_valid(self, roi: dict, meta_size: tuple[int, int], params: dict) -> bool:
-        """Sanity check: Does the stored ROI fit in the new image (roughly)?"""
-        if not roi:
-            return False
+    def _update_envelope_options(self) -> None:
+        per_image = self.ui.checkbox_minmax_per_image.isChecked()
+        per_crosshair = self.ui.checkbox_envelope_per_crosshair.isChecked()
+        per_ds = self.ui.checkbox_envelope_per_dataset.isChecked()
+        pct = float(self.ui.spinbox_envelope_pct.value())
+        self.ui.h_plot.set_show_minmax_per_image(per_image)
+        self.ui.h_plot.set_show_envelope_per_crosshair(per_crosshair)
+        self.ui.h_plot.set_show_envelope_per_dataset(per_ds)
+        self.ui.h_plot.set_envelope_percentile(pct)
+        self.ui.v_plot.set_show_minmax_per_image(per_image)
+        self.ui.v_plot.set_show_envelope_per_crosshair(per_crosshair)
+        self.ui.v_plot.set_show_envelope_per_dataset(per_ds)
+        self.ui.v_plot.set_envelope_percentile(pct)
+        rosee_active = self.ui.checkbox_rosee_active.isChecked()
+        if not (rosee_active and self.ui.checkbox_rosee_h.isChecked()):
+            self.ui.h_plot.draw_line()
+        if not (rosee_active and self.ui.checkbox_rosee_v.isChecked()):
+            self.ui.v_plot.draw_line()
 
-        h, w = meta_size
+    def _on_timeline_clicked_to_frame(self, idx: int) -> None:
+        """User clicked main timeline -> switch to frame (Reduce = None)."""
+        was_agg = self._is_aggregate_view()
+        if was_agg:
+            self.ui.combobox_reduce.blockSignals(True)
+            self.ui.combobox_reduce.setCurrentIndex(0)
+            self.ui.combobox_reduce.blockSignals(False)
+            self.update_view_mode()
+        n = self.ui.image_viewer.image.shape[0]
+        idx = max(0, min(idx, n - 1))
+        self.ui.image_viewer.setCurrentIndex(idx)
+        self.ui.image_viewer.timeLine.setPos((idx, 0))
+        if not was_agg:
+            self.update_statusbar()
 
-        # Apply transforms from params (defaults) to simulate preview dimensions
-        if params.get("flip_xy"):
-            h, w = w, h
-        if params.get("rotate_90"):
-            h, w = w, h # Rotate 90 swaps dims
+    def _on_reduce_changed(self) -> None:
+        """Reduce dropdown changed -> update view (frame vs aggregate)."""
+        self.update_view_mode()
 
-        x, y = roi['pos']
-        rw, rh = roi['size']
+    def _on_timeline_options_changed(self) -> None:
+        """Frame-Tab: Upper/lower band + Mean/Median fuer Timeline-Kurve."""
+        mode = self.ui.combobox_timeline_aggregation.currentData()
+        self.ui.image_viewer.set_timeline_options(
+            mode,
+            self.ui.checkbox_timeline_bands.isChecked(),
+        )
 
-        # Check against new dimensions with 1px tolerance
-        if x < -1 or y < -1:
-            return False
-        if x + rw > w + 1 or y + rh > h + 1:
-            return False
-        return True
+    def _on_agg_update_on_drag_changed(self) -> None:
+        """Update on drag: connect/disconnect crop_range.sigRegionChanged."""
+        on_drag = self.ui.checkbox_agg_update_on_drag.isChecked()
+        try:
+            self.ui.roi_plot.crop_range.sigRegionChanged.disconnect(
+                self._on_selection_changed_from_drag
+            )
+        except TypeError:
+            pass
+        if on_drag:
+            self.ui.roi_plot.crop_range.sigRegionChanged.connect(
+                self._on_selection_changed_from_drag
+            )
+
+    def _on_selection_changed_from_drag(self) -> None:
+        """Live update during range drag. Throttled: nur bei geaenderten Bounds."""
+        s = self.ui.spinbox_crop_range_start.value()
+        e = self.ui.spinbox_crop_range_end.value()
+        prev = getattr(self, "_last_agg_bounds_from_drag", None)
+        if prev == (s, e):
+            return
+        self._last_agg_bounds_from_drag = (s, e)
+        self._on_selection_changed()
+
+    def _is_aggregate_view(self) -> bool:
+        """True when Reduce is not None (Mean, Max, etc.)."""
+        return self.ui.combobox_reduce.currentData() is not None
+
+    def _update_selection_visibility(self) -> None:
+        """Idx immer aktiv (wenn Daten). Range + aggregate band nur bei Multi-Frame."""
+        data = getattr(self.ui.image_viewer, "data", None)
+        n = data.n_images if data else 0
+        needs_range = n > 1
+        is_agg = self._is_aggregate_view()
+
+        if n <= 1:
+            self.ui.combobox_reduce.blockSignals(True)
+            self.ui.combobox_reduce.setCurrentIndex(0)
+            self.ui.combobox_reduce.blockSignals(False)
+        self.ui.spinbox_current_frame.setEnabled(not is_agg and n > 0)
+        if is_agg:
+            self.ui.image_viewer.timeLine.hide()
+        else:
+            self.ui.image_viewer.timeLine.show()
+        self.ui.range_section_widget.setEnabled(needs_range)
+        self.ui.combobox_reduce.setEnabled(n > 1)
+        if needs_range:
+            self.ui.timeline_stack.agg_sep.show()
+            self.ui.timeline_stack.agg_sep_spacer.show()
+            self.ui.timeline_stack.agg_band.show()
+            self.ui.roi_plot.crop_range.show()
+            self._update_full_range_button_style()
+        else:
+            self.ui.timeline_stack.agg_sep.hide()
+            self.ui.timeline_stack.agg_sep_spacer.hide()
+            self.ui.timeline_stack.agg_band.hide()
+            self.ui.roi_plot.crop_range.hide()
+
+    def setup_sync(self) -> None:
+        screen_geometry = QApplication.primaryScreen().availableGeometry()
+        relative_size = settings.get("window/relative_size")
+        width = int(screen_geometry.width() * relative_size)
+        height = int(screen_geometry.height() * relative_size)
+        self.setGeometry(
+            (screen_geometry.width() - width) // 2,
+            (screen_geometry.height() - height) // 2,
+            width,
+            height,
+        )
+        if relative_size == 1.0:
+            self.showMaximized()
+
+        if (docks_arrangement := settings.get("window/docks")):
+            self.ui.dock_area.restoreState(docks_arrangement)
+
+        settings.connect_sync(
+            "default/load_8bit",
+            self.ui.checkbox_load_8bit.stateChanged,
+            self.ui.checkbox_load_8bit.isChecked,
+            self.ui.checkbox_load_8bit.setChecked,
+        )
+        settings.connect_sync(
+            "default/load_grayscale",
+            self.ui.checkbox_load_grayscale.stateChanged,
+            self.ui.checkbox_load_grayscale.isChecked,
+            self.ui.checkbox_load_grayscale.setChecked,
+        )
+        settings.connect_sync(
+            "default/max_ram",
+            self.ui.spinbox_max_ram.editingFinished,
+            self.ui.spinbox_max_ram.value,
+            self.ui.spinbox_max_ram.setValue,
+        )
+        settings.connect_sync(
+            "default/show_load_dialog",
+            self.ui.checkbox_video_dialog_always.stateChanged,
+            self.ui.checkbox_video_dialog_always.isChecked,
+            self.ui.checkbox_video_dialog_always.setChecked,
+        )
+
+        # very dirty workaround of getting the name of the user-chosen
+        # gradient from the LUT
+        def loadPreset(name: str):
+            self.ui.checkbox_auto_colormap.setChecked(False)
+            self.ui.image_viewer.ui.histogram.gradient.lastCM = name
+            self.ui.image_viewer.ui.histogram.gradient.restoreState(
+                Gradients[name]  # type: ignore
+            )
+        def lastColorMap():
+            return self.ui.image_viewer.ui.histogram.gradient.lastCM
+        self.ui.image_viewer.ui.histogram.gradient.lastColorMap = lastColorMap
+        self.ui.image_viewer.ui.histogram.gradient.loadPreset = loadPreset
+        self.ui.image_viewer.ui.histogram.gradient.lastCM = (
+            settings.get("default/colormap")
+        )
+        if settings.get("default/colormap") not in ("greyclip", "plasma", "bipolar"):
+            self.ui.checkbox_auto_colormap.setChecked(False)
+
+        settings.connect_sync(
+            "default/colormap",
+            self.ui.image_viewer.ui.histogram
+                .gradient.sigGradientChangeFinished,
+            self.ui.image_viewer.ui.histogram.gradient.lastColorMap,
+            lambda name:
+                self.ui.image_viewer.ui.histogram.gradient.restoreState(
+                    Gradients[name]
+            ),
+        )
+        settings.connect_sync(
+            "web/address",
+            self.ui.address_edit.editingFinished,
+            self.ui.address_edit.text,
+            self.ui.address_edit.setText,
+        )
+        settings.connect_sync(
+            "web/token",
+            self.ui.token_edit.editingFinished,
+            self.ui.token_edit.text,
+            self.ui.token_edit.setText,
+        )
+    def sync_project_preloading(self) -> None:
+        settings.connect_sync_project(
+            "size_ratio",
+            self.ui.spinbox_load_size.editingFinished,
+            self.ui.spinbox_load_size.value,
+            self.ui.spinbox_load_size.setValue,
+        )
+        settings.connect_sync_project(
+            "subset_ratio",
+            self.ui.spinbox_load_subset.editingFinished,
+            self.ui.spinbox_load_subset.value,
+            self.ui.spinbox_load_subset.setValue,
+        )
+
+    def sync_project_postloading(self) -> None:
+        settings.connect_sync_project(
+            "flipped_x",
+            self.ui.checkbox_flipx.stateChanged,
+            self.ui.checkbox_flipx.isChecked,
+            self.ui.checkbox_flipx.setChecked,
+            lambda: self.ui.image_viewer.manipulate("flip_x"),
+            True,
+        )
+        settings.connect_sync_project(
+            "flipped_y",
+            self.ui.checkbox_flipy.stateChanged,
+            self.ui.checkbox_flipy.isChecked,
+            self.ui.checkbox_flipy.setChecked,
+            lambda: self.ui.image_viewer.manipulate("flip_y"),
+            True,
+        )
+        settings.connect_sync_project(
+            "rotated_90",
+            self.ui.checkbox_rotate_90.stateChanged,
+            self.ui.checkbox_rotate_90.isChecked,
+            self.ui.checkbox_rotate_90.setChecked,
+            lambda: self.ui.image_viewer.manipulate("rotate_90"),
+            True,
+        )
+        settings.connect_sync_project(
+            "measure_tool_pixels",
+            self.ui.spinbox_pixel.editingFinished,
+            self.ui.spinbox_pixel.value,
+            self.ui.spinbox_pixel.setValue,
+        )
+        settings.connect_sync_project(
+            "measure_tool_au",
+            self.ui.spinbox_mm.editingFinished,
+            self.ui.spinbox_mm.value,
+            self.ui.spinbox_mm.setValue,
+        )
+        settings.connect_sync_project(
+            "isocurve_smoothing",
+            self.ui.spinbox_iso_smoothing.editingFinished,
+            self.ui.spinbox_iso_smoothing.value,
+            self.ui.spinbox_iso_smoothing.setValue,
+        )
+        settings.connect_sync_project(
+            "mask",
+            self.ui.image_viewer.image_mask_changed,
+            self.ui.image_viewer.data.get_mask,
+        )
+        settings.connect_sync_project(
+            "cropped",
+            self.ui.image_viewer.image_crop_changed,
+            self.ui.image_viewer.data.get_crop,
+        )
+        self.ui.image_viewer.image_crop_changed.connect(
+            self._update_ops_crop_buttons
+        )
+
+    def _update_ops_crop_buttons(self) -> None:
+        """Enable Undo Crop when crop is reversible (Keep in RAM)."""
+        data = getattr(self.ui.image_viewer, "data", None)
+        can_undo = data is not None and data.can_undo_crop()
+        self.ui.button_ops_undo_crop.setEnabled(can_undo)
+
+    def _update_ops_file_visibility(self) -> None:
+        """Show Load button when subtract or divide uses File."""
+        sub = self.ui.combobox_ops_subtract_src.currentData() == "file"
+        div = self.ui.combobox_ops_divide_src.currentData() == "file"
+        self.ui.ops_file_widget.setVisible(sub or div)
+
+    def _update_ops_norm_visibility(self) -> None:
+        """Show window/lag and Apply to full when Subtract or Divide uses Sliding mean."""
+        sub = self.ui.combobox_ops_subtract_src.currentData() == "sliding_aggregate"
+        div = self.ui.combobox_ops_divide_src.currentData() == "sliding_aggregate"
+        visible = sub or div
+        self.ui.ops_norm_widget.setVisible(visible)
+        self.ui.checkbox_ops_sliding_apply_full.setVisible(visible)
+
+    def _update_ops_slider_labels(self) -> None:
+        self.ui.label_ops_subtract.setText(
+            f"{self.ui.slider_ops_subtract.value()}%"
+        )
+        self.ui.label_ops_divide.setText(
+            f"{self.ui.slider_ops_divide.value()}%"
+        )
+
+    def _on_crop_range_for_ops(self) -> None:
+        """Crop range changed -> update Ops if Aggregate is used."""
+        s = self.ui.spinbox_crop_range_start.value()
+        self.apply_ops()
+        self.ui.image_viewer.setCurrentIndex(s)
+        self.ui.image_viewer.timeLine.setPos((s, 0))
+
+    def reset_options(self) -> None:
+        # Signale blockieren waehrend Batch-Update (verhindert 21s emit-Kaskaden nach Load)
+        _batch = [
+            self.ui.roi_plot.crop_range,
+            self.ui.spinbox_crop_range_start,
+            self.ui.spinbox_crop_range_end,
+            self.ui.spinbox_selection_window,
+            self.ui.spinbox_current_frame,
+            self.ui.combobox_reduce,
+            self.ui.combobox_ops_subtract_src,
+            self.ui.combobox_ops_divide_src,
+            self.ui.combobox_ops_range_method,
+            self.ui.slider_ops_subtract,
+            self.ui.slider_ops_divide,
+            self.ui.spinbox_ops_norm_window,
+            self.ui.spinbox_ops_norm_lag,
+            self.ui.checkbox_ops_sliding_apply_full,
+        ]
+        for w in _batch:
+            w.blockSignals(True)
+        try:
+            self._reset_options_body()
+        finally:
+            for w in _batch:
+                w.blockSignals(False)
+
+    def _reset_options_body(self) -> None:
+        self._aggregate_first_open = True
+        self.pca_adapter.invalidate()
+        self.ui.image_viewer.clear_reference_timeline_curve()
+        self.ui.button_pca_show.setChecked(False)
+        self.ui.button_pca_show.setText("View PCA")
+        self.ui.button_pca_show.setEnabled(False)
+        self.ui.spinbox_pcacomp.setEnabled(False)
+        self.ui.spinbox_pcacomp.setVisible(True)
+        self.ui.combobox_pca.setEnabled(False)
+        self.ui.label_pca_time.setText("")
+        self._pca_update_target_spinner_state()
+        self.ui.pca_variance_plot.hide()
+        self.ui.pca_variance_plot.clear()
+        self.ui.table_pca_results.hide()
+        self.ui.table_pca_results.setRowCount(0)
+        self.ui.timeline_stack.label_timeline_mode.setText("Frame")
+        self.ui.combobox_reduce.setCurrentIndex(0)
+        self.ui.checkbox_flipx.setChecked(False)
+        self.ui.checkbox_flipy.setChecked(False)
+        self.ui.checkbox_rotate_90.setChecked(False)
+        self.ui.combobox_ops_subtract_src.setCurrentIndex(0)
+        self.ui.combobox_ops_divide_src.setCurrentIndex(0)
+        self.ui.combobox_ops_range_method.setCurrentIndex(0)  # Mean
+        self.ui.slider_ops_subtract.setValue(100)
+        self.ui.slider_ops_divide.setValue(0)
+        self.ui.spinbox_ops_norm_window.setValue(10)
+        self.ui.spinbox_ops_norm_lag.setValue(0)
+        self.ui.checkbox_ops_sliding_apply_full.setChecked(False)
+        self.ui.button_ops_load_file.setText("Load reference image")
+        self.ui.image_viewer._background_image = None
+        self.ui.checkbox_measure_roi.setChecked(False)
+        self.ui.spinbox_crop_range_start.setValue(0)
+        self.ui.spinbox_crop_range_start.setMaximum(
+            self.ui.image_viewer.data.n_images - 1
+        )
+        self.ui.spinbox_crop_range_end.setMaximum(
+            self.ui.image_viewer.data.n_images - 1
+        )
+        self.ui.spinbox_crop_range_end.setValue(
+            self.ui.image_viewer.data.n_images - 1
+        )
+        n_frames = max(1, self.ui.image_viewer.data.n_images)
+        target_max = min(n_frames, 500)
+        self.ui.spinbox_pcacomp_target.setMaximum(target_max)
+        default_target = min(n_frames // 2, 50, target_max)
+        self.ui.spinbox_pcacomp_target.setValue(default_target)
+        self.ui.spinbox_current_frame.setMaximum(n_frames - 1)
+        self.ui.spinbox_current_frame.setValue(
+            min(self.ui.image_viewer.currentIndex, n_frames - 1)
+        )
+        self.ui.roi_plot.crop_range.setRegion(
+            (0, self.ui.image_viewer.data.n_images - 1)
+        )
+        self._update_ops_file_visibility()
+        self._update_ops_norm_visibility()
+        self._update_ops_crop_buttons()
+        self._update_ops_slider_labels()
+        self.apply_ops()
+        self.ui.spinbox_selection_window.setMaximum(
+            self.ui.image_viewer.data.n_images
+        )
+        self._sync_selection_window_from_range()
+        self._update_selection_visibility()
+        self.ui.checkbox_roi_drop.setChecked(
+            self.ui.image_viewer.is_roi_on_drop_update()
+        )
+        self.ui.spinbox_width_v.setRange(
+            0, self.ui.image_viewer.data.shape[0] // 2
+        )
+        self.ui.spinbox_width_h.setRange(
+            0, self.ui.image_viewer.data.shape[1] // 2
+        )
+        self.ui.spinbox_rosee_smoothing.setValue(0)
+        self.ui.spinbox_rosee_smoothing.setMaximum(
+            min(self.ui.image_viewer.data.shape)
+        )
+        self.ui.spinbox_isocurves.setValue(1)
+        self.ui.checkbox_rosee_active.setChecked(False)
+        self.ui.checkbox_rosee_h.setEnabled(False)
+        self.ui.checkbox_rosee_h.setChecked(True)
+        self.ui.checkbox_rosee_v.setEnabled(False)
+        self.ui.checkbox_rosee_v.setChecked(True)
+        self.ui.checkbox_rosee_normalize.setEnabled(False)
+        self.ui.spinbox_rosee_smoothing.setEnabled(False)
+        self.ui.spinbox_isocurves.setEnabled(False)
+        self.ui.checkbox_show_isocurve.setEnabled(False)
+        self.ui.checkbox_show_isocurve.setChecked(False)
+        self.ui.spinbox_iso_smoothing.setEnabled(False)
+        self.ui.checkbox_rosee_local_extrema.setEnabled(False)
+        self.ui.checkbox_rosee_show_lines.setEnabled(False)
+        self.ui.checkbox_rosee_show_indices.setEnabled(False)
+        self.ui.checkbox_rosee_in_image_h.setEnabled(False)
+        self.ui.checkbox_rosee_in_image_h.setChecked(False)
+        self.ui.checkbox_rosee_in_image_v.setEnabled(False)
+        self.ui.checkbox_rosee_in_image_v.setChecked(False)
+        self.ui.label_rosee_plots.setEnabled(False)
+        self.ui.label_rosee_image.setEnabled(False)
+        self.update_view_mode()
+
+    def update_crop_range_labels(self) -> None:
+        """Region-Drag -> Snap auf Int, Spinboxen + Window aktualisieren.
+        Win const. gilt nur bei Spinner/Aendern: Beim Handle-Ziehen immer Window
+        aus neuer Spannweite berechnen (wie ohne Win const.)."""
+        crop_range_ = self.ui.roi_plot.crop_range.getRegion()
+        data = getattr(self.ui.image_viewer, "data", None)
+        n = max(1, data.n_images) if data is not None else 1
+        n_max = max(0, n - 1)
+
+        left = max(0, min(int(round(crop_range_[0])), n_max)) if n > 0 else 0
+        right = max(0, min(int(round(crop_range_[1])), n_max)) if n > 0 else 0
+        if left > right:
+            left, right = right, left
+        w = max(1, right - left + 1)
+
+        self.ui.roi_plot.crop_range.blockSignals(True)
+        self.ui.roi_plot.crop_range.setRegion((left, right))
+        self.ui.roi_plot.crop_range.blockSignals(False)
+        self.ui.spinbox_crop_range_start.blockSignals(True)
+        self.ui.spinbox_crop_range_start.setValue(left)
+        self.ui.spinbox_crop_range_start.blockSignals(False)
+        self.ui.spinbox_crop_range_end.blockSignals(True)
+        self.ui.spinbox_crop_range_end.setValue(right)
+        self.ui.spinbox_crop_range_end.blockSignals(False)
+        self.ui.spinbox_selection_window.blockSignals(True)
+        self.ui.spinbox_selection_window.setValue(w)
+        self.ui.spinbox_selection_window.blockSignals(False)
+        self._update_window_const_bounds()
+        self._update_full_range_button_style()
+
+    def _sync_current_frame_spinbox(self) -> None:
+        """Timeline/Cursor -> Idx-Spinbox."""
+        try:
+            idx = int(round(self.ui.image_viewer.timeLine.pos()[0]))
+        except (AttributeError, TypeError):
+            return
+        data = getattr(self.ui.image_viewer, "data", None)
+        n = max(1, data.n_images) if data is not None else 1
+        idx = max(0, min(idx, n - 1))
+        self.ui.spinbox_current_frame.blockSignals(True)
+        self.ui.spinbox_current_frame.setMaximum(max(0, n - 1))
+        self.ui.spinbox_current_frame.setValue(idx)
+        self.ui.spinbox_current_frame.blockSignals(False)
+
+    def _on_current_frame_spinbox_changed(self) -> None:
+        """Idx-Spinbox -> setCurrentIndex."""
+        idx = self.ui.spinbox_current_frame.value()
+        self.ui.image_viewer.setCurrentIndex(idx)
+
+    def _sync_selection_from_window_const(self) -> None:
+        """Beim Toggle von Win const.: Range anpassen."""
+        if self.ui.checkbox_window_const.isChecked():
+            self._sync_selection_range_from_window()
+        self._update_window_const_bounds()
+
+    def _update_window_const_bounds(self) -> None:
+        """Bei Win const.: Start max = End - Window + 1, End min = Start + Window - 1."""
+        data = getattr(self.ui.image_viewer, "data", None)
+        n_max = max(0, data.n_images - 1) if data else 0
+
+        if not self.ui.checkbox_window_const.isChecked():
+            self.ui.spinbox_crop_range_start.setMaximum(n_max)
+            self.ui.spinbox_crop_range_end.setMinimum(0)
+            self.ui.spinbox_crop_range_end.setMaximum(n_max)
+            return
+
+        w = max(1, self.ui.spinbox_selection_window.value())
+        # Start: 0 .. n_max - w + 1 (End folgt); End: w - 1 .. n_max (Start folgt)
+        self.ui.spinbox_crop_range_start.setMaximum(max(0, n_max - w + 1))
+        self.ui.spinbox_crop_range_end.setMinimum(max(0, w - 1))
+        self.ui.spinbox_crop_range_end.setMaximum(n_max)
+
+    def _sync_selection_window_from_range(self, from_start: bool = True) -> None:
+        """Start <= End. Bei Win const.: anderes Bound bewegen, sonst Window anpassen."""
+        s, e = (
+            self.ui.spinbox_crop_range_start.value(),
+            self.ui.spinbox_crop_range_end.value(),
+        )
+        w = max(1, self.ui.spinbox_selection_window.value())
+        n = 0
+        if hasattr(self.ui.image_viewer, "data") and self.ui.image_viewer.data:
+            n = max(1, self.ui.image_viewer.data.n_images)
+
+        if self.ui.checkbox_window_const.isChecked():
+            if from_start:
+                e = max(s, min(s + w - 1, n - 1)) if n > 0 else s + w - 1
+                self.ui.spinbox_crop_range_end.blockSignals(True)
+                self.ui.spinbox_crop_range_end.setValue(e)
+                self.ui.spinbox_crop_range_end.blockSignals(False)
+            else:
+                s = max(0, min(e - w + 1, n - w)) if n > 0 else max(0, e - w + 1)
+                e = s + w - 1
+                self.ui.spinbox_crop_range_start.blockSignals(True)
+                self.ui.spinbox_crop_range_start.setValue(s)
+                self.ui.spinbox_crop_range_start.blockSignals(False)
+                self.ui.spinbox_crop_range_end.blockSignals(True)
+                self.ui.spinbox_crop_range_end.setValue(e)
+                self.ui.spinbox_crop_range_end.blockSignals(False)
+
+        else:
+            if s > e:
+                if from_start:
+                    e = s
+                    self.ui.spinbox_crop_range_end.blockSignals(True)
+                    self.ui.spinbox_crop_range_end.setValue(e)
+                    self.ui.spinbox_crop_range_end.blockSignals(False)
+                else:
+                    s = e
+                    self.ui.spinbox_crop_range_start.blockSignals(True)
+                    self.ui.spinbox_crop_range_start.setValue(s)
+                    self.ui.spinbox_crop_range_start.blockSignals(False)
+            w = max(1, e - s + 1)
+            self.ui.spinbox_selection_window.blockSignals(True)
+            self.ui.spinbox_selection_window.setValue(w)
+            self.ui.spinbox_selection_window.blockSignals(False)
+
+        s, e = self.ui.spinbox_crop_range_start.value(), self.ui.spinbox_crop_range_end.value()
+        self.ui.roi_plot.crop_range.setRegion((s, e))
+        self._update_window_const_bounds()
+
+    def _sync_selection_range_from_window(self) -> None:
+        """End = Start + Window - 1 (from Window). Window min 1, Start <= End."""
+        s = self.ui.spinbox_crop_range_start.value()
+        w = max(1, self.ui.spinbox_selection_window.value())
+        if w != self.ui.spinbox_selection_window.value():
+            self.ui.spinbox_selection_window.blockSignals(True)
+            self.ui.spinbox_selection_window.setValue(w)
+            self.ui.spinbox_selection_window.blockSignals(False)
+        mx = self.ui.spinbox_crop_range_end.maximum()
+        e = max(s, min(s + w - 1, mx))
+        self.ui.spinbox_crop_range_end.blockSignals(True)
+        self.ui.spinbox_crop_range_end.setValue(e)
+        self.ui.spinbox_crop_range_end.blockSignals(False)
+        self.ui.roi_plot.crop_range.setRegion((s, e))
+        self._update_window_const_bounds()
+
+    def toggle_hvplot_markings(self) -> None:
+        self.ui.h_plot.toggle_mark_position()
+        self.ui.h_plot.draw_line()
+        self.ui.v_plot.toggle_mark_position()
+        self.ui.v_plot.draw_line()
+
+    def reset_selection_range(self) -> None:
+        """Set Selection auf volle Range [0, n-1]."""
+        if not hasattr(self.ui.image_viewer, "data") or self.ui.image_viewer.data is None:
+            return
+        n = max(1, self.ui.image_viewer.data.n_images)
+        self.ui.spinbox_crop_range_start.blockSignals(True)
+        self.ui.spinbox_crop_range_end.blockSignals(True)
+        self.ui.spinbox_selection_window.blockSignals(True)
+        self.ui.spinbox_crop_range_start.setValue(0)
+        self.ui.spinbox_crop_range_end.setValue(n - 1)
+        self.ui.spinbox_selection_window.setValue(n)
+        self.ui.spinbox_crop_range_start.blockSignals(False)
+        self.ui.spinbox_crop_range_end.blockSignals(False)
+        self.ui.spinbox_selection_window.blockSignals(False)
+        self.ui.roi_plot.crop_range.setRegion((0, n - 1))
+        self._update_full_range_button_style()
+        self._on_selection_changed()
+
+    def _update_full_range_button_style(self) -> None:
+        """Full Range button: highlighted when range is [0, n-1], default otherwise."""
+        data = getattr(self.ui.image_viewer, "data", None)
+        n = max(1, data.n_images) if data else 1
+        n_max = max(0, n - 1)
+        s = self.ui.spinbox_crop_range_start.value()
+        e = self.ui.spinbox_crop_range_end.value()
+        is_full = s == 0 and e == n_max
+        btn = self.ui.button_reset_range
+        if is_full:
+            btn.setStyleSheet(
+                "QPushButton { background-color: #2d6a4f; color: white; "
+                "font-weight: bold; }"
+            )
+            btn.setToolTip("Full Range (active)")
+        else:
+            btn.setStyleSheet("")
+            btn.setToolTip("Reset selection to full range [0, " + str(n_max) + "]")
+
+    def update_crop_range(self) -> None:
+        self.ui.roi_plot.crop_range.setRegion(
+            (self.ui.spinbox_crop_range_start.value(),
+             self.ui.spinbox_crop_range_end.value())
+        )
+
+    def _crop_index_to_frame(self) -> None:
+        """Show the edited crop index live in the image view."""
+        s = self.sender()
+        val = s.value() if s and hasattr(s, "value") else 0
+        n = self.ui.image_viewer.image.shape[0]
+        idx = max(0, min(int(val), n - 1))
+        self.ui.image_viewer.setCurrentIndex(idx)
+
+    def _crop_region_to_frame(self) -> None:
+        """When crop region is dragged, show the moved edge's frame live."""
+        reg = self.ui.roi_plot.crop_range.getRegion()
+        vals = (int(round(reg[0])), int(round(reg[1])))
+        prev = getattr(self, "_last_crop_region", (None, None))
+        self._last_crop_region = vals
+        left_changed = prev[0] is not None and vals[0] != prev[0]
+        right_changed = prev[1] is not None and vals[1] != prev[1]
+        if not left_changed and not right_changed:
+            return  # programmatic setRegion (e.g. round); keep current frame
+        if right_changed and not left_changed:
+            idx = vals[1]
+        else:
+            idx = vals[0]
+        n = self.ui.image_viewer.image.shape[0]
+        idx = max(0, min(idx, n - 1))
+        self.ui.image_viewer.setCurrentIndex(idx)
+
+    def crop(self) -> None:
+        with LoadingManager(self, "Cropping...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
+            self.ui.image_viewer.crop(
+                left=self.ui.spinbox_crop_range_start.value(),
+                right=self.ui.spinbox_crop_range_end.value(),
+                keep=False,
+            )
+        self.reset_options()
+
+    def _open_crop_dialog(self) -> None:
+        """Open Crop Timeline dialog and apply crop with chosen mode (mask/destructive)."""
+        data = getattr(self.ui.image_viewer, "data", None)
+        if data is None or data.n_images <= 0:
+            return
+        s = self.ui.spinbox_crop_range_start.value()
+        e = self.ui.spinbox_crop_range_end.value()
+        n = data.n_images
+        if s > e:
+            s, e = e, s
+        s = max(0, min(s, n - 1))
+        e = max(0, min(e, n - 1))
+        if s > e:
+            return
+        dlg = CropTimelineDialog(start=s, end=e, n_total=n, parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        keep = dlg.get_keep()
+        with LoadingManager(
+            self, "Cropping...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0
+        ):
+            self.ui.image_viewer.crop(left=s, right=e, keep=keep)
+        self.reset_options()
+
+    def _undo_crop(self) -> None:
+        """Undo timeline crop (only when applied with Keep in RAM)."""
+        success = self.ui.image_viewer.undo_crop()
+        if success:
+            self._sync_range_after_undo()
+
+    def _sync_range_after_undo(self) -> None:
+        """Update range UI after undo_crop restored full dataset."""
+        data = getattr(self.ui.image_viewer, "data", None)
+        if data is None:
+            return
+        n = max(1, data.n_images)
+        n_max = max(0, n - 1)
+        self.ui.spinbox_crop_range_start.blockSignals(True)
+        self.ui.spinbox_crop_range_end.blockSignals(True)
+        self.ui.spinbox_selection_window.blockSignals(True)
+        self.ui.spinbox_crop_range_start.setMaximum(n_max)
+        self.ui.spinbox_crop_range_end.setMaximum(n_max)
+        self.ui.spinbox_crop_range_start.setValue(0)
+        self.ui.spinbox_crop_range_end.setValue(n_max)
+        self.ui.spinbox_selection_window.setMaximum(n)
+        self.ui.spinbox_selection_window.setValue(n)
+        self.ui.spinbox_crop_range_start.blockSignals(False)
+        self.ui.spinbox_crop_range_end.blockSignals(False)
+        self.ui.spinbox_selection_window.blockSignals(False)
+        self.ui.roi_plot.crop_range.setRegion((0, n_max))
+        self.ui.spinbox_current_frame.setMaximum(n_max)
+        self._update_full_range_button_style()
+        self._update_ops_crop_buttons()
+        self.apply_ops()
+
+    def apply_mask(self) -> None:
+        with LoadingManager(self, "Masking...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
+            self.ui.image_viewer.apply_mask()
+
+    def reset_mask(self) -> None:
+        with LoadingManager(self, "Reset...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
+            self.ui.image_viewer.reset_mask()
+
+    def change_roi(self) -> None:
+        with LoadingManager(self, "Change ROI...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
+            self.ui.checkbox_roi_drop.setChecked(False)
+            self.ui.image_viewer.change_roi()
+
+    def image_mask(self) -> None:
+        file_path, _ = QFileDialog.getOpenFileName(
+            directory=str(self.last_file_dir),
+        )
+        with LoadingManager(self, "Masking...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
+            self.ui.image_viewer.image_mask(Path(file_path))
+
+    def toggle_rosee(self) -> None:
+        enabled = self.ui.checkbox_rosee_active.isChecked()
+        if enabled:
+            self.ui.checkbox_rosee_h.setEnabled(True)
+            self.ui.checkbox_rosee_v.setEnabled(True)
+            self.ui.checkbox_rosee_normalize.setEnabled(True)
+            self.ui.spinbox_rosee_smoothing.setEnabled(True)
+            self.ui.spinbox_isocurves.setEnabled(True)
+            self.ui.checkbox_show_isocurve.setEnabled(True)
+            self.ui.spinbox_iso_smoothing.setEnabled(True)
+            self.ui.checkbox_rosee_local_extrema.setEnabled(True)
+            self.ui.checkbox_rosee_show_lines.setEnabled(True)
+            self.ui.checkbox_rosee_show_indices.setEnabled(True)
+            self.ui.checkbox_rosee_in_image_h.setEnabled(True)
+            self.ui.checkbox_rosee_in_image_v.setEnabled(True)
+            self.ui.label_rosee_plots.setEnabled(True)
+            self.ui.label_rosee_image.setEnabled(True)
+        else:
+            self.ui.checkbox_rosee_h.setEnabled(False)
+            self.ui.checkbox_rosee_v.setEnabled(False)
+            self.ui.checkbox_rosee_normalize.setEnabled(False)
+            self.ui.spinbox_rosee_smoothing.setEnabled(False)
+            self.ui.spinbox_isocurves.setEnabled(False)
+            self.ui.checkbox_show_isocurve.setEnabled(False)
+            self.ui.spinbox_iso_smoothing.setEnabled(False)
+            self.ui.checkbox_rosee_local_extrema.setEnabled(False)
+            self.ui.checkbox_rosee_show_lines.setEnabled(False)
+            self.ui.checkbox_rosee_show_indices.setEnabled(False)
+            self.ui.checkbox_rosee_in_image_h.setEnabled(False)
+            self.ui.checkbox_rosee_in_image_v.setEnabled(False)
+            self.ui.label_rosee_plots.setEnabled(False)
+            self.ui.label_rosee_image.setEnabled(False)
+        self.rosee_adapter.toggle(
+            h_plot=self.ui.checkbox_rosee_h.isChecked() and enabled,
+            v_plot=self.ui.checkbox_rosee_v.isChecked() and enabled,
+            h_image=self.ui.checkbox_rosee_in_image_h.isChecked() and enabled,
+            v_image=self.ui.checkbox_rosee_in_image_v.isChecked() and enabled,
+        )
+        self.rosee_adapter.update(
+            use_local_extrema=self.ui.checkbox_rosee_local_extrema.isChecked(),
+            smoothing=self.ui.spinbox_rosee_smoothing.value(),
+            normalized=self.ui.checkbox_rosee_normalize.isChecked(),
+            show_indices=self.ui.checkbox_rosee_show_indices.isChecked(),
+            iso_smoothing=self.ui.spinbox_iso_smoothing.value(),
+            show_index_lines=self.ui.checkbox_rosee_show_lines.isChecked(),
+        )
+
+    def update_isocurves(self) -> None:
+        self.rosee_adapter.update_iso(
+            on=self.ui.checkbox_show_isocurve.isChecked()
+                and self.ui.checkbox_rosee_active.isChecked(),
+            n=self.ui.spinbox_isocurves.value(),
+            smoothing=self.ui.spinbox_iso_smoothing.value(),
+        )
+
+    def load_ops_file(self) -> None:
+        """Load or remove reference image for Ops (subtract/divide)."""
+        if "Remove" not in self.ui.button_ops_load_file.text():
+            file, _ = QFileDialog.getOpenFileName(
+                caption="Choose Reference File",
+                directory=str(self.last_file_dir),
+            )
+            if file and self.ui.image_viewer.load_background_file(Path(file)):
+                self.ui.button_ops_load_file.setText("[Remove]")
+                self.apply_ops()
+        else:
+            self.ui.image_viewer.unload_background_file()
+            self.ui.button_ops_load_file.setText("Load reference image")
+            self.apply_ops()
+
+    def on_strgC(self) -> None:
+        cb = QApplication.clipboard()
+        cb.clear()
+        cb.setText(self.ui.position_label.text())
+
+    def update_statusbar_position(self, pos: tuple[int, int]) -> None:
+        x, y, value = self.ui.image_viewer.get_position_info(pos)
+        self.ui.position_label.setText(f"X: {x} | Y: {y} | Value: {value}")
+
+    def _update_numba_dot(self) -> None:
+        """Update numba dot in LUT panel: green = active, gray = off/unavailable."""
+        data = getattr(self.ui.image_viewer, "data", None)
+        if data is None:
+            self.ui.numba_dot.setStyleSheet(
+                "background-color: #565f89; border-radius: 5px;"
+            )
+            self.ui.numba_dot.setToolTip(
+                "Green: Numba accelerating pipeline/aggregation. Gray: not in use."
+            )
+        elif not optimized.HAS_NUMBA:
+            self.ui.numba_dot.setStyleSheet(
+                "background-color: #565f89; border-radius: 5px;"
+            )
+            self.ui.numba_dot.setToolTip("Numba unavailable (not installed).")
+        else:
+            on = _numba_active(data)
+            if on:
+                self.ui.numba_dot.setStyleSheet(
+                    "background-color: #9ece6a; border-radius: 5px;"
+                )
+                self.ui.numba_dot.setToolTip(
+                    "Numba active: accelerating pipeline (subtract/divide) or "
+                    "aggregation (Mean/Max/Min/Std)."
+                )
+            else:
+                self.ui.numba_dot.setStyleSheet(
+                    "background-color: #565f89; border-radius: 5px;"
+                )
+                self.ui.numba_dot.setToolTip(
+                    "Numba not in use (no pipeline or aggregation, or using Median)."
+                )
+
+    def update_statusbar(self) -> None:
+        frame, max_frame, name = self.ui.image_viewer.get_frame_info()
+        self.ui.frame_label.setText(f"Frame: {frame} / {max_frame}")
+        self.ui.file_label.setText(f"File: {name}")
+        self.ui.ram_label.setText(
+            f"Available RAM: {get_available_ram():.2f} GB"
+        )
+        x, y, value = self.ui.image_viewer.get_position_info()
+        self.ui.position_label.setText(f"X: {x} | Y: {y} | Value: {value}")
+        self._update_numba_dot()
+
+    def _on_bench_show_stats_changed(self) -> None:
+        """Show/hide CPU load in LUT panel. Timer runs for Bench tab or compact."""
+        on = self.ui.checkbox_bench_show_stats.isChecked()
+        settings.set("bench/show_stats", on)
+        self.ui.bench_compact.setVisible(on)
+        self._update_bench_timer()
+
+    def _update_bench_timer(self) -> None:
+        """Start timer when Bench tab visible or compact enabled; else stop."""
+        bench_idx = getattr(self.ui, "bench_tab_index", self.ui.option_tabwidget.count() - 1)
+        bench_tab_visible = self.ui.option_tabwidget.currentIndex() == bench_idx
+        compact_enabled = self.ui.checkbox_bench_show_stats.isChecked()
+        if bench_tab_visible or compact_enabled:
+            self._bench_timer.start(500)
+        else:
+            self._bench_timer.stop()
+            self.ui.label_bench_live.setText("")
+
+    def _sync_pca_target_comp_to_data(self) -> None:
+        """Update Target Comp max and default from current data (e.g. when PCA tab is shown)."""
+        data = getattr(self.ui.image_viewer, "data", None)
+        n_frames = max(1, data.n_images) if data else 1
+        target_max = min(n_frames, 500)
+        target = self.ui.spinbox_pcacomp_target
+        target.setMaximum(target_max)
+        current = target.value()
+        if current < 1 or current > target_max or (current == 1 and target_max > 1):
+            default_target = min(n_frames // 2, 50, target_max)
+            default_target = max(1, default_target)
+            target.setValue(default_target)
+        self._pca_update_target_spinner_state()
+
+    def _on_option_tab_changed(self, index: int) -> None:
+        """Toggle LIVE indicator and timer when Bench tab visible. Sync PCA Target Comp when PCA tab shown."""
+        bench_idx = getattr(
+            self.ui, "bench_tab_index",
+            self.ui.option_tabwidget.count() - 1,
+        )
+        if index == bench_idx:
+            self._bench_live_tick = 0
+            self.update_bench()
+        else:
+            self.ui.label_bench_live.setText("")
+        self._update_bench_timer()
+        pca_idx = getattr(self.ui, "pca_tab_index", -1)
+        if index == pca_idx:
+            self._sync_pca_target_comp_to_data()
+
+    def _bench_tick(self) -> None:
+        """Sample CPU/RAM/Disk, feed shared BenchData, refresh Bench tab + compact (if shown)."""
+        ram_free = get_available_ram()
+        ram_used = get_used_ram()
+        cpu = get_cpu_percent()
+        disk_r, disk_w = get_disk_io_mbs()
+        self.ui.bench_data.add(cpu, ram_used, ram_free, disk_r, disk_w)
+        self.ui.bench_sparklines.refresh_from_data()
+        if self.ui.checkbox_bench_show_stats.isChecked():
+            self.ui.bench_compact.refresh()
+        bench_idx = getattr(self.ui, "bench_tab_index", self.ui.option_tabwidget.count() - 1)
+        if self.ui.option_tabwidget.currentIndex() == bench_idx:
+            tick = getattr(self, "_bench_live_tick", 0)
+            self._bench_live_tick = tick + 1
+            self.ui.label_bench_live.setText("\u25cb LIVE" if tick % 2 else "\u25cf LIVE")
+
+    def update_bench(self) -> None:
+        """Update Bench tab labels (matrix stats, cache, numba). CPU/RAM/Disk via _bench_tick."""
+        data = getattr(self.ui.image_viewer, "data", None)
+        if data is None:
+            self.ui.label_bench_raw.setText("Raw: —")
+            self.ui.label_bench_result.setText("Result: —")
+            self.ui.label_bench_mode.setText("View mode: —")
+            self.ui.label_bench_cache.setText("Cache: —")
+            self.ui.label_bench_numba.setText("Numba: —")
+            return
+        shape = data._image.shape
+        dtype = data._image.dtype.name
+        self.ui.label_bench_raw.setText(
+            f"Raw: {format_size_mb(data._image.nbytes)} "
+            f"({shape[0]}x{shape[1]}x{shape[2]}x{shape[3]}, {dtype})"
+        )
+        result_cache = getattr(data, "_result_cache", {})
+        is_aggregate = getattr(data, "_redop", None) is not None
+        ops_in_cache = (
+            sorted(set(k[0] for k in result_cache.keys()), key=lambda o: getattr(o, "name", str(o)))
+            if result_cache
+            else []
+        )
+        names = [getattr(o, "name", str(o)) for o in ops_in_cache]
+        cache_str = f"Ready: {', '.join(names)}" if names else "—"
+        self.ui.label_bench_cache.setText(f"Result cache: {cache_str}")
+
+        if is_aggregate:
+            op = data._redop
+            bounds = getattr(data, "_agg_bounds", None)
+            self.ui.label_bench_mode.setText(
+                f"View mode: Range ({getattr(op, 'name', op)})"
+            )
+            key = (op, bounds)
+            cached = result_cache.get(key) if result_cache else None
+            if cached is not None:
+                self.ui.label_bench_result.setText(
+                    f"Result: {format_size_mb(cached.nbytes)} (cached)"
+                )
+            else:
+                self.ui.label_bench_result.setText("Result: computing...")
+        else:
+            self.ui.label_bench_mode.setText("View mode: Frame")
+            self.ui.label_bench_result.setText("Result: —")
+
+        # Numba status: pipeline (subtract/divide) or aggregation (MEAN/MAX/MIN/STD)
+        if optimized.HAS_NUMBA:
+            on = _numba_active(data)
+            self.ui.label_bench_numba.setText("Numba: on" if on else "Numba: off")
+        else:
+            self.ui.label_bench_numba.setText("Numba: unavailable")
 
     def _load_ascii(self, path: Path) -> None:
         """Load ASCII (.asc, .dat) via options dialog. Path from Open File/Folder or drop."""
@@ -471,18 +1400,6 @@ class MainWindow(QMainWindow):
         if meta is None:
             log("Cannot read ASCII metadata", color="red")
             return
-
-        # Sanity Check for ROI
-        if "roi_state" in self._ascii_session_defaults:
-            if not self._is_roi_valid(
-                self._ascii_session_defaults["roi_state"],
-                meta["size"],
-                self._ascii_session_defaults
-            ):
-                self._ascii_session_defaults.pop("roi_state", None)
-                self._ascii_session_defaults.pop("mask", None)
-                self._ascii_session_defaults.pop("mask_rel", None)
-
         dlg = AsciiLoadOptionsDialog(
             path, meta, parent=self,
             initial_params=self._ascii_session_defaults,
@@ -490,17 +1407,16 @@ class MainWindow(QMainWindow):
         if not dlg.exec():
             return
         user_params = dlg.get_params()
-        params = {k: v for k, v in user_params.items()
-                  if k not in ("mask_rel", "roi_state", "flip_xy", "rotate_90")}
-
-        # Update session defaults
+        skip_keys = {"mask_rel", "roi_state", "flip_xy"}
+        params = {k: v for k, v in user_params.items() if k not in skip_keys}
+        flip_xy = user_params.get("flip_xy", False)
+        target_roi_state = user_params.get("roi_state")
         self._ascii_session_defaults = {
             "size_ratio": user_params["size_ratio"],
             "convert_to_8_bit": user_params["convert_to_8_bit"],
             "delimiter": user_params["delimiter"],
             "first_col_is_row_number": user_params["first_col_is_row_number"],
             "flip_xy": user_params.get("flip_xy", False),
-            "rotate_90": user_params.get("rotate_90", False),
         }
         if "subset_ratio" in user_params:
             self._ascii_session_defaults["subset_ratio"] = user_params["subset_ratio"]
@@ -523,30 +1439,9 @@ class MainWindow(QMainWindow):
         log(f"Loaded in {lm.duration:.2f}s")
         self.ui.image_viewer.set_image(img)
 
-        # Apply transforms and set ROI
-        if user_params.get("flip_xy"):
+        # Apply transforms from dialog
+        if flip_xy:
             self.ui.image_viewer.manipulate("transpose")
-        if user_params.get("rotate_90"):
-            self.ui.image_viewer.manipulate("rotate_90")
-
-        if "roi_state" in user_params:
-            s = user_params["roi_state"]
-            # Need to update viewer's ROI to match user selection
-            # Note: image_viewer uses square_roi (ROI) and poly_roi
-            # Default is square_roi
-            # roi_state is from RectROI (Dialog).
-            # Viewer's ROI might be PolyLineROI if that was selected last time?
-            # But normally we want the rect.
-            # We update square_roi.
-            self.ui.image_viewer.square_roi.setPos(s['pos'])
-            self.ui.image_viewer.square_roi.setSize(s['size'])
-            self.ui.image_viewer.square_roi.setAngle(s['angle'])
-            # Ensure square_roi is active?
-            # If poly was active, maybe switch? Or just set square.
-            # If user selected Rect in dialog, we should probably switch to Rect in Viewer.
-            if self.ui.image_viewer.roi is not self.ui.image_viewer.square_roi:
-                self.ui.image_viewer.change_roi()
-
         self.last_file_dir = path.parent
         self.last_file = path.name
         self.update_statusbar()
@@ -887,17 +1782,8 @@ class MainWindow(QMainWindow):
         if DataLoader._is_video(path):
             try:
                 meta = DataLoader.get_video_metadata(path)
-
-                # Sanity Check for ROI
-                if "roi_state" in self._video_session_defaults:
-                    if not self._is_roi_valid(
-                        self._video_session_defaults["roi_state"],
-                        meta.size,
-                        self._video_session_defaults
-                    ):
-                        self._video_session_defaults.pop("roi_state", None)
-                        self._video_session_defaults.pop("mask", None)
-                        self._video_session_defaults.pop("mask_rel", None)
+                # Estimate RAM usage for full load at current settings
+                # ImageData keeps uint8 by default (1 byte)
 
                 show_dialog = self.ui.checkbox_video_dialog_always.isChecked()
                 if show_dialog:
@@ -914,17 +1800,15 @@ class MainWindow(QMainWindow):
                             "grayscale": user_params["grayscale"],
                             "convert_to_8_bit": user_params.get("convert_to_8_bit", False),
                             "flip_xy": user_params.get("flip_xy", False),
-                            "rotate_90": user_params.get("rotate_90", False),
                         }
-                        if "mask_rel" in user_params:
-                            self._video_session_defaults["mask_rel"] = user_params["mask_rel"]
-                        else:
-                            self._video_session_defaults.pop("mask_rel", None)
                         if "roi_state" in user_params:
                             self._video_session_defaults["roi_state"] = user_params["roi_state"]
                         else:
                             self._video_session_defaults.pop("roi_state", None)
-
+                        if "mask_rel" in user_params:
+                            self._video_session_defaults["mask_rel"] = user_params["mask_rel"]
+                        else:
+                            self._video_session_defaults.pop("mask_rel", None)
                         self.ui.spinbox_load_size.setValue(
                             user_params["size_ratio"],
                         )
@@ -940,7 +1824,7 @@ class MainWindow(QMainWindow):
                     else:
                         return
                 else:
-                    # Dialog nicht gezeigt: Session-Defaults anwenden
+                    # Dialog nicht gezeigt: Session-Defaults anwenden (gleiche Einstellungen wie letztes Video)
                     if self._video_session_defaults:
                         params["size_ratio"] = self._video_session_defaults.get(
                             "size_ratio", params["size_ratio"]
@@ -955,6 +1839,7 @@ class MainWindow(QMainWindow):
                         params["convert_to_8_bit"] = self._video_session_defaults.get(
                             "convert_to_8_bit", params["convert_to_8_bit"]
                         )
+                        params["flip_xy"] = self._video_session_defaults.get("flip_xy", False)
                         self.ui.spinbox_load_size.setValue(params["size_ratio"])
                         self.ui.spinbox_load_subset.setValue(params["subset_ratio"])
                         self.ui.checkbox_load_grayscale.setChecked(params["grayscale"])
@@ -970,11 +1855,6 @@ class MainWindow(QMainWindow):
                             y1 = min(h, int(r[3] * h))
                             if x1 > x0 and y1 > y0 and (x1 - x0 < w or y1 - y0 < h):
                                 params["mask"] = (slice(x0, x1), slice(y0, y1))
-                        # Inherit flags
-                        params["flip_xy"] = self._video_session_defaults.get("flip_xy", False)
-                        params["rotate_90"] = self._video_session_defaults.get("rotate_90", False)
-                        if "roi_state" in self._video_session_defaults:
-                            params["roi_state"] = self._video_session_defaults["roi_state"]
             except Exception as e:
                 log(f"Error reading video metadata: {e}", color="red")
 
@@ -985,18 +1865,6 @@ class MainWindow(QMainWindow):
             try:
                 meta = get_image_metadata(path)
                 if meta is not None:
-                    # Sanity Check for ROI
-                    if "roi_state" in self._image_session_defaults:
-                        # meta["size"] is (h, w)
-                        if not self._is_roi_valid(
-                            self._image_session_defaults["roi_state"],
-                            meta["size"],
-                            self._image_session_defaults
-                        ):
-                            self._image_session_defaults.pop("roi_state", None)
-                            self._image_session_defaults.pop("mask", None)
-                            self._image_session_defaults.pop("mask_rel", None)
-
                     show_dialog = self.ui.checkbox_video_dialog_always.isChecked()
                     if show_dialog:
                         dlg = ImageLoadOptionsDialog(
@@ -1011,19 +1879,17 @@ class MainWindow(QMainWindow):
                                 "grayscale": user_params["grayscale"],
                                 "convert_to_8_bit": user_params.get("convert_to_8_bit", False),
                                 "flip_xy": user_params.get("flip_xy", False),
-                                "rotate_90": user_params.get("rotate_90", False),
                             }
+                            if "roi_state" in user_params:
+                                self._image_session_defaults["roi_state"] = user_params["roi_state"]
+                            else:
+                                self._image_session_defaults.pop("roi_state", None)
                             if "subset_ratio" in user_params:
                                 self._image_session_defaults["subset_ratio"] = user_params["subset_ratio"]
                             if "mask_rel" in user_params:
                                 self._image_session_defaults["mask_rel"] = user_params["mask_rel"]
                             else:
                                 self._image_session_defaults.pop("mask_rel", None)
-                            if "roi_state" in user_params:
-                                self._image_session_defaults["roi_state"] = user_params["roi_state"]
-                            else:
-                                self._image_session_defaults.pop("roi_state", None)
-
                             self.ui.spinbox_load_size.setValue(
                                 user_params["size_ratio"],
                             )
@@ -1052,6 +1918,7 @@ class MainWindow(QMainWindow):
                             params["convert_to_8_bit"] = self._image_session_defaults.get(
                                 "convert_to_8_bit", params["convert_to_8_bit"]
                             )
+                            params["flip_xy"] = self._image_session_defaults.get("flip_xy", False)
                             self.ui.spinbox_load_size.setValue(params["size_ratio"])
                             self.ui.spinbox_load_subset.setValue(params["subset_ratio"])
                             self.ui.checkbox_load_grayscale.setChecked(params["grayscale"])
@@ -1068,33 +1935,16 @@ class MainWindow(QMainWindow):
                                 y1 = min(h, int(r[3] * h))
                                 if x1 > x0 and y1 > y0 and (x1 - x0 < w or y1 - y0 < h):
                                     params["mask"] = (slice(x0, x1), slice(y0, y1))
-                            params["flip_xy"] = self._image_session_defaults.get("flip_xy", False)
-                            params["rotate_90"] = self._image_session_defaults.get("rotate_90", False)
-                            if "roi_state" in self._image_session_defaults:
-                                params["roi_state"] = self._image_session_defaults["roi_state"]
             except Exception as e:
                 log(f"Error reading image metadata: {e}", color="red")
 
+        # Pop dialog-only params (DataLoader does not accept these)
         params.pop("mask_rel", None)
-        params.pop("roi_state", None) # Don't pass to DataLoader
+        target_roi_state = params.pop("roi_state", None)
         flip_xy = params.pop("flip_xy", False)
-        rotate_90 = params.pop("rotate_90", False)
-
-        # We need roi_state later for Viewer, so retrieve it from defaults or user_params if available?
-        # params dictionary passed to load_data shouldn't have extra keys if DataLoader doesn't support them.
-        # But we need to use them after load.
-        # I removed roi_state from params passed to load_data.
-        # But I need to access it.
-        # I can use _image_session_defaults or _video_session_defaults.
-        # But that's ugly if we just loaded defaults.
-        # Better: store target_roi_state locally.
-
-        target_roi_state = None
-        # Retrieve from defaults if not in params (params.pop removed it)
-        if DataLoader._is_video(path):
-            target_roi_state = self._video_session_defaults.get("roi_state")
-        elif (path.is_file() and DataLoader._is_image(path)) or path.is_dir():
-            target_roi_state = self._image_session_defaults.get("roi_state")
+        if "step" in params:
+            params["subset_ratio"] = 1.0 / params.pop("step")
+        params.pop("frame_range", None)
 
         with LoadingManager(self, f"Loading {path}", blocking_label=self.ui.blocking_status) as lm:
             self.ui.image_viewer.load_data(
@@ -1105,21 +1955,419 @@ class MainWindow(QMainWindow):
             )
         log(f"Loaded in {lm.duration:.2f}s")
 
-        # Apply transforms and set ROI
+        # Apply transforms from load dialog (flip_xy)
         if flip_xy:
             self.ui.image_viewer.manipulate("transpose")
-        if rotate_90:
-            self.ui.image_viewer.manipulate("rotate_90")
-
-        if target_roi_state:
-            s = target_roi_state
-            self.ui.image_viewer.square_roi.setPos(s['pos'])
-            self.ui.image_viewer.square_roi.setSize(s['size'])
-            self.ui.image_viewer.square_roi.setAngle(s['angle'])
-            if self.ui.image_viewer.roi is not self.ui.image_viewer.square_roi:
-                self.ui.image_viewer.change_roi()
-
+        # ROI (target_roi_state) determines mask at load time; no post-load crop.
+        # Program ROI stays independent (init_roi default).
         self.last_file_dir = path.parent
         self.last_file = path.name
         self.update_statusbar()
         self.reset_options()
+
+    def _is_sliding_mean_preview(self) -> bool:
+        """True if Frame mode + pipeline has sliding mean (sub or div) with apply_full=False."""
+        if self._is_aggregate_view():
+            return False
+        data = self.ui.image_viewer.data
+        if data.is_single_image() or data.n_images <= 1:
+            return False
+        p = getattr(data, "_ops_pipeline", None) or {}
+        for step in (p.get("subtract"), p.get("divide")):
+            if (
+                step
+                and step.get("source") == "sliding_aggregate"
+                and step.get("amount", 0) > 0
+                and not step.get("apply_full", False)
+            ):
+                return True
+        return False
+
+    def _set_preview_frame_for_ops(self) -> None:
+        """Set data.preview_frame when in sliding mean preview (single-frame processing)."""
+        data = self.ui.image_viewer.data
+        if self._is_sliding_mean_preview():
+            try:
+                idx = int(round(self.ui.image_viewer.timeLine.pos()[0]))
+            except (AttributeError, TypeError):
+                idx = 0
+            idx = max(0, min(idx, data.n_images - 1))
+            data.preview_frame = idx
+        else:
+            data.preview_frame = None
+
+    def _on_timeline_for_sliding_preview(self) -> None:
+        """Debounced: refresh image when scrubbing in sliding mean preview (current frame only)."""
+        if not self._is_sliding_mean_preview():
+            return
+        t = getattr(self, "_sliding_preview_timer", None)
+        if t is None:
+            t = QTimer(self)
+            t.setSingleShot(True)
+            t.timeout.connect(self._refresh_sliding_preview)
+            self._sliding_preview_timer = t
+        t.start(50)
+
+    def _refresh_sliding_preview(self) -> None:
+        """Re-fetch image with preview_frame = current; pipeline unchanged."""
+        if not self._is_sliding_mean_preview():
+            return
+        self._set_preview_frame_for_ops()
+        self.ui.image_viewer.update_image(keep_timestep=True)
+
+    def apply_ops(self) -> None:
+        """Build Ops pipeline from UI and set on data."""
+        if self.ui.image_viewer.data.is_single_image():
+            return
+        bounds = (
+            self.ui.spinbox_crop_range_start.value(),
+            self.ui.spinbox_crop_range_end.value(),
+        )
+        range_method = self.ui.combobox_ops_range_method.currentData()  # for Range & Sliding range
+        bg = self.ui.image_viewer._background_image
+
+        def _step(src: str, amount: int) -> dict | None:
+            if not src or src == "off" or amount <= 0:
+                return None
+            if src == "aggregate":
+                op = range_method
+                return {"source": "aggregate", "bounds": bounds, "method": op, "amount": amount / 100.0}
+            if src == "file" and bg is not None:
+                return {"source": "file", "reference": bg, "amount": amount / 100.0}
+            if src == "sliding_aggregate":
+                window = max(1, self.ui.spinbox_ops_norm_window.value())
+                lag = max(0, self.ui.spinbox_ops_norm_lag.value())
+                apply_full = self.ui.checkbox_ops_sliding_apply_full.isChecked()
+                return {
+                    "source": "sliding_aggregate",
+                    "window": window,
+                    "lag": lag,
+                    "method": range_method,
+                    "amount": amount / 100.0,
+                    "apply_full": apply_full,
+                }
+            return None
+
+        sub_src = self.ui.combobox_ops_subtract_src.currentData()
+        sub_amt = self.ui.slider_ops_subtract.value()
+        div_src = self.ui.combobox_ops_divide_src.currentData()
+        div_amt = self.ui.slider_ops_divide.value()
+
+        has_range_step = (
+            (sub_src == "aggregate" and sub_amt > 0)
+            or (div_src == "aggregate" and div_amt > 0)
+        )
+        has_sliding_step = (
+            (sub_src == "sliding_aggregate" and sub_amt > 0)
+            or (div_src == "sliding_aggregate" and div_amt > 0)
+        )
+        self.ui.ops_range_method_widget.setVisible(has_range_step or has_sliding_step)
+        if has_range_step and self._is_aggregate_view():
+            # Range subtraction in Aggregate view = mean minus mean (artifact).
+            # Switch to Frame so user sees frame - mean instead.
+            self.ui.combobox_reduce.blockSignals(True)
+            self.ui.combobox_reduce.setCurrentIndex(0)
+            self.ui.combobox_reduce.blockSignals(False)
+            with LoadingManager(self, "Switching...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
+                self.ui.image_viewer.unravel()
+            self._update_selection_visibility()
+            self.update_statusbar()
+            self.update_bench()
+
+        pipeline: dict = {}
+        if sub := _step(sub_src, sub_amt):
+            pipeline["subtract"] = sub
+        if div := _step(div_src, div_amt):
+            pipeline["divide"] = div
+
+        if pipeline:
+            parts = []
+            if "subtract" in pipeline:
+                parts.append("Subtracting")
+            if "divide" in pipeline:
+                parts.append(
+                    "Dividing" if div_src != "sliding_aggregate" else "Normalizing"
+                )
+            msg = " & ".join(parts) + "..."
+        else:
+            msg = None
+        if msg:
+            with LoadingManager(self, msg, blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
+                self.ui.image_viewer.data.set_ops_pipeline(pipeline)
+                self._set_preview_frame_for_ops()
+                keep = self._is_sliding_mean_preview() or (has_range_step and not self._is_aggregate_view())
+                self.ui.image_viewer.update_image(keep_timestep=keep)
+        else:
+            self.ui.image_viewer.data.set_ops_pipeline(None)
+            self.ui.image_viewer.data.preview_frame = None
+            self.ui.image_viewer.update_image()
+
+    def update_view_mode(self) -> None:
+        """Switch between Single Frame (Reduce=None) and Aggregated (Reduce=Mean/Max/etc)."""
+        is_agg = self._is_aggregate_view()
+        if is_agg:
+            data = getattr(self.ui.image_viewer, "data", None)
+            cache_empty = (
+                data is not None
+                and getattr(data, "_redop", None) is None
+                and len(getattr(data, "_result_cache", {})) == 0
+            )
+            if getattr(self, "_aggregate_first_open", True) and cache_empty:
+                self.reset_selection_range()
+                self._aggregate_first_open = False
+        self._update_selection_visibility()
+        if is_agg:
+            self.apply_aggregation()
+        else:
+            with LoadingManager(self, "Switching...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
+                self.ui.image_viewer.unravel()
+            self.update_statusbar()
+            self.update_bench()
+
+    def _on_selection_changed(self) -> None:
+        """Selection geaendert (Range-Drag oder Spinbox) -> Frame auf Range-Start, Aggregation neu."""
+        s = self.ui.spinbox_crop_range_start.value()
+        self.ui.image_viewer.setCurrentIndex(s)
+        self.ui.image_viewer.timeLine.setPos((s, 0))
+        if self._is_aggregate_view():
+            self.apply_aggregation()
+
+    def apply_aggregation(self) -> None:
+        """Apply reduction over Selection [Start, End] when Reduce != None."""
+        if not self._is_aggregate_view():
+            return
+        data = getattr(self.ui.image_viewer, "data", None)
+        if data is not None:
+            data.preview_frame = None
+        op = self.ui.combobox_reduce.currentData()
+        if op is None:  # "None - current frame"
+            with LoadingManager(self, "Switching...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
+                self.ui.image_viewer.unravel()
+            self.update_statusbar()
+            self.update_bench()
+            return
+        bounds = (
+            self.ui.spinbox_crop_range_start.value(),
+            self.ui.spinbox_crop_range_end.value(),
+        )
+        with LoadingManager(self, f"Computing {op.name}...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0) as lm:
+            self.ui.image_viewer.reduce(op, bounds=bounds)
+        s, e = bounds
+        self.ui.image_viewer.timeLine.setPos((s, 0))
+        self.update_statusbar()
+        self.update_bench()
+        log(f"{op.name} in {lm.duration:.2f}s")
+
+    def update_roi_settings(self) -> None:
+        self.ui.measure_roi.show_in_mm = self.ui.checkbox_mm.isChecked()
+        self.ui.measure_roi.n_px = self.ui.spinbox_pixel.value()
+        self.ui.measure_roi.px_in_mm = self.ui.spinbox_mm.value()
+        if not self.ui.checkbox_measure_roi.isChecked():
+            return
+        self.ui.measure_roi.update_labels()
+
+    def save_settings(self):
+        settings.set("window/docks", self.ui.dock_area.saveState())
+        screen_geometry = QApplication.primaryScreen().availableGeometry()
+        settings.set("window/relative_size",
+            self.width() / screen_geometry.width(),
+        )
+
+    # --- PCA ---
+    def pca_calculate(self) -> None:
+        if self.ui.button_pca_show.isChecked():
+            self.ui.button_pca_show.setChecked(False)
+            self.pca_adapter.reset_view()
+            self.ui.button_pca_show.setText("View PCA")
+        self.ui.label_pca_time.setText("")
+        self.ui.pca_variance_plot.hide()
+        self.ui.pca_variance_plot.clear()
+        self.ui.table_pca_results.hide()
+        self.ui.table_pca_results.setRowCount(0)
+        n = self.ui.spinbox_pcacomp_target.value()
+        exact = self.ui.checkbox_pca_exact.isChecked()
+        self.pca_adapter.calculate(n_components=n, exact=exact)
+
+    def pca_on_started(self) -> None:
+        self._pca_calc_start_time = time.perf_counter()
+        self.ui.button_pca_calc.setEnabled(False)
+        self.ui.checkbox_pca_exact.setEnabled(False)
+        self.ui.spinbox_pcacomp_target.setEnabled(False)
+        self.ui.label_pca_time.setText("Calculating...")
+        self.ui.blocking_status.setText("BUSY")
+        self.ui.blocking_status.setStyleSheet(get_style("busy"))
+
+    def pca_on_finished(self) -> None:
+        duration = time.perf_counter() - getattr(self, "_pca_calc_start_time", 0)
+        self.ui.button_pca_calc.setEnabled(True)
+        self.ui.checkbox_pca_exact.setEnabled(True)
+        self.ui.label_pca_time.setText(f"Calculated in {duration:.2f}s")
+        self.ui.blocking_status.setText("IDLE")
+        self.ui.blocking_status.setStyleSheet(get_style("idle"))
+
+        n_comps = self.pca_adapter.max_components
+        self.ui.spinbox_pcacomp.setMaximum(n_comps)
+        self.ui.spinbox_pcacomp.setEnabled(True)
+        self.ui.spinbox_pcacomp.setValue(n_comps if self.ui.checkbox_pca_exact.isChecked() else 1)
+        self.ui.combobox_pca.setEnabled(True)
+        self.ui.button_pca_show.setEnabled(True)
+        self._pca_on_mode_changed()
+        self._pca_update_variance_plot()
+        self._pca_update_timeline_label()
+        QTimer.singleShot(0, self._pca_update_target_spinner_state)
+
+    def _pca_update_variance_plot(self) -> None:
+        """Fill variance plot with dual axis: cumulative (red, 0-100), individual (green, actual)."""
+        if not self.pca_adapter.is_calculated:
+            self.ui.pca_variance_plot.hide()
+            self.ui.table_pca_results.hide()
+            if getattr(self.ui.pca_variance_plot, "_pca_vb2", None):
+                self.ui.pca_variance_plot._pca_vb2 = None
+            return
+        old_vb = getattr(self.ui.pca_variance_plot, "_pca_vb2", None)
+        if old_vb is not None and old_vb.scene():
+            old_vb.scene().removeItem(old_vb)
+        self.ui.pca_variance_plot._pca_vb2 = None
+        self.ui.pca_variance_plot.clear()
+        x, indiv, cumul = self.pca_adapter.variance_curve_data()
+        if len(x) == 0:
+            self.ui.pca_variance_plot.hide()
+            self.ui.table_pca_results.hide()
+            return
+        self.ui.pca_variance_plot.show()
+        self.ui.table_pca_results.show()
+        max_modes = len(x)
+        pi = self.ui.pca_variance_plot.getPlotItem()
+        pi.setXRange(0, max_modes)
+        pi.getViewBox().setLimits(xMin=0, xMax=max_modes)
+        indiv_max = float(indiv.max()) if indiv.size > 0 else 1.0
+        pen_cumul = (220, 80, 80)
+        pen_indiv = (80, 200, 100)
+        pi.getAxis("left").setPen(pg.mkPen(pen_cumul))
+        pi.getAxis("left").setTextPen(pg.mkPen(pen_cumul))
+        pi.setLabel("left", "cum. Var [%]", color=pen_cumul)
+        pi.setYRange(0, 100)
+        cumul_curve = self.ui.pca_variance_plot.plot(x, cumul, pen=pen_cumul, name="Cumulative")
+        cumul_curve.setPen(pen_cumul, width=2)
+        vb2 = pg.ViewBox()
+        pi.showAxis("right")
+        pi.scene().addItem(vb2)
+        pi.getAxis("right").linkToView(vb2)
+        vb2.setXLink(pi)
+        pi.getAxis("right").setPen(pg.mkPen(pen_indiv))
+        pi.getAxis("right").setTextPen(pg.mkPen(pen_indiv))
+        pi.getAxis("right").setLabel("ind. Var [%]", color=pen_indiv)
+        vb2.setGeometry(pi.getViewBox().sceneBoundingRect())
+        vb2.linkedViewChanged(pi.getViewBox(), vb2.XAxis)
+        if not getattr(self.ui.pca_variance_plot, "_pca_sync_connected", False):
+            pi.getViewBox().sigResized.connect(lambda: _pca_sync_vb2(self.ui.pca_variance_plot))
+            self.ui.pca_variance_plot._pca_sync_connected = True
+        indiv_item = pg.PlotCurveItem(x, indiv, pen=pen_indiv)
+        vb2.addItem(indiv_item)
+        vb2.setYRange(0, indiv_max)
+        self.ui.pca_variance_plot._pca_vb2 = vb2
+        k = self.ui.spinbox_pcacomp.value() if self.ui.combobox_pca.currentText() == "Reconstruction" else 0
+        if k > 0 and k <= len(cumul):
+            kx, ky = float(x[k - 1]), float(cumul[k - 1])
+            pt = pg.ScatterPlotItem([kx], [ky], symbol="o", size=12, pen=pg.mkPen("w", width=2))
+            pi.addItem(pt)
+            txt = pg.TextItem(text=f"{ky:.1f}%", anchor=(0, 0.5), color="w")
+            txt.setPos(kx, ky)
+            pi.addItem(txt)
+        pi.showGrid(x=True, y=True, alpha=0.4)
+        self.ui.table_pca_results.setRowCount(3)
+        self.ui.table_pca_results.setColumnCount(max_modes + 1)
+        self.ui.table_pca_results.setItem(0, 0, QTableWidgetItem("[%]"))
+        self.ui.table_pca_results.setItem(1, 0, QTableWidgetItem("Var"))
+        self.ui.table_pca_results.setItem(2, 0, QTableWidgetItem("Cumul"))
+        for i in range(max_modes):
+            self.ui.table_pca_results.setItem(0, i + 1, QTableWidgetItem(str(int(x[i]))))
+            self.ui.table_pca_results.setItem(1, i + 1, QTableWidgetItem(f"{indiv[i]:.2f}"))
+            self.ui.table_pca_results.setItem(2, i + 1, QTableWidgetItem(f"{cumul[i]:.1f}"))
+        self.ui.table_pca_results.setColumnWidth(0, 48)
+
+    def _pca_update_timeline_label(self) -> None:
+        """Set timeline mode label (top-right overlay): Component vs Frame."""
+        if self.ui.button_pca_show.isChecked():
+            mode = self.ui.combobox_pca.currentText()
+            label = "Component" if mode == "Components" else "Frame"
+        else:
+            label = "Frame"
+        self.ui.timeline_stack.label_timeline_mode.setText(label)
+        self.ui.roi_plot.getPlotItem().setLabel("bottom", "")
+
+    def _pca_update_variance_display(self) -> None:
+        """Refresh variance plot (reconstruction point) when Components spinbox changes."""
+        if self.pca_adapter.is_calculated and self.ui.button_pca_show.isChecked():
+            self._pca_update_variance_plot()
+
+    def _pca_update_target_spinner_state(self) -> None:
+        """When Exact: Target Comp at max and disabled. When not Exact: enabled."""
+        exact = self.ui.checkbox_pca_exact.isChecked()
+        target = self.ui.spinbox_pcacomp_target
+        if exact:
+            target.setValue(target.maximum())
+            target.setEnabled(False)
+        else:
+            target.setEnabled(True)
+
+    def _pca_on_exact_changed(self) -> None:
+        """React to Exact checkbox: Target Comp at max and disabled when Exact, enabled when not."""
+        self._pca_update_target_spinner_state()
+
+    def _pca_on_mode_changed(self) -> None:
+        is_reconstruction = self.ui.combobox_pca.currentText() == "Reconstruction"
+        self.ui.spinbox_pcacomp.setVisible(is_reconstruction)
+        self.ui.checkbox_pca_include_mean.setVisible(is_reconstruction)
+        self._pca_update_target_spinner_state()
+        if self.ui.button_pca_show.isChecked():
+            self.pca_update_view()
+        self._pca_update_variance_display()
+        self._pca_update_timeline_label()
+
+    def pca_on_error(self, msg: str) -> None:
+        self.ui.button_pca_calc.setEnabled(True)
+        self.ui.checkbox_pca_exact.setEnabled(True)
+        self._pca_update_target_spinner_state()
+        self.ui.label_pca_time.setText("Error")
+        self.ui.blocking_status.setText("IDLE")
+        self.ui.blocking_status.setStyleSheet(get_style("idle"))
+        log(f"PCA Error: {msg}", color="red")
+
+    def pca_toggle_show(self) -> None:
+        if self.ui.button_pca_show.isChecked():
+            self._pca_capture_original_timeline()
+            self.pca_update_view()
+            self.ui.button_pca_show.setText("View Data")
+        else:
+            self._pca_original_timeline_curve = None
+            self.ui.image_viewer.clear_reference_timeline_curve()
+            self.pca_adapter.reset_view()
+            self.ui.button_pca_show.setText("View PCA")
+        self._pca_update_timeline_label()
+
+    def _pca_capture_original_timeline(self) -> None:
+        """Capture original ROI curve for reference when viewing PCA (Reconstruction mode)."""
+        curves = getattr(self.ui.image_viewer, "roiCurves", [])
+        if curves and self.pca_adapter._base_data is not None:
+            x, y = curves[0].getData()
+            if x is not None and y is not None and len(x) > 0 and len(y) > 0:
+                self._pca_original_timeline_curve = (np.asarray(x).copy(), np.asarray(y).copy())
+
+    def pca_update_view(self) -> None:
+        if not self.ui.button_pca_show.isChecked():
+            return
+
+        mode = self.ui.combobox_pca.currentText()
+        if mode == "Components":
+            self.ui.image_viewer.clear_reference_timeline_curve()
+            n = self.pca_adapter.max_components
+            self.pca_adapter.show_components(n)
+        else:
+            if getattr(self, "_pca_original_timeline_curve", None) is not None:
+                x, y = self._pca_original_timeline_curve
+                self.ui.image_viewer.set_reference_timeline_curve(x, y)
+            n = self.ui.spinbox_pcacomp.value()
+            add_mean = self.ui.checkbox_pca_include_mean.isChecked()
+            self.pca_adapter.show_reconstruction(n, add_mean=add_mean)
+        self._pca_update_variance_display()

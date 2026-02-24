@@ -100,7 +100,6 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
             self.chk_8bit.setChecked(is_uint8 or initial_params.get("convert_to_8_bit", False))
             # Set transform checkboxes
             self.chk_flip_xy.setChecked(initial_params.get("flip_xy", False))
-            self.chk_rotate_90.setChecked(initial_params.get("rotate_90", False))
         else:
             self.chk_grayscale.setChecked(is_gray)
             self.chk_8bit.setChecked(is_uint8)
@@ -308,7 +307,7 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
             s = self._initial_roi_state
             self._roi.setPos(s['pos'])
             self._roi.setSize(s['size'])
-            self._roi.setAngle(s['angle'])
+            self._roi.setAngle(0)
         elif self._initial_mask_rel is not None:
             r = self._initial_mask_rel
             x0 = max(0, int(r[0] * w))
@@ -320,8 +319,6 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
                 self._roi.setSize((x1 - x0, y1 - y0))
 
         self._roi.handleSize = 10
-        self._roi.addScaleHandle([1, 1], [0, 0])
-        self._roi.addScaleHandle([0, 0], [1, 1])
         self._plot_widget.addItem(self._roi)
 
         # Connect Mixin Signals
@@ -331,7 +328,6 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
     def _reset_roi(self) -> None:
         """Reset crop ROI to full frame and reset transforms."""
         self.chk_flip_xy.setChecked(False)
-        self.chk_rotate_90.setChecked(False)
         if self._preview is not None and self._roi is not None:
             h, w = self._preview.shape[0], self._preview.shape[1]
             self._roi.setPos((0, 0))
@@ -399,7 +395,6 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
             "grayscale": self.chk_grayscale.isChecked(),
             "convert_to_8_bit": self.chk_8bit.isChecked(),
             "flip_xy": self.chk_flip_xy.isChecked(),
-            "rotate_90": self.chk_rotate_90.isChecked(),
         }
 
         mask, mask_rel = self._get_roi_source_mask()
@@ -409,10 +404,12 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
 
         if self._roi is not None:
             state = self._roi.getState()
+            img = self._get_transformed_preview()
+            h_src, w_src = img.shape[0], img.shape[1] if img is not None else (0, 0)
             out["roi_state"] = {
                 "pos": (state['pos'].x(), state['pos'].y()),
                 "size": (state['size'].x(), state['size'].y()),
-                "angle": state['angle']
+                "source_size": (h_src, w_src),
             }
 
         return out
@@ -473,7 +470,6 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
             if self._is_folder and "subset_ratio" in initial_params:
                 self.spin_subset.setValue(initial_params["subset_ratio"])
             self.chk_flip_xy.setChecked(initial_params.get("flip_xy", False))
-            self.chk_rotate_90.setChecked(initial_params.get("rotate_90", False))
         else:
             self.chk_grayscale.setChecked(is_gray)
             self.chk_8bit.setChecked(is_uint8)
@@ -657,7 +653,7 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
             s = self._initial_roi_state
             self._roi.setPos(s['pos'])
             self._roi.setSize(s['size'])
-            self._roi.setAngle(s['angle'])
+            self._roi.setAngle(0)
         elif self._initial_mask_rel is not None:
             r = self._initial_mask_rel
             x0 = max(0, int(r[0] * w))
@@ -669,8 +665,6 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
                 self._roi.setSize((x1 - x0, y1 - y0))
 
         self._roi.handleSize = 10
-        self._roi.addScaleHandle([1, 1], [0, 0])
-        self._roi.addScaleHandle([0, 0], [1, 1])
         self._plot_widget.addItem(self._roi)
 
         self._connect_roi_signals()
@@ -679,7 +673,6 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
     def _reset_roi(self) -> None:
         """Reset crop ROI to full frame."""
         self.chk_flip_xy.setChecked(False)
-        self.chk_rotate_90.setChecked(False)
         if self._preview is not None and self._roi is not None:
             h, w = self._preview.shape[0], self._preview.shape[1]
             self._roi.setPos((0, 0))
@@ -741,7 +734,6 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
             "grayscale": self.chk_grayscale.isChecked(),
             "convert_to_8_bit": self.chk_8bit.isChecked(),
             "flip_xy": self.chk_flip_xy.isChecked(),
-            "rotate_90": self.chk_rotate_90.isChecked(),
         }
         if self._is_folder:
             out["subset_ratio"] = self.spin_subset.value()
@@ -753,10 +745,12 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
 
         if self._roi is not None:
             state = self._roi.getState()
+            img = self._get_transformed_preview()
+            h_src, w_src = img.shape[0], img.shape[1] if img is not None else (0, 0)
             out["roi_state"] = {
                 "pos": (state['pos'].x(), state['pos'].y()),
                 "size": (state['size'].x(), state['size'].y()),
-                "angle": state['angle']
+                "source_size": (h_src, w_src),
             }
         return out
 
@@ -801,7 +795,6 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
                 self.spin_subset.setValue(initial_params["subset_ratio"])
             self.chk_row_number.blockSignals(False)
             self.chk_flip_xy.setChecked(initial_params.get("flip_xy", False))
-            self.chk_rotate_90.setChecked(initial_params.get("rotate_90", False))
         else:
             self.chk_8bit.setChecked(
                 self.metadata.get("convert_to_8_bit_suggest", False)
@@ -1006,7 +999,7 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
             s = self._initial_roi_state
             self._roi.setPos(s['pos'])
             self._roi.setSize(s['size'])
-            self._roi.setAngle(s['angle'])
+            self._roi.setAngle(0)
         elif self._initial_mask_rel is not None:
             r = self._initial_mask_rel
             x0 = max(0, int(r[0] * cols))
@@ -1018,8 +1011,6 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
                 self._roi.setSize((x1 - x0, y1 - y0))
 
         self._roi.handleSize = 10
-        self._roi.addScaleHandle([1, 1], [0, 0])
-        self._roi.addScaleHandle([0, 0], [1, 1])
         self._plot_widget.addItem(self._roi)
         self._initial_mask_rel = None
 
@@ -1028,7 +1019,6 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
 
     def _reset_roi(self) -> None:
         self.chk_flip_xy.setChecked(False)
-        self.chk_rotate_90.setChecked(False)
         if self._preview is not None and self._roi is not None:
             cols, rows = self._preview.shape[1], self._preview.shape[0]
             self._roi.setPos((0, 0))
@@ -1080,7 +1070,6 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
             "delimiter": self._get_delimiter(),
             "first_col_is_row_number": self.chk_row_number.isChecked(),
             "flip_xy": self.chk_flip_xy.isChecked(),
-            "rotate_90": self.chk_rotate_90.isChecked(),
         }
         if self._is_folder:
             out["subset_ratio"] = self.spin_subset.value()
@@ -1092,10 +1081,12 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
 
         if self._roi is not None:
             state = self._roi.getState()
+            img = self._get_transformed_preview()
+            h_src, w_src = img.shape[0], img.shape[1] if img is not None else (0, 0)
             out["roi_state"] = {
                 "pos": (state['pos'].x(), state['pos'].y()),
                 "size": (state['size'].x(), state['size'].y()),
-                "angle": state['angle']
+                "source_size": (h_src, w_src),
             }
         return out
 
