@@ -478,7 +478,7 @@ class ImageViewer(pg.ImageView):
         )
 
     def manipulate(self, operation: str) -> None:
-        if operation in ['rotate_90', 'flip_x', 'flip_y']:
+        if operation in ['rotate_90', 'flip_x', 'flip_y', 'transpose']:
             getattr(self.data, operation)()
         else:
             raise RuntimeError(f"Operation {operation!r} not implemented")
@@ -488,7 +488,7 @@ class ImageViewer(pg.ImageView):
             autoRange=False,
             autoLevels=self._auto_fit,
         )
-        if operation == 'rotate_90':
+        if operation in ('rotate_90', 'transpose'):
             self.image_size_changed.emit()
 
     def apply_mask(self) -> None:

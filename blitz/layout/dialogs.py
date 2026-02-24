@@ -26,6 +26,7 @@ from ..data.load import (get_image_metadata, get_image_preview,
 from ..data.image import VideoMetaData
 from ..theme import get_dialog_preview_bg
 from ..tools import get_available_ram
+from .roi_mixin import ROIMixin
 
 RAW_PREVIEW_MAX_CHARS = 80
 RAW_PREVIEW_MAX_LINES = 5
@@ -68,7 +69,7 @@ class _PreviewLoader(QThread):
         self.finished.emit(img)
 
 
-class VideoLoadOptionsDialog(QDialog):
+class VideoLoadOptionsDialog(QDialog, ROIMixin):
     def __init__(
         self,
         path: Path,
@@ -85,17 +86,21 @@ class VideoLoadOptionsDialog(QDialog):
         self._roi: Optional[pg.RectROI] = None
         self._preview_loader: Optional[_PreviewLoader] = None
         self._preview_options_changed = False
+        self._initial_params = initial_params or {}
         self._setup_ui()
-        self._initial_mask_rel = initial_params.get("mask_rel") if initial_params else None
+        self._initial_mask_rel = self._initial_params.get("mask_rel")
+        self._initial_roi_state = self._initial_params.get("roi_state")
         is_gray, is_uint8 = get_sample_format(path)
         if initial_params:
             self.spin_resize.setValue(
                 int(initial_params.get("size_ratio", 1.0) * 100),
             )
             self.spin_step.setValue(initial_params.get("step", 1))
-            # Grayscale/8-bit: bei entsprechender Quelle immer setzen
             self.chk_grayscale.setChecked(is_gray or initial_params.get("grayscale", False))
             self.chk_8bit.setChecked(is_uint8 or initial_params.get("convert_to_8_bit", False))
+            # Set transform checkboxes
+            self.chk_flip_xy.setChecked(initial_params.get("flip_xy", False))
+            self.chk_rotate_90.setChecked(initial_params.get("rotate_90", False))
         else:
             self.chk_grayscale.setChecked(is_gray)
             self.chk_8bit.setChecked(is_uint8)
@@ -179,6 +184,7 @@ class VideoLoadOptionsDialog(QDialog):
         preview_opts.addWidget(self.btn_roi_reset)
         preview_opts.addStretch()
         layout.addLayout(preview_opts)
+
         preview_frame = QFrame()
         preview_frame.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Sunken)
         preview_layout = QVBoxLayout(preview_frame)
@@ -193,6 +199,9 @@ class VideoLoadOptionsDialog(QDialog):
         self._plot_widget.addItem(self._img_item)
         preview_layout.addWidget(self._plot_widget)
         layout.addWidget(preview_frame)
+
+        # ROI Mixin Controls
+        self._setup_roi_controls(layout)
 
         # Estimates
         self.lbl_ram_usage = QLabel("Estimated RAM: Calculating...")
@@ -258,6 +267,10 @@ class VideoLoadOptionsDialog(QDialog):
         self.lbl_preview_status.setText(
             "Drag ROI to select region (optional)"
         )
+
+        # Apply transforms from checkboxes if they were set in init
+        img = self._get_transformed_preview()
+
         h, w = img.shape[0], img.shape[1]
         grayscale = img.ndim == 2
         display_img = np.swapaxes(img, 0, 1) if img.ndim == 3 else img.T
@@ -281,30 +294,49 @@ class VideoLoadOptionsDialog(QDialog):
         )
         if self._roi is not None:
             self._plot_widget.removeItem(self._roi)
-        if self._initial_mask_rel is not None:
+
+        # ROI Logic:
+        # 1. Prefer absolute roi_state if present and valid?
+        #    The sanity check should be done in MainWindow.
+        #    If roi_state is passed, we assume it's valid/desired.
+        # 2. Else use mask_rel (legacy/fallback).
+        # 3. Else Full Frame.
+
+        self._roi = pg.RectROI((0, 0), (w, h), pen=pg.mkPen("lime", width=2))
+
+        if self._initial_roi_state:
+            s = self._initial_roi_state
+            self._roi.setPos(s['pos'])
+            self._roi.setSize(s['size'])
+            self._roi.setAngle(s['angle'])
+        elif self._initial_mask_rel is not None:
             r = self._initial_mask_rel
             x0 = max(0, int(r[0] * w))
             y0 = max(0, int(r[1] * h))
             x1 = min(w, int(r[2] * w))
             y1 = min(h, int(r[3] * h))
             if x1 > x0 and y1 > y0 and (x1 - x0 < w or y1 - y0 < h):
-                self._roi = pg.RectROI((x0, y0), (x1 - x0, y1 - y0), pen=pg.mkPen("lime", width=2))
-            else:
-                self._roi = pg.RectROI((0, 0), (w, h), pen=pg.mkPen("lime", width=2))
-        else:
-            self._roi = pg.RectROI((0, 0), (w, h), pen=pg.mkPen("lime", width=2))
+                self._roi.setPos((x0, y0))
+                self._roi.setSize((x1 - x0, y1 - y0))
+
         self._roi.handleSize = 10
         self._roi.addScaleHandle([1, 1], [0, 0])
         self._roi.addScaleHandle([0, 0], [1, 1])
-        self._roi.sigRegionChanged.connect(self._update_estimates)
         self._plot_widget.addItem(self._roi)
 
+        # Connect Mixin Signals
+        self._connect_roi_signals()
+        self._update_estimates()
+
     def _reset_roi(self) -> None:
-        """Reset crop ROI to full frame."""
+        """Reset crop ROI to full frame and reset transforms."""
+        self.chk_flip_xy.setChecked(False)
+        self.chk_rotate_90.setChecked(False)
         if self._preview is not None and self._roi is not None:
             h, w = self._preview.shape[0], self._preview.shape[1]
             self._roi.setPos((0, 0))
             self._roi.setSize((w, h))
+            self._roi.setAngle(0)
             self._update_estimates()
 
     def _update_estimates(self):
@@ -314,33 +346,35 @@ class VideoLoadOptionsDialog(QDialog):
         resize = self.spin_resize.value() / 100.0
         grayscale = self.chk_grayscale.isChecked()
 
-        # Validate range
         if start > end:
-            # Normalize so that start <= end by swapping the values
             self.spin_start.setValue(end)
             self.spin_end.setValue(start)
             start, end = end, start
-        # Calculate number of frames: len(range(start, end + 1, step))
         if end >= start:
             num_frames = (end - start) // step + 1
         else:
             num_frames = 0
 
-        # metadata.size is (height, width); preview uses same dimensions
-        height_full = int(self.metadata.size[0] * resize)
-        width_full = int(self.metadata.size[1] * resize)
-        width, height = width_full, height_full
-        if self._preview is not None and self._roi is not None:
-            pos = self._roi.pos()
-            size = self._roi.size()
-            h, w = self._preview.shape[0], self._preview.shape[1]
-            x0 = max(0, int(pos.x()))
-            y0 = max(0, int(pos.y()))
-            x1 = min(w, int(pos.x() + size.x()))
-            y1 = min(h, int(pos.y() + size.y()))
-            if x1 > x0 and y1 > y0 and (x1 - x0 < w or y1 - y0 < h):
-                width = x1 - x0
-                height = y1 - y0
+        # Calculate mask using Mixin
+        mask, _ = self._get_roi_source_mask()
+
+        # Original dims
+        h_orig, w_orig = self.metadata.size
+        # But we need the dims of the *masked* region
+        if mask:
+            # mask is (slice_y, slice_x)
+            sl_x = mask[1]
+            sl_y = mask[0]
+            width = sl_x.stop - sl_x.start
+            height = sl_y.stop - sl_y.start
+        else:
+            # Full frame (fallback)
+            width, height = w_orig, h_orig
+
+        # Apply resize
+        width = int(width * resize)
+        height = int(height * resize)
+
         channels = 1 if grayscale else 3
         dtype_size = 1 if self.chk_8bit.isChecked() else getattr(self, "_sample_bytes", 1)
         total_bytes = width * height * channels * num_frames * dtype_size
@@ -353,9 +387,8 @@ class VideoLoadOptionsDialog(QDialog):
         elif gb > available * 0.7:
             color = "orange"
 
-        crop_note = " (with crop)" if (width, height) != (width_full, height_full) else ""
         self.lbl_ram_usage.setText(
-            f"Estimated RAM{crop_note}: <font color='{color}'><b>{gb:.2f} GB</b></font>"
+            f"Estimated RAM: <font color='{color}'><b>{gb:.2f} GB</b></font>"
         )
 
     def get_params(self) -> dict[str, Any]:
@@ -365,18 +398,23 @@ class VideoLoadOptionsDialog(QDialog):
             "size_ratio": self.spin_resize.value() / 100.0,
             "grayscale": self.chk_grayscale.isChecked(),
             "convert_to_8_bit": self.chk_8bit.isChecked(),
+            "flip_xy": self.chk_flip_xy.isChecked(),
+            "rotate_90": self.chk_rotate_90.isChecked(),
         }
-        if self._preview is not None and self._roi is not None:
-            pos = self._roi.pos()
-            size = self._roi.size()
-            h, w = self._preview.shape[0], self._preview.shape[1]
-            x0 = max(0, int(pos.x()))
-            y0 = max(0, int(pos.y()))
-            x1 = min(w, int(pos.x() + size.x()))
-            y1 = min(h, int(pos.y() + size.y()))
-            if x1 > x0 and y1 > y0 and (x1 - x0 < w or y1 - y0 < h):
-                out["mask"] = (slice(x0, x1), slice(y0, y1))
-                out["mask_rel"] = (x0 / w, y0 / h, x1 / w, y1 / h)
+
+        mask, mask_rel = self._get_roi_source_mask()
+        if mask and mask_rel:
+            out["mask"] = mask
+            out["mask_rel"] = mask_rel
+
+        if self._roi is not None:
+            state = self._roi.getState()
+            out["roi_state"] = {
+                "pos": (state['pos'].x(), state['pos'].y()),
+                "size": (state['size'].x(), state['size'].y()),
+                "angle": state['angle']
+            }
+
         return out
 
 
@@ -403,7 +441,7 @@ class _ImagePreviewLoader(QThread):
         self.finished.emit(img)
 
 
-class ImageLoadOptionsDialog(QDialog):
+class ImageLoadOptionsDialog(QDialog, ROIMixin):
     def __init__(
         self,
         path: Path,
@@ -421,18 +459,21 @@ class ImageLoadOptionsDialog(QDialog):
         self._roi: Optional[pg.RectROI] = None
         self._preview_loader: Optional[_ImagePreviewLoader] = None
         self._preview_options_changed = False
+        self._initial_params = initial_params or {}
         self._setup_ui()
-        self._initial_mask_rel = initial_params.get("mask_rel") if initial_params else None
+        self._initial_mask_rel = self._initial_params.get("mask_rel")
+        self._initial_roi_state = self._initial_params.get("roi_state")
         is_gray, is_uint8 = get_sample_format(path)
         if initial_params:
             self.spin_resize.setValue(
                 int(initial_params.get("size_ratio", 1.0) * 100),
             )
-            # Grayscale/8-bit: bei entsprechender Quelle immer setzen
             self.chk_grayscale.setChecked(is_gray or initial_params.get("grayscale", False))
             self.chk_8bit.setChecked(is_uint8 or initial_params.get("convert_to_8_bit", False))
             if self._is_folder and "subset_ratio" in initial_params:
                 self.spin_subset.setValue(initial_params["subset_ratio"])
+            self.chk_flip_xy.setChecked(initial_params.get("flip_xy", False))
+            self.chk_rotate_90.setChecked(initial_params.get("rotate_90", False))
         else:
             self.chk_grayscale.setChecked(is_gray)
             self.chk_8bit.setChecked(is_uint8)
@@ -507,6 +548,7 @@ class ImageLoadOptionsDialog(QDialog):
         preview_opts.addWidget(self.btn_roi_reset)
         preview_opts.addStretch()
         layout.addLayout(preview_opts)
+
         preview_frame = QFrame()
         preview_frame.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Sunken)
         preview_layout = QVBoxLayout(preview_frame)
@@ -521,6 +563,9 @@ class ImageLoadOptionsDialog(QDialog):
         self._plot_widget.addItem(self._img_item)
         preview_layout.addWidget(self._plot_widget)
         layout.addWidget(preview_frame)
+
+        # ROI Mixin Controls
+        self._setup_roi_controls(layout)
 
         self.lbl_ram_usage = QLabel("Estimated RAM: Calculating...")
         self.lbl_ram_available = QLabel(f"Available RAM: {get_available_ram():.2f} GB")
@@ -578,6 +623,10 @@ class ImageLoadOptionsDialog(QDialog):
             return
         self._preview = img
         self.lbl_preview_status.setText("Drag ROI to select region (optional)")
+
+        # Apply transforms
+        img = self._get_transformed_preview()
+
         h, w = img.shape[0], img.shape[1]
         grayscale = img.ndim == 2
         display_img = np.swapaxes(img, 0, 1) if img.ndim == 3 else img.T
@@ -601,58 +650,65 @@ class ImageLoadOptionsDialog(QDialog):
         )
         if self._roi is not None:
             self._plot_widget.removeItem(self._roi)
-        if self._initial_mask_rel is not None:
+
+        self._roi = pg.RectROI((0, 0), (w, h), pen=pg.mkPen("lime", width=2))
+
+        if self._initial_roi_state:
+            s = self._initial_roi_state
+            self._roi.setPos(s['pos'])
+            self._roi.setSize(s['size'])
+            self._roi.setAngle(s['angle'])
+        elif self._initial_mask_rel is not None:
             r = self._initial_mask_rel
             x0 = max(0, int(r[0] * w))
             y0 = max(0, int(r[1] * h))
             x1 = min(w, int(r[2] * w))
             y1 = min(h, int(r[3] * h))
             if x1 > x0 and y1 > y0 and (x1 - x0 < w or y1 - y0 < h):
-                self._roi = pg.RectROI((x0, y0), (x1 - x0, y1 - y0), pen=pg.mkPen("lime", width=2))
-            else:
-                self._roi = pg.RectROI((0, 0), (w, h), pen=pg.mkPen("lime", width=2))
-        else:
-            self._roi = pg.RectROI((0, 0), (w, h), pen=pg.mkPen("lime", width=2))
+                self._roi.setPos((x0, y0))
+                self._roi.setSize((x1 - x0, y1 - y0))
+
         self._roi.handleSize = 10
         self._roi.addScaleHandle([1, 1], [0, 0])
         self._roi.addScaleHandle([0, 0], [1, 1])
-        self._roi.sigRegionChanged.connect(self._update_estimates)
         self._plot_widget.addItem(self._roi)
+
+        self._connect_roi_signals()
+        self._update_estimates()
 
     def _reset_roi(self) -> None:
         """Reset crop ROI to full frame."""
+        self.chk_flip_xy.setChecked(False)
+        self.chk_rotate_90.setChecked(False)
         if self._preview is not None and self._roi is not None:
             h, w = self._preview.shape[0], self._preview.shape[1]
             self._roi.setPos((0, 0))
             self._roi.setSize((w, h))
+            self._roi.setAngle(0)
             self._update_estimates()
 
     def _update_estimates(self):
         resize = self.spin_resize.value() / 100.0
         grayscale = self.chk_grayscale.isChecked()
         subset = self.spin_subset.value() if self._is_folder else 1.0
-        h_full, w_full = self.metadata["size"]
-        height_full = int(h_full * resize)
-        width_full = int(w_full * resize)
-        width, height = width_full, height_full
-        if self._preview is not None and self._roi is not None:
-            pos = self._roi.pos()
-            size = self._roi.size()
-            h, w = self._preview.shape[0], self._preview.shape[1]
-            x0 = max(0, int(pos.x()))
-            y0 = max(0, int(pos.y()))
-            x1 = min(w, int(pos.x() + size.x()))
-            y1 = min(h, int(pos.y() + size.y()))
-            if x1 > x0 and y1 > y0 and (x1 - x0 < w or y1 - y0 < h):
-                width = x1 - x0
-                height = y1 - y0
+
+        # Original dims (file on disk)
+        h_orig, w_orig = self.metadata["size"]
+
+        mask, _ = self._get_roi_source_mask()
+        if mask:
+            sl_x = mask[1]
+            sl_y = mask[0]
+            w_orig = sl_x.stop - sl_x.start
+            h_orig = sl_y.stop - sl_y.start
+
+        h_out = int(h_orig * resize)
+        w_out = int(w_orig * resize)
+
+        self.lbl_size_px.setText(f"-> {h_out} x {w_out} px")
+
         num_images = max(1, int(self.metadata["file_count"] * subset))
-        channels = 1 if grayscale else 3
-        dtype_size = 1 if self.chk_8bit.isChecked() else getattr(self, "_sample_bytes", 1)
-        total_bytes = width * height * channels * num_images * dtype_size
-        gb = total_bytes / (1024**3)
-        crop_note = " (with crop)" if (width, height) != (width_full, height_full) else ""
-        self.lbl_size_px.setText(f"-> {height} x {width} px")
+
         if self._is_folder:
             color_result = "green"
             tooltip = ""
@@ -666,14 +722,17 @@ class ImageLoadOptionsDialog(QDialog):
                 f"-> <font color='{color_result}'><b>{num_images}</b></font> images"
             )
             self.lbl_num_frames.setToolTip(tooltip)
-        color_ram = "green"
-        available = get_available_ram()
-        if gb > available * 0.9:
-            color_ram = "red"
-        elif gb > available * 0.7:
-            color_ram = "orange"
+
+        bytes_per = h_out * w_out * (1 if self.chk_8bit.isChecked() else 8)
+        total_gb = num_images * bytes_per / (1024**3)
+        color = "green"
+        if total_gb > get_available_ram() * 0.9:
+            color = "red"
+        elif total_gb > get_available_ram() * 0.7:
+            color = "orange"
+
         self.lbl_ram_usage.setText(
-            f"Estimated RAM{crop_note}: <font color='{color_ram}'><b>{gb:.2f} GB</b></font>"
+            f"Estimated RAM: <font color='{color}'><b>{total_gb:.2f} GB</b></font>"
         )
 
     def get_params(self) -> dict[str, Any]:
@@ -681,24 +740,28 @@ class ImageLoadOptionsDialog(QDialog):
             "size_ratio": self.spin_resize.value() / 100.0,
             "grayscale": self.chk_grayscale.isChecked(),
             "convert_to_8_bit": self.chk_8bit.isChecked(),
+            "flip_xy": self.chk_flip_xy.isChecked(),
+            "rotate_90": self.chk_rotate_90.isChecked(),
         }
         if self._is_folder:
             out["subset_ratio"] = self.spin_subset.value()
-        if self._preview is not None and self._roi is not None:
-            pos = self._roi.pos()
-            size = self._roi.size()
-            h, w = self._preview.shape[0], self._preview.shape[1]
-            x0 = max(0, int(pos.x()))
-            y0 = max(0, int(pos.y()))
-            x1 = min(w, int(pos.x() + size.x()))
-            y1 = min(h, int(pos.y() + size.y()))
-            if x1 > x0 and y1 > y0 and (x1 - x0 < w or y1 - y0 < h):
-                out["mask"] = (slice(x0, x1), slice(y0, y1))
-                out["mask_rel"] = (x0 / w, y0 / h, x1 / w, y1 / h)
+
+        mask, mask_rel = self._get_roi_source_mask()
+        if mask and mask_rel:
+            out["mask"] = mask
+            out["mask_rel"] = mask_rel
+
+        if self._roi is not None:
+            state = self._roi.getState()
+            out["roi_state"] = {
+                "pos": (state['pos'].x(), state['pos'].y()),
+                "size": (state['size'].x(), state['size'].y()),
+                "angle": state['angle']
+            }
         return out
 
 
-class AsciiLoadOptionsDialog(QDialog):
+class AsciiLoadOptionsDialog(QDialog, ROIMixin):
     """Load options for ASCII files (.asc, .dat). Structure mirrors ImageLoadOptionsDialog."""
 
     def __init__(
@@ -717,9 +780,11 @@ class AsciiLoadOptionsDialog(QDialog):
         self._preview: Optional[np.ndarray] = None
         self._roi: Optional[pg.RectROI] = None
         self._last_auto_detect_path: Optional[Path] = None
+        self._initial_params = initial_params or {}
         self._used_initial_params = bool(initial_params)
         self._setup_ui()
-        self._initial_mask_rel = initial_params.get("mask_rel") if initial_params else None
+        self._initial_mask_rel = self._initial_params.get("mask_rel")
+        self._initial_roi_state = self._initial_params.get("roi_state")
         if initial_params:
             self.spin_resize.setValue(int(initial_params.get("size_ratio", 1.0) * 100))
             self.chk_8bit.setChecked(initial_params.get("convert_to_8_bit", False))
@@ -735,6 +800,8 @@ class AsciiLoadOptionsDialog(QDialog):
             if self._is_folder and "subset_ratio" in initial_params:
                 self.spin_subset.setValue(initial_params["subset_ratio"])
             self.chk_row_number.blockSignals(False)
+            self.chk_flip_xy.setChecked(initial_params.get("flip_xy", False))
+            self.chk_rotate_90.setChecked(initial_params.get("rotate_90", False))
         else:
             self.chk_8bit.setChecked(
                 self.metadata.get("convert_to_8_bit_suggest", False)
@@ -839,6 +906,9 @@ class AsciiLoadOptionsDialog(QDialog):
         preview_layout.addWidget(self._plot_widget)
         layout.addWidget(preview_frame)
 
+        # ROI Mixin Controls
+        self._setup_roi_controls(layout)
+
         self.lbl_ram_usage = QLabel("Estimated RAM: Calculating...")
         self.lbl_ram_available = QLabel(f"Available RAM: {get_available_ram():.2f} GB")
         layout.addWidget(self.lbl_ram_usage)
@@ -914,6 +984,9 @@ class AsciiLoadOptionsDialog(QDialog):
                 lines.append(line)
         self.lbl_raw.setText("\n".join(lines) if lines else "(empty)")
 
+        # Apply transforms
+        img = self._get_transformed_preview()
+
         cols, rows = img.shape[1], img.shape[0]
         display_img = np.swapaxes(img, 0, 1)
         self._img_item.setImage(display_img)
@@ -926,55 +999,65 @@ class AsciiLoadOptionsDialog(QDialog):
 
         if self._roi is not None:
             self._plot_widget.removeItem(self._roi)
-        if self._initial_mask_rel is not None:
+
+        self._roi = pg.RectROI((0, 0), (cols, rows), pen=pg.mkPen("lime", width=2))
+
+        if self._initial_roi_state:
+            s = self._initial_roi_state
+            self._roi.setPos(s['pos'])
+            self._roi.setSize(s['size'])
+            self._roi.setAngle(s['angle'])
+        elif self._initial_mask_rel is not None:
             r = self._initial_mask_rel
             x0 = max(0, int(r[0] * cols))
             y0 = max(0, int(r[1] * rows))
             x1 = min(cols, int(r[2] * cols))
             y1 = min(rows, int(r[3] * rows))
             if x1 > x0 and y1 > y0 and (x1 - x0 < cols or y1 - y0 < rows):
-                self._roi = pg.RectROI((x0, y0), (x1 - x0, y1 - y0), pen=pg.mkPen("lime", width=2))
-            else:
-                self._roi = pg.RectROI((0, 0), (cols, rows), pen=pg.mkPen("lime", width=2))
-        else:
-            self._roi = pg.RectROI((0, 0), (cols, rows), pen=pg.mkPen("lime", width=2))
+                self._roi.setPos((x0, y0))
+                self._roi.setSize((x1 - x0, y1 - y0))
+
         self._roi.handleSize = 10
         self._roi.addScaleHandle([1, 1], [0, 0])
         self._roi.addScaleHandle([0, 0], [1, 1])
-        self._roi.sigRegionChanged.connect(self._update_estimates)
         self._plot_widget.addItem(self._roi)
         self._initial_mask_rel = None
 
+        self._connect_roi_signals()
         self._update_estimates()
 
     def _reset_roi(self) -> None:
+        self.chk_flip_xy.setChecked(False)
+        self.chk_rotate_90.setChecked(False)
         if self._preview is not None and self._roi is not None:
             cols, rows = self._preview.shape[1], self._preview.shape[0]
             self._roi.setPos((0, 0))
             self._roi.setSize((cols, rows))
+            self._roi.setAngle(0)
             self._update_estimates()
 
     def _update_estimates(self) -> None:
         if self._preview is None:
             return
+
         files = get_ascii_files(self._path)
         n_files = len(files)
         subset = self.spin_subset.value() if self._is_folder else 1.0
         n_load = max(1, int(n_files * subset)) if n_files > 0 else 1
         size_ratio = self.spin_resize.value() / 100.0
+
         orig_h, orig_w = self._preview.shape[0], self._preview.shape[1]
-        h, w = orig_h, orig_w
-        if self._roi is not None:
-            pos = self._roi.pos()
-            sz = self._roi.size()
-            x0 = max(0, int(pos.x()))
-            y0 = max(0, int(pos.y()))
-            x1 = min(orig_w, int(pos.x() + sz.x()))
-            y1 = min(orig_h, int(pos.y() + sz.y()))
-            if x1 > x0 and y1 > y0:
-                h, w = y1 - y0, x1 - x0
-        h_out = int(h * size_ratio)
-        w_out = int(w * size_ratio)
+
+        mask, _ = self._get_roi_source_mask()
+        if mask:
+            sl_x = mask[1]
+            sl_y = mask[0]
+            orig_w = sl_x.stop - sl_x.start
+            orig_h = sl_y.stop - sl_y.start
+
+        h_out = int(orig_h * size_ratio)
+        w_out = int(orig_w * size_ratio)
+
         self.lbl_size_px.setText(f"-> {h_out} x {w_out} px")
         if self._is_folder:
             self.lbl_num_frames.setText(f"-> <b>{n_load}</b> files")
@@ -985,9 +1068,9 @@ class AsciiLoadOptionsDialog(QDialog):
             color = "red"
         elif total_gb > get_available_ram() * 0.7:
             color = "orange"
-        crop_note = " (with crop)" if (h != orig_h or w != orig_w) else ""
+
         self.lbl_ram_usage.setText(
-            f"Estimated RAM{crop_note}: <font color='{color}'><b>{total_gb:.2f} GB</b></font>"
+            f"Estimated RAM: <font color='{color}'><b>{total_gb:.2f} GB</b></font>"
         )
 
     def get_params(self) -> dict[str, Any]:
@@ -996,20 +1079,24 @@ class AsciiLoadOptionsDialog(QDialog):
             "convert_to_8_bit": self.chk_8bit.isChecked(),
             "delimiter": self._get_delimiter(),
             "first_col_is_row_number": self.chk_row_number.isChecked(),
+            "flip_xy": self.chk_flip_xy.isChecked(),
+            "rotate_90": self.chk_rotate_90.isChecked(),
         }
         if self._is_folder:
             out["subset_ratio"] = self.spin_subset.value()
-        if self._preview is not None and self._roi is not None:
-            pos = self._roi.pos()
-            sz = self._roi.size()
-            cols, rows = self._preview.shape[1], self._preview.shape[0]
-            x0 = max(0, int(pos.x()))
-            y0 = max(0, int(pos.y()))
-            x1 = min(cols, int(pos.x() + sz.x()))
-            y1 = min(rows, int(pos.y() + sz.y()))
-            if x1 > x0 and y1 > y0 and (x1 - x0 < cols or y1 - y0 < rows):
-                out["mask"] = (slice(y0, y1), slice(x0, x1))
-                out["mask_rel"] = (x0 / cols, y0 / rows, x1 / cols, y1 / rows)
+
+        mask, mask_rel = self._get_roi_source_mask()
+        if mask and mask_rel:
+            out["mask"] = mask
+            out["mask_rel"] = mask_rel
+
+        if self._roi is not None:
+            state = self._roi.getState()
+            out["roi_state"] = {
+                "pos": (state['pos'].x(), state['pos'].y()),
+                "size": (state['size'].x(), state['size'].y()),
+                "angle": state['angle']
+            }
         return out
 
 
