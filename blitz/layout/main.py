@@ -1542,27 +1542,22 @@ class MainWindow(QMainWindow):
         levels = img_item.getLevels()
         if levels is None:
             levels = self.ui.image_viewer.ui.histogram.getLevels()
-        if levels is None or (hasattr(levels, "__len__") and len(levels) != 2):
+        if levels is None or len(levels) != 2:
             return
-        arr = np.asarray(levels)
-        if arr.ndim != 1 or arr.size != 2:
-            return
-        mn_f, mx_f = float(arr[0]), float(arr[1])
+        mn_f, mx_f = map(float, levels)
 
         # Skip if values already match (avoid redundant updates)
         if (abs(self.ui.spin_lut_min.value() - mn_f) < 1e-12
                 and abs(self.ui.spin_lut_max.value() - mx_f) < 1e-12):
             return
 
-        decimals = 2
-
-        for s in (self.ui.spin_lut_min, self.ui.spin_lut_max):
+        spinners = (self.ui.spin_lut_min, self.ui.spin_lut_max)
+        for s in spinners:
             s.blockSignals(True)
-        self.ui.spin_lut_min.setDecimals(decimals)
-        self.ui.spin_lut_max.setDecimals(decimals)
-        self.ui.spin_lut_min.setValue(mn_f)
-        self.ui.spin_lut_max.setValue(mx_f)
-        for s in (self.ui.spin_lut_min, self.ui.spin_lut_max):
+        for s, val in zip(spinners, (mn_f, mx_f)):
+            s.setDecimals(2)
+            s.setValue(val)
+        for s in spinners:
             s.blockSignals(False)
 
     def start_web_connection(self) -> None:
