@@ -72,7 +72,7 @@ from .ui import UI_MainWindow
 
 URL_GITHUB = QUrl("https://github.com/CodeSchmiedeHGW/BLITZ")
 URL_INP = QUrl("https://www.inp-greifswald.de/")
-URL_MESS = QUrl("https://mess.engineering/")
+URL_MESS = QUrl("https://mess.engineering")
 
 
 def restart() -> None:
@@ -151,6 +151,12 @@ class MainWindow(QMainWindow):
         )
         self.ui.action_link_github.triggered.connect(
             lambda: QDesktopServices.openUrl(URL_GITHUB)  # type: ignore
+        )
+        self.ui.action_link_mess.triggered.connect(
+            lambda: QDesktopServices.openUrl(URL_MESS)  # type: ignore
+        )
+        self.ui.action_debug_layout_sizes.triggered.connect(
+            self.ui.show_layout_sizes
         )
 
         # image_viewer connections
@@ -331,7 +337,7 @@ class MainWindow(QMainWindow):
         self.ui.button_ops_load_file.clicked.connect(self.load_ops_file)
         self.ui.spinbox_crop_range_start.editingFinished.connect(self.apply_ops)
         self.ui.spinbox_crop_range_end.editingFinished.connect(self.apply_ops)
-        self.ui.combobox_reduce.currentIndexChanged.connect(self.apply_ops)
+        # Reduce dropdown: only _on_reduce_changed (not apply_ops) to avoid double mean computation
         self.ui.roi_plot.clicked_to_set_frame.connect(
             self._on_timeline_clicked_to_frame
         )
@@ -626,6 +632,9 @@ class MainWindow(QMainWindow):
             self.ui.token_edit.text,
             self.ui.token_edit.setText,
         )
+        # Timeline splitter: match Options width (run after geometry/dock restore)
+        QTimer.singleShot(300, getattr(self.ui, "_set_timeline_splitter_sizes", lambda: None))
+
     def sync_project_preloading(self) -> None:
         settings.connect_sync_project(
             "size_ratio",
@@ -1400,9 +1409,15 @@ class MainWindow(QMainWindow):
         if meta is None:
             log("Cannot read ASCII metadata", color="red")
             return
+        ascii_data_size = tuple(meta["size"])
+        ascii_defaults = self._ascii_session_defaults
+        ascii_initial = ascii_defaults if (
+            ascii_defaults and
+            ascii_defaults.get("_data_size") == ascii_data_size
+        ) else None
         dlg = AsciiLoadOptionsDialog(
             path, meta, parent=self,
-            initial_params=self._ascii_session_defaults,
+            initial_params=ascii_initial,
         )
         if not dlg.exec():
             return
@@ -1417,6 +1432,7 @@ class MainWindow(QMainWindow):
             "delimiter": user_params["delimiter"],
             "first_col_is_row_number": user_params["first_col_is_row_number"],
             "flip_xy": user_params.get("flip_xy", False),
+            "_data_size": ascii_data_size,
         }
         if "subset_ratio" in user_params:
             self._ascii_session_defaults["subset_ratio"] = user_params["subset_ratio"]
@@ -1786,10 +1802,16 @@ class MainWindow(QMainWindow):
                 # ImageData keeps uint8 by default (1 byte)
 
                 show_dialog = self.ui.checkbox_video_dialog_always.isChecked()
+                video_data_size = tuple(meta.size)
+                video_defaults = self._video_session_defaults
+                video_initial = video_defaults if (
+                    video_defaults and
+                    video_defaults.get("_data_size") == video_data_size
+                ) else None
                 if show_dialog:
                     dlg = VideoLoadOptionsDialog(
                         path, meta, parent=self,
-                        initial_params=self._video_session_defaults,
+                        initial_params=video_initial,
                     )
                     if dlg.exec():
                         user_params = dlg.get_params()
@@ -1800,6 +1822,7 @@ class MainWindow(QMainWindow):
                             "grayscale": user_params["grayscale"],
                             "convert_to_8_bit": user_params.get("convert_to_8_bit", False),
                             "flip_xy": user_params.get("flip_xy", False),
+                            "_data_size": video_data_size,
                         }
                         if "roi_state" in user_params:
                             self._video_session_defaults["roi_state"] = user_params["roi_state"]
@@ -1824,8 +1847,8 @@ class MainWindow(QMainWindow):
                     else:
                         return
                 else:
-                    # Dialog nicht gezeigt: Session-Defaults anwenden (gleiche Einstellungen wie letztes Video)
-                    if self._video_session_defaults:
+                    # Dialog nicht gezeigt: Session-Defaults anwenden (nur wenn gleiche Datengroesse)
+                    if video_initial:
                         params["size_ratio"] = self._video_session_defaults.get(
                             "size_ratio", params["size_ratio"]
                         )
@@ -1866,10 +1889,16 @@ class MainWindow(QMainWindow):
                 meta = get_image_metadata(path)
                 if meta is not None:
                     show_dialog = self.ui.checkbox_video_dialog_always.isChecked()
+                    image_data_size = tuple(meta["size"])
+                    image_defaults = self._image_session_defaults
+                    image_initial = image_defaults if (
+                        image_defaults and
+                        image_defaults.get("_data_size") == image_data_size
+                    ) else None
                     if show_dialog:
                         dlg = ImageLoadOptionsDialog(
                             path, meta, parent=self,
-                            initial_params=self._image_session_defaults,
+                            initial_params=image_initial,
                         )
                         if dlg.exec():
                             user_params = dlg.get_params()
@@ -1879,6 +1908,7 @@ class MainWindow(QMainWindow):
                                 "grayscale": user_params["grayscale"],
                                 "convert_to_8_bit": user_params.get("convert_to_8_bit", False),
                                 "flip_xy": user_params.get("flip_xy", False),
+                                "_data_size": image_data_size,
                             }
                             if "roi_state" in user_params:
                                 self._image_session_defaults["roi_state"] = user_params["roi_state"]
@@ -1905,7 +1935,7 @@ class MainWindow(QMainWindow):
                         else:
                             return
                     else:
-                        if self._image_session_defaults:
+                        if image_initial:
                             params["size_ratio"] = self._image_session_defaults.get(
                                 "size_ratio", params["size_ratio"]
                             )

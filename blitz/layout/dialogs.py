@@ -988,7 +988,7 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
         self._img_item.setLevels([0, 255])
         vb = self._plot_widget.getViewBox()
         vb.invertY(True)
-        vb.setAspectLocked(lock=True, ratio=cols / rows if rows > 0 else 1)
+        vb.setAspectLocked(lock=True, ratio=1.0)
 
         if self._roi is not None:
             self._plot_widget.removeItem(self._roi)
@@ -1040,10 +1040,10 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
 
         mask, _ = self._get_roi_source_mask()
         if mask:
-            sl_x = mask[1]
-            sl_y = mask[0]
-            orig_w = sl_x.stop - sl_x.start
-            orig_h = sl_y.stop - sl_y.start
+            # mask is (slice_x, slice_y) from mixin; for ASCII arr[row,col]: rows=mask[1], cols=mask[0]
+            sl_row, sl_col = mask[1], mask[0]
+            orig_h = sl_row.stop - sl_row.start
+            orig_w = sl_col.stop - sl_col.start
 
         h_out = int(orig_h * size_ratio)
         w_out = int(orig_w * size_ratio)
@@ -1076,7 +1076,8 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
 
         mask, mask_rel = self._get_roi_source_mask()
         if mask and mask_rel:
-            out["mask"] = mask
+            # ROI mixin returns (slice_x, slice_y); ASCII arr[row,col] needs (slice_y, slice_x)
+            out["mask"] = (mask[1], mask[0])
             out["mask_rel"] = mask_rel
 
         if self._roi is not None:

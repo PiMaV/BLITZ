@@ -2,20 +2,20 @@ import json
 
 import pyqtgraph as pg
 from PyQt6.QtCore import QFile, Qt, QTimer
-from PyQt6.QtGui import QFont, QIcon
-from PyQt6.QtWidgets import (QAbstractSpinBox, QButtonGroup, QCheckBox,
-                             QComboBox, QDoubleSpinBox, QFrame, QGridLayout,
-                             QGroupBox, QHBoxLayout, QLabel, QLayout, QLineEdit,
-                             QMenu, QMenuBar, QPushButton, QRadioButton,
-                             QScrollArea, QSizePolicy, QSlider, QSplitter,
-                             QSpinBox, QStatusBar, QTabWidget, QTableWidget,
-                             QVBoxLayout, QWidget)
+from PyQt6.QtGui import QClipboard, QFont, QIcon
+from PyQt6.QtWidgets import (QAbstractSpinBox, QApplication, QButtonGroup,
+                             QCheckBox, QComboBox, QDoubleSpinBox, QFrame,
+                             QGridLayout, QGroupBox, QHBoxLayout, QLabel,
+                             QLayout, QLineEdit, QMenu, QMenuBar, QMessageBox,
+                             QPushButton, QRadioButton, QScrollArea, QSizePolicy,
+                             QSlider, QSplitter, QSpinBox, QStatusBar, QTabWidget,
+                             QTableWidget, QVBoxLayout, QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import __version__, settings
 from .. import resources  # noqa: F401  (import registers Qt resources)
 from ..data.ops import ReduceOperation, reduce_display_name
-from ..theme import get_style, get_plot_bg, get_agg_section_stylesheet, get_agg_heading_color, get_agg_separator_stylesheet
+from ..theme import get_style, get_plot_bg, get_agg_groupbox_stylesheet, get_agg_separator_stylesheet
 from ..tools import LoggingTextEdit, get_available_ram, setup_logger
 from .bench_compact import BenchCompact
 from .bench_data import BenchData
@@ -50,34 +50,58 @@ class UI_MainWindow(QWidget):
         self.setup_option_dock()
         self.assign_tooltips()
 
+    def _workspace_size(self) -> tuple[int, int]:
+        """Target window size from screen and relative_size (matches setup_sync)."""
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            return 1920, 1080
+        geom = screen.availableGeometry()
+        rel = settings.get("window/relative_size")
+        return int(geom.width() * rel), int(geom.height() * rel)
+
+    def _layout_band_h(self, wrk_h: int) -> int:
+        """Top band height: scales 100-240px from FD to 5K (data from user tests)."""
+        return max(100, min(120, 80 + int(0.14 * wrk_h)))
+
     def setup_docks(self) -> None:
-        border_size = int(0.25 * self.width() / 2)
-        viewer_height = self.height() - 2 * border_size
+        wrk_w, wrk_h = self._workspace_size()
+        # Right column (Options, LUT): FD 17%, 4K 20%, 5K 22%
+        right_pct = 0.22 if wrk_w >= 4000 else (0.20 if wrk_w >= 2500 else 0.17)
+        right_col_w = max(260, int(right_pct * wrk_w))
+        # Bottom band (Timeline): ~5% height, min 70
+        bottom_band_h = max(220, int(0.05 * wrk_h))
+        self._bottom_band_h = bottom_band_h
+        # Top bands (H plot, Log): scales 100-240px
+        top_band_h = self._layout_band_h(wrk_h)
+        self._top_band_h = top_band_h
+        # Left column (V plot, Log): narrow
+        left_col_w = max(140, min(220, int(right_col_w * 0.38)))
+        viewer_height = max(400, wrk_h - top_band_h - bottom_band_h)
+        image_viewer_size = int(0.75 * wrk_w)
 
         self.dock_lookup = Dock(
             "LUT",
-            size=(border_size, 0.6*viewer_height),
+            size=(right_col_w, 0.6*viewer_height),
             hideTitle=True,
         )
         self.dock_option = Dock(
             "Options",
-            size=(border_size, 0.4*viewer_height),
+            size=(right_col_w, 0.4*viewer_height),
             hideTitle=True,
         )
         self.dock_status = Dock(
             "File Metadata",
-            size=(border_size, border_size),
+            size=(left_col_w, top_band_h),
             hideTitle=True,
         )
         self.dock_v_plot = Dock(
             "V Plot",
-            size=(border_size, viewer_height),
+            size=(left_col_w, viewer_height),
             hideTitle=True,
         )
-        image_viewer_size = int(0.75 * self.width())
         self.dock_h_plot = Dock(
             "H Plot",
-            size=(image_viewer_size, border_size),
+            size=(image_viewer_size, top_band_h),
             hideTitle=True,
         )
         self.dock_viewer = Dock(
@@ -87,7 +111,7 @@ class UI_MainWindow(QWidget):
         )
         self.dock_t_line = Dock(
             "Timeline",
-            size=(image_viewer_size, border_size),
+            size=(image_viewer_size, bottom_band_h),
             hideTitle=True,
         )
 
@@ -104,6 +128,7 @@ class UI_MainWindow(QWidget):
         logger.setReadOnly(True)
 
         file_info_widget = QWidget()
+        file_info_widget.setMinimumHeight(getattr(self, "_top_band_h", 100))
         layout = QVBoxLayout()
         layout.addWidget(logger)
         file_info_widget.setLayout(layout)
@@ -115,6 +140,7 @@ class UI_MainWindow(QWidget):
         self.dock_viewer.addWidget(self.image_viewer)
 
         self.h_plot = ExtractionPlot(self.image_viewer)
+        self.h_plot.setMinimumHeight(getattr(self, "_top_band_h", 100))
         self.dock_h_plot.addWidget(self.h_plot)
         self.v_plot = ExtractionPlot(self.image_viewer, vertical=True)
         self.dock_v_plot.addWidget(self.v_plot)
@@ -139,6 +165,7 @@ class UI_MainWindow(QWidget):
         self.timeline_splitter.addWidget(self.timeline_stack)
         self.timeline_splitter.setStretchFactor(0, 1)
         timeline_container = QWidget()
+        timeline_container.setMinimumHeight(getattr(self, "_bottom_band_h", 70))
         timeline_vbox = QVBoxLayout(timeline_container)
         timeline_vbox.setContentsMargins(0, 0, 0, 0)
         timeline_vbox.setSpacing(0)
@@ -183,7 +210,10 @@ class UI_MainWindow(QWidget):
         about_menu.setToolTipsVisible(True)
         self.action_link_inp = about_menu.addAction("INP Greifswald")
         self.action_link_github = about_menu.addAction("GitHub")
-        self.action_link_mess = about_menu.addAction("M.E.S.S. Engineering")
+        self.action_link_mess = about_menu.addAction("M.E.S.S.")
+        about_menu.addSeparator()
+        self.action_debug_layout_sizes = about_menu.addAction("Debug: Layout sizes")
+        self.action_debug_layout_sizes.setToolTip("Show timeline range and top band sizes (for min limits)")
         self.menubar.addMenu(about_menu)
 
         font_status = QFont()
@@ -202,6 +232,53 @@ class UI_MainWindow(QWidget):
         self.ram_label = QLabel("")
         self.ram_label.setFont(font_status)
         self.statusbar.addWidget(self.ram_label)
+
+    def get_layout_sizes(self) -> str:
+        """Return current timeline range and top band sizes for min-limit tuning."""
+        lines = ["Layout sizes (copy for min limits):", ""]
+        try:
+            wrk_w, wrk_h = self._workspace_size()
+            lines.append(f"Workspace: {wrk_w} x {wrk_h}")
+        except Exception:
+            pass
+        try:
+            w = self.selection_panel.width()
+            h = self.selection_panel.height()
+            min_w = self.selection_panel.minimumWidth()
+            lines.append(f"Timeline range: width={w} height={h} minWidth={min_w}")
+        except Exception as e:
+            lines.append(f"Timeline range: (error: {e})")
+        try:
+            w = self.dock_h_plot.size().width()
+            h = self.dock_h_plot.size().height()
+            lines.append(f"Top band (H plot dock): width={w} height={h}")
+        except Exception as e:
+            lines.append(f"Top band dock: (error: {e})")
+        try:
+            h = self.h_plot.height()
+            min_h = self.h_plot.minimumHeight()
+            lines.append(f"Top band (H plot widget): height={h} minHeight={min_h}")
+        except Exception as e:
+            lines.append(f"Top band widget: (error: {e})")
+        try:
+            h = self.dock_status.size().height()
+            lines.append(f"Top band (Log/dock_status): height={h}")
+        except Exception as e:
+            lines.append(f"Log dock: (error: {e})")
+        try:
+            sizes = self.timeline_splitter.sizes()
+            lines.append(f"Timeline splitter sizes: {sizes}")
+        except Exception as e:
+            lines.append(f"Splitter: (error: {e})")
+        return "\n".join(lines)
+
+    def show_layout_sizes(self) -> None:
+        """Show layout sizes in dialog and copy to clipboard."""
+        text = self.get_layout_sizes()
+        clipboard = QApplication.clipboard()
+        if clipboard:
+            clipboard.setText(text)
+        QMessageBox.information(self, "Layout sizes", text + "\n\n(Copied to clipboard)")
 
     def setup_lut_dock(self) -> None:
         # Replace default vertical histogram with horizontal (more space, min-left max-right)
@@ -691,45 +768,47 @@ class UI_MainWindow(QWidget):
         range_sep.setFixedHeight(4)
         range_sep.setStyleSheet(f"QFrame#range_sep {{ {get_agg_separator_stylesheet()} }}")
         sel_layout.addWidget(range_sep)
-        agg_section = QFrame()
+        agg_section = QGroupBox("Range")
         agg_section.setObjectName("agg_section")
-        agg_section.setFrameShape(QFrame.Shape.StyledPanel)
-        agg_section.setStyleSheet(get_agg_section_stylesheet())
+        agg_section.setStyleSheet(get_agg_groupbox_stylesheet())
         agg_layout = QVBoxLayout(agg_section)
         agg_layout.setContentsMargins(6, 4, 6, 4)
         agg_layout.setSpacing(2)
-        range_heading = QLabel("Range")
-        range_heading.setStyleSheet(
-            f"QLabel {{ font-weight: bold; font-size: 10pt; "
-            f"color: {get_agg_heading_color()}; padding-bottom: 2px; }}"
-        )
-        agg_layout.addWidget(range_heading)
         agg_layout.addWidget(QLabel("Reduce:"))
         agg_layout.addWidget(self.combobox_reduce)
         agg_layout.addWidget(self.range_section_widget)
         agg_layout.addWidget(self.checkbox_agg_update_on_drag)
         sel_layout.addWidget(agg_section)
-        w = max(800, self.width())
-        border_size = int(0.25 * w / 2)
-        self.selection_panel.setMinimumWidth(max(120, border_size))
+        wrk_w, wrk_h = self._workspace_size()
+        # Timeline range: min 180px width, height scales 100-200 (5K data)
+        range_panel_min = 180
+        self.selection_panel.setMinimumWidth(range_panel_min)
+        self.selection_panel.setMinimumHeight(max(100, min(200, int(0.18 * wrk_h))))
         self.timeline_splitter.addWidget(self.selection_panel)
 
         def _set_timeline_splitter_sizes():
             try:
-                lut_w = self.dock_lookup.width()
+                opt_w = self.dock_option.width()
             except Exception:
-                lut_w = int(0.25 * max(800, self.width()) / 2)
-            if lut_w < 100:
-                lut_w = int(0.25 * max(800, self.width()) / 2)
+                opt_w = 260
+            if opt_w < 120:
+                wrk_w, _ = self._workspace_size()
+                right_pct = 0.22 if wrk_w >= 4000 else (0.20 if wrk_w >= 2500 else 0.17)
+                opt_w = max(260, int(right_pct * wrk_w))
+            # 5K good: ~328 width at opt~585; scale factor ~0.56
+            range_panel_w = max(range_panel_min, int(opt_w * 0.56))
+            self.selection_panel.setMinimumWidth(range_panel_w)
             total = self.timeline_splitter.width()
             if total > 100:
-                self.timeline_splitter.setSizes([max(200, total - lut_w), lut_w])
+                self.timeline_splitter.setSizes([max(200, total - range_panel_w), range_panel_w])
             else:
-                w = max(800, self.width())
-                bw = int(0.25 * w / 2)
-                iv = int(0.75 * w)
+                wrk_w, _ = self._workspace_size()
+                right_pct = 0.22 if wrk_w >= 4000 else (0.20 if wrk_w >= 2500 else 0.17)
+                bw = max(range_panel_min, int(right_pct * wrk_w * 0.56))
+                iv = int(0.75 * wrk_w)
                 self.timeline_splitter.setSizes([max(200, iv - bw), bw])
 
+        self._set_timeline_splitter_sizes = _set_timeline_splitter_sizes
         QTimer.singleShot(150, _set_timeline_splitter_sizes)
 
         # --- Tools ---

@@ -15,8 +15,8 @@ _default_core_settings = {
     "viewer/max_file_name_length": 40,
     "viewer/intersection_point_size": 10,
 
-    "default/multicore_size_threshold": 600 * (1024**2),
-    "default/multicore_files_threshold": 1000,
+    "default/multicore_size_threshold": 300 * (1024**2),
+    "default/multicore_files_threshold": 300,
     "default/load_8bit": False,
     "default/load_grayscale": True,
     "default/max_ram": 2.,

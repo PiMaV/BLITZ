@@ -50,6 +50,6 @@ Overview of all documentation files in this repository.
 
 | File | Purpose |
 |------|---------|
-| [`docs/build_workflow.md`](build_workflow.md) | GitHub Actions workflow explanation. |
+| [`docs/build_workflow.md`](build_workflow.md) | **Release checklist**, GitHub Actions workflow, how to trigger a build. |
 | [`docs/pyinstaller_command.md`](pyinstaller_command.md) | Developer notes for building the executable. |
 | [`docker/README.md`](../docker/README.md) | Docker deployment instructions. |

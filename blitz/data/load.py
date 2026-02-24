@@ -24,16 +24,14 @@ def _config_key_from_sample(sample: np.ndarray) -> str:
     return f"{mp_step}MP_{bits}b"
 
 
-# Fixed thresholds: 1000 files OR 600 MB -> parallel load
-FILES_THRESH = 1000
-SIZE_THRESH_BYTES = 600 * 1024**2
-
-
 def _get_multicore_thresholds(
     n_files: int, total_size_bytes: float, config_key: str | None
 ) -> tuple[int, float]:
-    """Return (files_thresh, size_thresh). Hardcoded: 1000 files / 600 MB."""
-    return (FILES_THRESH, SIZE_THRESH_BYTES)
+    """Return (files_thresh, size_thresh) from settings (default: 300 files / 300 MB)."""
+    return (
+        settings.get("default/multicore_files_threshold"),
+        settings.get("default/multicore_size_threshold"),
+    )
 
 
 def _safe_load_one(load_func, path: Path):

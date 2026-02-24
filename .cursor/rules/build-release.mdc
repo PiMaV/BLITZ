@@ -1,0 +1,17 @@
+---
+description: Build and release instructions for BLITZ
+globs: ["pyproject.toml", "docs/build_workflow.md", ".github/workflows/build.yml"]
+---
+
+# Build & Release
+
+When the user wants to create a release build:
+
+1. **Version:** Update `version` in `pyproject.toml`.
+2. **Commit & push** changes to `main`.
+3. **Release notes:** Suggest writing 2–3 sentences (fixes, features, highlights).
+4. **Trigger:**
+   - **Manual (no CLI):** GitHub → Actions → "Build BLITZ" → "Run workflow".
+   - **CLI:** `git tag build-v1.x.x` then `git push origin build-v1.x.x`.
+
+Details: [`docs/build_workflow.md`](../docs/build_workflow.md)

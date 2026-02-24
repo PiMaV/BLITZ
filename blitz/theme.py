@@ -32,6 +32,54 @@ def get_agg_section_stylesheet() -> str:
     return _AGG_SECTION_STYLE_LIGHT if _current_theme == "light" else _AGG_SECTION_STYLE
 
 
+def get_agg_groupbox_stylesheet() -> str:
+    """Stylesheet for Range QGroupBox: title in green border, same content styling as agg_section."""
+    hc = get_agg_heading_color()
+    if _current_theme == "light":
+        return (
+            "QGroupBox#agg_section { "
+            "background-color: rgba(200, 235, 210, 120); "
+            "border: 2px solid rgba(100, 160, 110, 200); border-radius: 4px; "
+            "margin: 4px 0 0 0; padding: 6px 6px 6px 6px; padding-top: 18px; } "
+            "QGroupBox#agg_section::title { "
+            f"subcontrol-origin: margin; left: 8px; padding: 0 4px; "
+            f"color: {hc}; font-weight: bold; font-size: 10pt; }} "
+            "QGroupBox#agg_section QComboBox { "
+            "background-color: white; border: 1px solid #a0a8c0; "
+            "border-radius: 3px; min-height: 20px; padding: 2px 6px; } "
+            "QGroupBox#agg_section QSpinBox { "
+            "background-color: white; border: 1px solid #a0a8c0; "
+            "border-radius: 2px; padding: 2px 4px; } "
+            "QGroupBox#agg_section QLabel { color: #1a1b26; } "
+            "QGroupBox#agg_section QCheckBox { color: #1a1b26; } "
+            "QGroupBox#agg_section QPushButton { "
+            "background-color: #e0e2e8; border: 1px solid #a0a8c0; "
+            "border-radius: 3px; padding: 4px 10px; } "
+            "QGroupBox#agg_section QPushButton:hover { background-color: #c8cad3; } "
+        )
+    return (
+        "QGroupBox#agg_section { "
+        "background-color: rgba(30, 45, 38, 100); "
+        "border: 2px solid rgba(158, 206, 106, 140); border-radius: 4px; "
+        "margin: 4px 0 0 0; padding: 6px 6px 6px 6px; padding-top: 18px; } "
+        "QGroupBox#agg_section::title { "
+        f"subcontrol-origin: margin; left: 8px; padding: 0 4px; "
+        f"color: {hc}; font-weight: bold; font-size: 10pt; }} "
+        "QGroupBox#agg_section QComboBox { "
+        "background-color: #1a1b26; border: 1px solid #3b4261; "
+        "border-radius: 3px; min-height: 20px; padding: 2px 6px; } "
+        "QGroupBox#agg_section QSpinBox { "
+        "background-color: #1a1b26; border: 1px solid #3b4261; "
+        "border-radius: 2px; padding: 2px 4px; } "
+        "QGroupBox#agg_section QLabel { color: #a9b1d6; } "
+        "QGroupBox#agg_section QCheckBox { color: #a9b1d6; } "
+        "QGroupBox#agg_section QPushButton { "
+        "background-color: #3b4261; border: 1px solid #565f89; "
+        "border-radius: 3px; padding: 4px 10px; } "
+        "QGroupBox#agg_section QPushButton:hover { background-color: #414868; } "
+    )
+
+
 def get_agg_heading_color() -> str:
     """Color for 'Range' heading inside agg section."""
     return "#598249" if _current_theme == "light" else "#9ece6a"
