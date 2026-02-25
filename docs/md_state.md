@@ -52,4 +52,5 @@ Overview of all documentation files in this repository.
 |------|---------|
 | [`docs/build_workflow.md`](build_workflow.md) | **Release checklist**, GitHub Actions workflow, how to trigger a build. |
 | [`docs/pyinstaller_command.md`](pyinstaller_command.md) | Developer notes for building the executable. |
+| [`docs/smoke_test.md`](smoke_test.md) | **10-Minute Smoke Test:** Manual checklist for release verification. |
 | [`docker/README.md`](../docker/README.md) | Docker deployment instructions. |
