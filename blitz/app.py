@@ -24,8 +24,8 @@ try:
             raise
 
     ViewBoxMenu.setViewList = _safe_set_view_list
-except Exception:  # noqa: S110
-    pass
+except Exception as e:
+    print(f"Warning: Failed to patch ViewBoxMenu: {e}")
 
 from . import resources  # noqa: F401  (registers Qt resources for icon; needed before dialogs)
 from . import settings
