@@ -258,6 +258,9 @@ class MainWindow(QMainWindow):
             self.ui.image_viewer.roiClicked
         )
         self.ui.combobox_roi.currentIndexChanged.connect(self.change_roi)
+        self.ui.button_reset_roi.clicked.connect(
+            self.ui.image_viewer.reset_roi
+        )
         self.ui.checkbox_tof.stateChanged.connect(
             self.tof_adapter.toggle_plot
         )
@@ -302,6 +305,12 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_crop_range_end.editingFinished.connect(
             self._on_selection_changed
         )
+        self.ui.spinbox_crop_range_start.valueChanged.connect(
+            self._on_selection_changed
+        )
+        self.ui.spinbox_crop_range_end.valueChanged.connect(
+            self._on_selection_changed
+        )
         self.ui.spinbox_selection_window.valueChanged.connect(
             self._sync_selection_range_from_window
         )
@@ -321,21 +330,23 @@ class MainWindow(QMainWindow):
         self.ui.combobox_ops_divide_src.currentIndexChanged.connect(
             self._update_ops_norm_visibility
         )
-        self.ui.spinbox_ops_norm_window.valueChanged.connect(self.apply_ops)
-        self.ui.spinbox_ops_norm_lag.valueChanged.connect(self.apply_ops)
-        self.ui.checkbox_ops_sliding_apply_full.stateChanged.connect(self.apply_ops)
+        self.ui.spinbox_ops_norm_window.valueChanged.connect(lambda: self.apply_ops())
+        self.ui.spinbox_ops_norm_lag.valueChanged.connect(lambda: self.apply_ops())
+        self.ui.checkbox_ops_sliding_apply_full.stateChanged.connect(lambda: self.apply_ops())
         for cb in (self.ui.combobox_ops_subtract_src, self.ui.combobox_ops_divide_src):
-            cb.currentIndexChanged.connect(self.apply_ops)
-        self.ui.combobox_ops_range_method.currentIndexChanged.connect(self.apply_ops)
+            cb.currentIndexChanged.connect(lambda: self.apply_ops())
+        self.ui.combobox_ops_range_method.currentIndexChanged.connect(lambda: self.apply_ops())
         self.ui.slider_ops_subtract.valueChanged.connect(
             self._update_ops_slider_labels
         )
-        self.ui.slider_ops_subtract.valueChanged.connect(self.apply_ops)
+        self.ui.slider_ops_subtract.valueChanged.connect(lambda: self.apply_ops())
         self.ui.slider_ops_divide.valueChanged.connect(
             self._update_ops_slider_labels
         )
-        self.ui.slider_ops_divide.valueChanged.connect(self.apply_ops)
+        self.ui.slider_ops_divide.valueChanged.connect(lambda: self.apply_ops())
         self.ui.button_ops_load_file.clicked.connect(self.load_ops_file)
+        self.ui.spinbox_crop_range_start.editingFinished.connect(lambda: self.apply_ops())
+        self.ui.spinbox_crop_range_end.editingFinished.connect(lambda: self.apply_ops())
         # crop range: _on_selection_changed calls apply_ops(skip_update=True) when aggregate
         # to avoid double mean computation (apply_aggregation handles refresh)
         # Reduce dropdown: only _on_reduce_changed (not apply_ops) to avoid double mean computation
@@ -1316,7 +1327,8 @@ class MainWindow(QMainWindow):
         self._pca_update_target_spinner_state()
 
     def _on_option_tab_changed(self, index: int) -> None:
-        """Toggle LIVE indicator and timer when Bench tab visible. Sync PCA Target Comp when PCA tab shown."""
+        """Toggle LIVE indicator and timer when Bench tab visible. Sync PCA Target Comp when PCA tab shown.
+        Force refresh Ops pipeline when Ops tab is selected."""
         bench_idx = getattr(
             self.ui, "bench_tab_index",
             self.ui.option_tabwidget.count() - 1,
@@ -1330,6 +1342,9 @@ class MainWindow(QMainWindow):
         pca_idx = getattr(self.ui, "pca_tab_index", -1)
         if index == pca_idx:
             self._sync_pca_target_comp_to_data()
+        ops_idx = getattr(self.ui, "ops_tab_index", -1)
+        if index == ops_idx:
+            QTimer.singleShot(0, self.apply_ops)
 
     def _bench_tick(self) -> None:
         """Sample CPU/RAM/Disk, feed shared BenchData, refresh Bench tab + compact (if shown)."""
@@ -2049,7 +2064,6 @@ class MainWindow(QMainWindow):
             self.ui.spinbox_crop_range_start.value(),
             self.ui.spinbox_crop_range_end.value(),
         )
-        range_method = self.ui.combobox_ops_range_method.currentData()  # for Range & Sliding range
         bg = self.ui.image_viewer._background_image
 
         def _step(src: str, amount: int) -> dict | None:
@@ -2097,12 +2111,15 @@ class MainWindow(QMainWindow):
                 self.ui.combobox_ops_range_method.setCurrentIndex(0)
                 self.ui.combobox_ops_range_method.blockSignals(False)
                 QApplication.processEvents()
+            # Prefer currentData(); fallback to index (avoids Qt currentData() returning None when just shown)
             range_method = self.ui.combobox_ops_range_method.currentData()
             if range_method is None:
-                self.ui.combobox_ops_range_method.blockSignals(True)
-                self.ui.combobox_ops_range_method.setCurrentIndex(0)
-                self.ui.combobox_ops_range_method.blockSignals(False)
-                range_method = ReduceOperation.MEAN
+                idx = self.ui.combobox_ops_range_method.currentIndex()
+                ops_list = list(ReduceOperation)
+                range_method = ops_list[idx] if 0 <= idx < len(ops_list) else ReduceOperation.MEAN
+            # Defer second apply_ops when range widget was just shown, so UI state is fully stable
+            if was_hidden and has_range_step:
+                QTimer.singleShot(0, self.apply_ops)
         else:
             range_method = ReduceOperation.MEAN
         if has_range_step and self._is_aggregate_view():

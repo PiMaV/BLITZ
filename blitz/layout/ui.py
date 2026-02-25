@@ -524,10 +524,13 @@ class UI_MainWindow(QWidget):
         self.checkbox_tof = QCheckBox("TOF")
         self.checkbox_tof.setEnabled(False)
         self.checkbox_roi_drop = QCheckBox("Update on drop")
+        self.button_reset_roi = QPushButton("Reset ROI")
+        self.button_reset_roi.setToolTip("Reset ROI to centered default (10% size). Use when you want to recenter.")
         roi_layout = QGridLayout()
         roi_layout.addWidget(self.checkbox_roi, 0, 0, 1, 1)
         roi_layout.addWidget(self.combobox_roi, 0, 1, 1, 2)
         roi_layout.addWidget(self.checkbox_roi_drop, 2, 1, 1, 1)
+        roi_layout.addWidget(self.button_reset_roi, 2, 2, 1, 1)
         roi_layout.addWidget(self.checkbox_tof, 3, 0, 1, 1)
         view_layout.addLayout(roi_layout)
 
@@ -665,6 +668,7 @@ class UI_MainWindow(QWidget):
         ops_layout.addWidget(crop_grp)
         ops_layout.addStretch()
         self.create_option_tab(ops_layout, "Ops")
+        self.ops_tab_index = self.option_tabwidget.count() - 1
 
         # --- Timeline Panel: 2 Tabs Frame | Agg (Tab-Wechsel = Modus) ---
         self.spinbox_current_frame = QSpinBox()

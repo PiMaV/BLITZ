@@ -81,6 +81,7 @@ class ImageViewer(pg.ImageView):
         self._set_image_throttle_live_sec = 0.025
         self._reference_timeline_data: Optional[tuple] = None
         self._reference_timeline_curve: Optional[pg.PlotDataItem] = None
+        self._last_roi_spatial_shape: Optional[tuple[int, int]] = None
         self.load_data()
 
     def set_live_update_fps(self, fps: float) -> None:
@@ -269,8 +270,13 @@ class ImageViewer(pg.ImageView):
         super().setImage(*args, **kwargs)
         if keep_timestep:
             self.timeLine.setPos(pos)  # type: ignore
+        # Only reset ROI when spatial dimensions change (e.g. new load, crop, transpose).
+        # Frame/aggregation switches keep same dimensions -> preserve ROI.
         if not skip_roi_init:
-            self.init_roi()
+            spatial = (self.image.shape[1], self.image.shape[2])
+            if spatial != self._last_roi_spatial_shape:
+                self._last_roi_spatial_shape = spatial
+                self.init_roi()
         self.image_changed.emit()
 
     def updateImage(self, autoHistogramRange: bool = False) -> None:
@@ -412,6 +418,10 @@ class ImageViewer(pg.ImageView):
             > settings.get("viewer/ROI_on_drop_threshold")
         )
         self.toggle_roi_update_frequency(on_drop_roi_update)
+
+    def reset_roi(self) -> None:
+        """Reset ROI to centered default. Call manually when user wants to recenter."""
+        self.init_roi()
 
     def crop(self, left: int, right: int, keep: bool = False) -> None:
         self.data.crop(left, right, keep=keep)

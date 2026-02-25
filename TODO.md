@@ -6,6 +6,7 @@
 - LUT: nicht min max sondern perecntiles?
 
 
+
 ## High Priority Features
 
 *   **DataSource Interface:** Unified interface for Loaders, Converters, and Handlers. Foundation for future plugins.
