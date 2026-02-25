@@ -426,6 +426,9 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_iso_smoothing.valueChanged.connect(
             self.update_isocurves
         )
+        self.ui.spinbox_iso_downsample.valueChanged.connect(
+            self.update_isocurves
+        )
         self.ui.image_viewer.timeLine.sigPositionChanged.connect(
             self._schedule_isocurves_update
         )
@@ -693,6 +696,12 @@ class MainWindow(QMainWindow):
             self.ui.spinbox_iso_smoothing.editingFinished,
             self.ui.spinbox_iso_smoothing.value,
             self.ui.spinbox_iso_smoothing.setValue,
+        )
+        settings.connect_sync_project(
+            "isocurve_downsample",
+            self.ui.spinbox_iso_downsample.editingFinished,
+            self.ui.spinbox_iso_downsample.value,
+            self.ui.spinbox_iso_downsample.setValue,
         )
         settings.connect_sync_project(
             "mask",
@@ -1213,6 +1222,7 @@ class MainWindow(QMainWindow):
             on=self.ui.checkbox_show_isocurve.isChecked(),
             n=self.ui.spinbox_isocurves.value(),
             smoothing=self.ui.spinbox_iso_smoothing.value(),
+            downsample=self.ui.spinbox_iso_downsample.value(),
         )
 
     def load_ops_file(self) -> None:

@@ -81,6 +81,7 @@ class IsolineAdapter:
         on: bool,
         n: int = 1,
         smoothing: int = 0,
+        downsample: int = 1,
     ) -> None:
         if on != self._show_iso:
             if self._show_iso:
@@ -96,9 +97,9 @@ class IsolineAdapter:
             self._n_iso = n
             self._reset_iso()
         if self._show_iso:
-            self._refresh(smoothing=smoothing)
+            self._refresh(smoothing=smoothing, downsample=downsample)
 
-    def _refresh(self, smoothing: int = 0) -> None:
+    def _refresh(self, smoothing: int = 0, downsample: int = 1) -> None:
         try:
             img = np.asarray(self.viewer.now[..., 0], dtype=np.float32)
         except (ValueError, TypeError, IndexError, AttributeError):
@@ -106,9 +107,24 @@ class IsolineAdapter:
         if smoothing > 0:
             k = max(1, int(smoothing) | 1)  # odd kernel
             img = _gaussian_filter(img, k)
+
+        effective_downsample = 1
+        if downsample > 1:
+            import cv2
+            h, w = img.shape
+            new_h, new_w = int(h / downsample), int(w / downsample)
+            if new_h > 0 and new_w > 0:
+                img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+                effective_downsample = downsample
+
         for iso, line in zip(self._isocurves, self._isolines):
             iso.setLevel(line.value())
             iso.setData(img)
+            if effective_downsample > 1:
+                from PyQt6.QtGui import QTransform
+                iso.setTransform(QTransform().scale(effective_downsample, effective_downsample))
+            else:
+                iso.resetTransform()
 
     def _on_level_changed(self) -> None:
         for curve, line in zip(self._isocurves, self._isolines):
