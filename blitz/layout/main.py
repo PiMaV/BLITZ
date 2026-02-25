@@ -192,6 +192,9 @@ class MainWindow(QMainWindow):
 
         # lut connections
         self.ui.button_autofit.clicked.connect(self.ui.image_viewer.autoLevels)
+        self.ui.spinbox_lut_percentile.valueChanged.connect(
+            self.ui.image_viewer.set_lut_percentile
+        )
         self.ui.checkbox_auto_fit.stateChanged.connect(
             lambda: self.ui.image_viewer.set_auto_fit(
                 self.ui.checkbox_auto_fit.isChecked()

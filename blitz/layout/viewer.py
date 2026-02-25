@@ -75,6 +75,9 @@ class ImageViewer(pg.ImageView):
         self.setAcceptDrops(True)
         self._auto_colormap = True
         self._auto_fit = True
+        self._lut_percentile = 0.0
+        self._levels_cache: tuple[float, float] | None = None
+        self._levels_cache_percentile: float | None = None
         self._background_image: ImageData | None = None
         self._last_set_image_time = 0.0
         self._set_image_throttle_sec = 0.035
@@ -265,6 +268,7 @@ class ImageViewer(pg.ImageView):
         self.file_dropped.emit(file_path)
 
     def setImage(self, *args, keep_timestep: bool = False, skip_roi_init: bool = False, **kwargs) -> None:
+        self._levels_cache = None
         if keep_timestep:
             pos = self.timeLine.pos()
         super().setImage(*args, **kwargs)
@@ -289,6 +293,33 @@ class ImageViewer(pg.ImageView):
     def set_auto_fit(self, enabled: bool) -> None:
         self._auto_fit = enabled
 
+    def set_lut_percentile(self, pct: float) -> None:
+        if self._lut_percentile != pct:
+            self._lut_percentile = pct
+            self.autoLevels()
+
+    def _calculate_levels(self, image: np.ndarray) -> tuple[float, float]:
+        if (
+            self._levels_cache is not None
+            and self._levels_cache_percentile == self._lut_percentile
+        ):
+            return self._levels_cache
+
+        with np.errstate(invalid="ignore", over="ignore"):
+            if self._lut_percentile <= 0:
+                mn = float(np.nanmin(image))
+                mx = float(np.nanmax(image))
+            else:
+                p_lo = self._lut_percentile
+                p_hi = 100.0 - p_lo
+                # Use nanpercentile to handle NaNs/Masked values
+                mn, mx = np.nanpercentile(image, [p_lo, p_hi])
+                mn, mx = float(mn), float(mx)
+
+        self._levels_cache = (mn, mx)
+        self._levels_cache_percentile = self._lut_percentile
+        return mn, mx
+
     def autoLevels(self) -> None:
         if self.data.is_greyscale() and self._auto_colormap:
             self.auto_colormap()
@@ -297,9 +328,7 @@ class ImageViewer(pg.ImageView):
             self._ensure_finite_levels(self.image)
 
     def auto_colormap(self) -> None:
-        with np.errstate(invalid="ignore", over="ignore"):
-            min_ = float(np.nanmin(self.image))
-            max_ = float(np.nanmax(self.image))
+        min_, max_ = self._calculate_levels(self.image)
         if not np.isfinite(min_):
             min_ = -1.0
         if not np.isfinite(max_) or max_ <= min_:
@@ -363,9 +392,7 @@ class ImageViewer(pg.ImageView):
 
     def _ensure_finite_levels(self, img: np.ndarray) -> None:
         """Set finite min/max levels to avoid ViewBox overflow in cast (inf/nan)."""
-        with np.errstate(invalid="ignore", over="ignore"):
-            mn = float(np.nanmin(img))
-            mx = float(np.nanmax(img))
+        mn, mx = self._calculate_levels(img)
         if not np.isfinite(mn):
             mn = 0.0
         if not np.isfinite(mx) or mx <= mn:
@@ -446,6 +473,7 @@ class ImageViewer(pg.ImageView):
 
     def unravel(self) -> None:
         self.data.unravel()
+        self._levels_cache = None
         # Set timeline/ROI bounds before setImage so any internal update sees finite range.
         n = max(1, self.data.n_images)
         x_max = float(n - 1)
@@ -453,9 +481,7 @@ class ImageViewer(pg.ImageView):
         self.ui.roiPlot.setXRange(0.0, x_max, padding=0)
         img = self.data.image
         # Finite levels before/after setImage so ViewBox/histogram never see inf -> overflow in cast.
-        with np.errstate(invalid="ignore", over="ignore"):
-            mn = float(np.nanmin(img))
-            mx = float(np.nanmax(img))
+        mn, mx = self._calculate_levels(img)
         if not np.isfinite(mn):
             mn = 0.0
         if not np.isfinite(mx) or mx <= mn:

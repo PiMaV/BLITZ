@@ -283,6 +283,15 @@ class UI_MainWindow(QWidget):
         lut_left_vbox.addWidget(new_hist, 2)
 
         self.button_autofit = QPushButton("Fit")
+        self.spinbox_lut_percentile = QSpinBox()
+        self.spinbox_lut_percentile.setPrefix("Range: ")
+        self.spinbox_lut_percentile.setSuffix("%")
+        self.spinbox_lut_percentile.setRange(0, 49)
+        self.spinbox_lut_percentile.setValue(0)
+        self.spinbox_lut_percentile.setSpecialValueText("Min/Max")
+        self.spinbox_lut_percentile.setToolTip(
+            "Percentile scaling: 0 = Min/Max, >0 = saturate top/bottom X%."
+        )
         self.checkbox_auto_fit = QCheckBox("Auto fit")
         self.checkbox_auto_fit.setChecked(True)
         self.checkbox_auto_colormap = QCheckBox("Auto colormap")
@@ -298,8 +307,11 @@ class UI_MainWindow(QWidget):
         lut_button_layout = QVBoxLayout()
         lut_fit_row = QHBoxLayout()
         lut_fit_row.addWidget(self.button_autofit)
-        lut_fit_row.addWidget(self.checkbox_auto_fit)
+        lut_fit_row.addWidget(self.spinbox_lut_percentile)
         lut_button_layout.addLayout(lut_fit_row)
+        lut_auto_row = QHBoxLayout()
+        lut_auto_row.addWidget(self.checkbox_auto_fit)
+        lut_button_layout.addLayout(lut_auto_row)
         lut_cmap_row = QHBoxLayout()
         lut_cmap_row.addWidget(self.checkbox_auto_colormap)
         lut_cmap_row.addWidget(self.checkbox_lut_log)
