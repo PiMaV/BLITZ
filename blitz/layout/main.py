@@ -1501,9 +1501,9 @@ class MainWindow(QMainWindow):
                 with open(file, "r", encoding="utf-8") as f:
                     lut_config = json.load(f)
                 self.ui.image_viewer.load_lut_config(lut_config)
-            except Exception:
-                log("LUT could not be loaded. Make sure it is an "
-                    "appropriately structured '.json' file.", color="red")
+            except Exception as e:
+                log(f"LUT could not be loaded. Make sure it is an "
+                    f"appropriately structured '.json' file. Error: {e}", color="red")
 
     def save_lut(self) -> None:
         path = QFileDialog.getExistingDirectory(

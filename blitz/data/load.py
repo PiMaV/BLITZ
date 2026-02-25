@@ -773,7 +773,7 @@ class DataLoader:
         return done
 
     def _load_array(self, path: Path) -> ImageData:
-        array: np.ndarray = np.load(path)
+        array: np.ndarray = np.load(path, allow_pickle=False)
         gray = True
         match array.ndim:
             case 4:
@@ -842,7 +842,7 @@ class DataLoader:
         self,
         path: Path,
     ) -> tuple[np.ndarray, MetaData]:
-        array: np.ndarray = np.load(path)
+        array: np.ndarray = np.load(path, allow_pickle=False)
         if array.ndim >= 4 or (array.ndim == 3 and array.shape[2] != 3):
             log(f"Error: Unsupported array shape {array.shape}", color="red")
             data = DataLoader.from_text(
