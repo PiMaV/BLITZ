@@ -3,7 +3,9 @@
 ## TL;DR
 
 Most folder-based image workflows still treat images as files.  
-**BLITZ** treats them as structured data.
+**BLITZ** treats them as **structured data**.
+
+---
 
 **BLITZ** is a high-performance, matrix-based image viewer for efficiently managing massive datasets and single-image analysis.  
 Version 2.0 features a fully refactored architecture with improved performance, stability, and maintainability.
@@ -35,7 +37,7 @@ For Ubuntu, make the file executable:
 ---
 
 (Click if animation is not playing)
-![Quick Feature Overview](resources/public/BLITZ_Record.gif)
+![Quick Feature Overview](resources/public/blitz_demo.gif)
 
 ---
 
