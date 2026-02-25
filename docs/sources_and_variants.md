@@ -134,6 +134,6 @@ class HasDialog(Protocol):
 4.  **Loader Registry** – Framework for extensible loaders.
 
 ## References
-- `docs/ARCHITECTURE.md` – General code architecture
-- `docs/LOADING.md` – Load flow, dialogs, session defaults
-- `docs/Tabs_explained.md` – User guide for features
+- `docs/architecture.md` – General code architecture
+- `docs/loading.md` – Load flow, dialogs, session defaults
+- `docs/tabs_explained.md` – User guide for features

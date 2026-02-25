@@ -3,7 +3,7 @@
 ## TL;DR
 
 **BLITZ** is a high-performance, matrix-based image viewer for efficiently managing massive datasets and single-image analysis.  
-Version 2.0 introduces a fully refactored architecture with improved performance, stability, and maintainability.
+Version 2.0 features a fully refactored architecture with improved performance, stability, and maintainability.
 
 ## Download
 
@@ -39,11 +39,12 @@ For Ubuntu, make the file executable:
 
 ## Documentation
 
+* [Full Documentation Index](docs/md_state.md)
 * [Quick Start Guide](docs/walkthrough.md)
-* [Features & Tabs Explained](docs/Tabs_explained.md)
-* [Missing & Planned Features](docs/MISSING_FEATURES.md)
-* [Optimization Report](docs/OPTIMIZATION.md)
-* [Data Sources & Build Variants](docs/SOURCES_AND_VARIANTS.md)
+* [Features & Tabs Explained](docs/tabs_explained.md)
+* [Missing & Planned Features](docs/missing_features.md)
+* [Optimization Report](docs/optimization.md)
+* [Data Sources & Build Variants](docs/sources_and_variants.md)
 
 ## Docker
 

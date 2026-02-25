@@ -34,7 +34,7 @@
 - **main.py**: Params filtering (skip_keys); flip_xy + roi_state in session defaults; flip_xy applied when loading without dialog; no crop_roi_bbox
 - **image.py**: Removed crop_roi_bbox (was crop_rotated_roi before)
 - **tools.py**: Removed crop_rotated_rect, _rotated_roi_corners
-- **MERGE_ROI_LOADING.md**: Updated to current state
+- **merge_roi_loading.md**: Updated to current state
 
 ---
 
