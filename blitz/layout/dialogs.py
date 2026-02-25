@@ -103,6 +103,9 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
         else:
             self.chk_grayscale.setChecked(is_gray)
             self.chk_8bit.setChecked(is_uint8)
+        self.chk_8bit.setEnabled(not is_uint8)
+        if is_uint8:
+            self.chk_8bit.setToolTip("Source is already 8 bit")
         self._sample_bytes = get_sample_bytes_per_pixel(self._path)
         self._update_estimates()
         self._start_preview_load()
@@ -266,6 +269,7 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
         self.lbl_preview_status.setText(
             "Drag ROI to select region (optional)"
         )
+        self._apply_auto_transpose()
 
         # Apply transforms from checkboxes if they were set in init
         img = self._get_transformed_preview()
@@ -473,6 +477,12 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
         else:
             self.chk_grayscale.setChecked(is_gray)
             self.chk_8bit.setChecked(is_uint8)
+        self.chk_grayscale.setEnabled(not is_gray)
+        if is_gray:
+            self.chk_grayscale.setToolTip("Source is grayscale; loading as RGB would waste RAM")
+        self.chk_8bit.setEnabled(not is_uint8)
+        if is_uint8:
+            self.chk_8bit.setToolTip("Source is already 8 bit")
         self._sample_bytes = get_sample_bytes_per_pixel(path)
         self._update_estimates()
         self._start_preview_load()
@@ -619,6 +629,7 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
             return
         self._preview = img
         self.lbl_preview_status.setText("Drag ROI to select region (optional)")
+        self._apply_auto_transpose()
 
         # Apply transforms
         img = self._get_transformed_preview()
@@ -716,8 +727,10 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
             )
             self.lbl_num_frames.setToolTip(tooltip)
 
-        bytes_per = h_out * w_out * (1 if self.chk_8bit.isChecked() else 8)
-        total_gb = num_images * bytes_per / (1024**3)
+        channels = 1 if grayscale else 3
+        dtype_size = 1 if self.chk_8bit.isChecked() else getattr(self, "_sample_bytes", 1)
+        total_bytes = h_out * w_out * channels * num_images * dtype_size
+        total_gb = total_bytes / (1024**3)
         color = "green"
         if total_gb > get_available_ram() * 0.9:
             color = "red"
@@ -779,9 +792,13 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
         self._setup_ui()
         self._initial_mask_rel = self._initial_params.get("mask_rel")
         self._initial_roi_state = self._initial_params.get("roi_state")
+        datatype_est = self.metadata.get("datatype_est", "")
+        is_uint8_source = datatype_est == "uint8"
         if initial_params:
             self.spin_resize.setValue(int(initial_params.get("size_ratio", 1.0) * 100))
-            self.chk_8bit.setChecked(initial_params.get("convert_to_8_bit", False))
+            self.chk_8bit.setChecked(
+                is_uint8_source or initial_params.get("convert_to_8_bit", False)
+            )
             self.chk_row_number.blockSignals(True)
             self.chk_row_number.setChecked(
                 initial_params.get("first_col_is_row_number", True)
@@ -797,8 +814,11 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
             self.chk_flip_xy.setChecked(initial_params.get("flip_xy", False))
         else:
             self.chk_8bit.setChecked(
-                self.metadata.get("convert_to_8_bit_suggest", False)
+                is_uint8_source or self.metadata.get("convert_to_8_bit_suggest", False)
             )
+        self.chk_8bit.setEnabled(not is_uint8_source)
+        if is_uint8_source:
+            self.chk_8bit.setToolTip("Source is already 8 bit")
         self.cmb_preview_mode.currentTextChanged.connect(self._refresh_preview)
         self.chk_preview_norm.toggled.connect(self._refresh_preview)
         self._update_estimates()
@@ -965,6 +985,7 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
             return
 
         self._preview = img
+        self._apply_auto_transpose()
 
         lines = []
         with open(preview_path, encoding="utf-8", errors="replace") as f:
@@ -1051,8 +1072,10 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
         self.lbl_size_px.setText(f"-> {h_out} x {w_out} px")
         if self._is_folder:
             self.lbl_num_frames.setText(f"-> <b>{n_load}</b> files")
-        bytes_per = h_out * w_out * (1 if self.chk_8bit.isChecked() else 8)
-        total_gb = n_load * bytes_per / (1024**3)
+        channels = 1
+        dtype_size = 1 if self.chk_8bit.isChecked() else 8
+        total_bytes = h_out * w_out * channels * n_load * dtype_size
+        total_gb = total_bytes / (1024**3)
         color = "green"
         if total_gb > get_available_ram() * 0.9:
             color = "red"

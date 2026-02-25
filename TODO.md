@@ -3,8 +3,6 @@
 ## Known Issues (Bugs)
 
 - deactivate PCA when aggragation images are seleccted
-- LUT: nicht min max sondern perecntiles?
-
 
 
 ## High Priority Features
@@ -15,6 +13,7 @@
 
 ## Medium Priority
 
+*   **Auto-Crop (Load Dialog):** Bounding box of content on MAX preview. Optional: isoline at threshold (user spinner 0-255) for visual feedback; margin % spinner; ROI updates on spinner change. No auto-apply on load (user controls). Simple threshold (flat > value) on MAX should work well.
 *   **Dual-Build Setup:** Ability to build Standard and Full EXE (= Exotic Data flavours).
 *   **Proper Exporter:** Dialog with Options to export as *.npy or image for Raw / Pipeline / PCA data
 *   **RoSEE:** Check Isolines and normalization (Autozoom should activate).

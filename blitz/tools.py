@@ -8,7 +8,7 @@ import psutil
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QColor, QFont, QTextCharFormat
 from PyQt6.QtWidgets import (QApplication, QDialog, QLabel, QProgressBar,
-                             QTextEdit, QVBoxLayout)
+                             QStatusBar, QTextEdit, QVBoxLayout)
 
 from . import settings
 from .theme import get_style
@@ -17,6 +17,7 @@ PROGRESS_DIALOG_DELAY_MS = 1000
 BLOCKING_BAR_DELAY_MS = 500
 
 LOGGER: Any = None
+_LOG_ONE_LINER: Optional[QLabel] = None
 
 
 def log(message: str, color: str | tuple[int, int, int] = "white") -> None:
@@ -24,11 +25,16 @@ def log(message: str, color: str | tuple[int, int, int] = "white") -> None:
         print(message)
     else:
         LOGGER.log(message, color=color)
+    if _LOG_ONE_LINER is not None and message != "\n":
+        txt = str(message).strip()[:120]
+        _LOG_ONE_LINER.setText(txt)
+        _LOG_ONE_LINER.setToolTip(str(message).strip())
 
 
-def setup_logger(logger: Any) -> None:
-    global LOGGER
+def setup_logger(logger: Any, one_liner_label: Optional[QLabel] = None) -> None:
+    global LOGGER, _LOG_ONE_LINER
     LOGGER = logger
+    _LOG_ONE_LINER = one_liner_label
 
 
 class LoadingDialog(QDialog):
@@ -87,6 +93,7 @@ class LoadingManager:
         delay_ms: int = PROGRESS_DIALOG_DELAY_MS,
         status_label: Optional[QLabel] = None,
         blocking_label: Optional[QLabel] = None,
+        statusbar: Optional[QStatusBar] = None,
         blocking_delay_ms: Optional[int] = BLOCKING_BAR_DELAY_MS,
     ) -> None:
         self.text = text
@@ -94,6 +101,7 @@ class LoadingManager:
         self._delay_ms = delay_ms
         self._status_label = status_label
         self._blocking_label = blocking_label
+        self._statusbar = statusbar
         self._blocking_delay_ms = blocking_delay_ms
         self._start_time = 0
         self._time_needed = 0
@@ -117,28 +125,32 @@ class LoadingManager:
             QApplication.processEvents()
             self._dialog_shown = True
 
-    def _show_blocking_bar(self) -> None:
-        if self._blocking_label is not None and not self._blocking_shown:
-            self._blocking_shown = True
+    def _show_blocking_indicator(self) -> None:
+        if self._blocking_shown:
+            return
+        self._blocking_shown = True
+        if self._blocking_label is not None:
             self._blocking_label.setText("BUSY")
             self._blocking_label.setStyleSheet(get_style("busy"))
             if self._blocking_label.parent():
                 self._blocking_label.parent().update()
-            for _ in range(3):
-                QApplication.processEvents()
+        if self._statusbar is not None:
+            self._statusbar.setStyleSheet(get_style("statusbar_busy"))
+        for _ in range(3):
+            QApplication.processEvents()
 
     def __enter__(self) -> Self:
         self._start_time = clock()
         if self._status_label is not None:
             self._status_label.setText(self.text)
             QApplication.processEvents()
-        if self._blocking_label is not None:
+        if self._blocking_label is not None or self._statusbar is not None:
             if self._blocking_delay_ms is None or self._blocking_delay_ms <= 0:
-                self._show_blocking_bar()
+                self._show_blocking_indicator()
             else:
                 self._blocking_timer = QTimer()
                 self._blocking_timer.setSingleShot(True)
-                self._blocking_timer.timeout.connect(self._show_blocking_bar)
+                self._blocking_timer.timeout.connect(self._show_blocking_indicator)
                 self._blocking_timer.start(self._blocking_delay_ms)
         self._dialog = LoadingDialog(self.parent, self.text)
         self._timer = QTimer()
@@ -176,9 +188,12 @@ class LoadingManager:
             self._dialog = None
         if self._status_label is not None:
             self._status_label.setText("")
-        if self._blocking_label is not None and self._blocking_shown:
-            self._blocking_label.setText("IDLE")
-            self._blocking_label.setStyleSheet(get_style("idle"))
+        if self._blocking_shown:
+            if self._blocking_label is not None:
+                self._blocking_label.setText("IDLE")
+                self._blocking_label.setStyleSheet(get_style("idle"))
+            if self._statusbar is not None:
+                self._statusbar.setStyleSheet(get_style("statusbar_idle"))
         self._time_needed = clock() - self._start_time
         return False
 
@@ -261,11 +276,34 @@ def fit_text(text: str, max_length: int) -> str:
 def format_pixel_value(
     value: str | Sequence[float | int] | np.ndarray | None,
 ) -> str:
+    """Format for display: scalar float (max 2 decimals), int, or RGB tuple."""
     if isinstance(value, str) or value is None:
         return f"{value}"
     elif isinstance(value, (list, tuple, np.ndarray)) and len(value) == 3:
-        return f"({value[0]:.3f}, {value[1]:.3f}, {value[2]:.3f})"
+        arr = np.asarray(value, dtype=float)
+        if np.allclose(arr, np.round(arr)):
+            return f"({int(round(arr[0]))}, {int(round(arr[1]))}, {int(round(arr[2]))})"
+        return f"({arr[0]:.2f}, {arr[1]:.2f}, {arr[2]:.2f})"
     else:
-        if int(value[0]) == value[0]:
-            return f"{int(value[0]):4d}"
-        return f"{value[0]:4f}"
+        v = np.asarray(value).flat[0]
+        if int(v) == v:
+            return f"{int(v)}"
+        return f"{v:.2f}"
+
+
+def format_pixel_value_fixed(
+    value: np.ndarray | Sequence[float | int] | None,
+    bits: int,
+    is_rgb: bool,
+) -> str:
+    """Fixed-width pixel value for stable layout. Width depends on bits (8→3, 16→5, 32→10)."""
+    width = {8: 3, 16: 5, 32: 10}.get(bits, 5)
+    if value is None:
+        return "—" if not is_rgb else "(—, —, —)"
+    arr = np.asarray(value)
+    if is_rgb and arr.size >= 3:
+        parts = arr.flatten()[:3]
+        vals = [int(round(float(p))) for p in parts]
+        return f"({vals[0]:{width}d},{vals[1]:{width}d},{vals[2]:{width}d})"
+    v = int(round(float(arr.flat[0])))
+    return f"{v:{width}d}"

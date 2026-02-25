@@ -133,6 +133,14 @@ class PCAAdapter(QObject):
         self._base_data = self.viewer.data
         data = self._base_data.image
 
+        # PCA needs frame stack (T>1); aggregate view yields (1,H,W,C)
+        if data.shape[0] < 2:
+            self.error.emit(
+                "PCA requires multiple frames. You are in aggregate view (single image). "
+                "Switch to Frame (Reduce=None) first."
+            )
+            return
+
         # Pre-check dimensions
         if data.ndim < 3:
             self.error.emit("Data must be at least 3D (T, H, W).")

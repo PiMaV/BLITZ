@@ -5,7 +5,7 @@ import numpy as np
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import QCoreApplication, Qt, QTimer, QUrl
+from PyQt6.QtCore import QByteArray, QCoreApplication, Qt, QTimer, QUrl
 from PyQt6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (QApplication, QDialog, QFileDialog, QMainWindow,
                              QTableWidgetItem)
@@ -19,8 +19,9 @@ from ..data.image import ImageData
 from ..data.load import DataLoader, get_image_metadata, get_sample_format
 from ..data.web import WebDataLoader
 from ..data.ops import ReduceOperation
-from ..tools import (LoadingManager, format_size_mb, get_available_ram,
-                     get_cpu_percent, get_disk_io_mbs, get_used_ram, log)
+from ..tools import (LoadingManager, format_pixel_value_fixed, format_size_mb,
+                     get_available_ram, get_cpu_percent, get_disk_io_mbs,
+                     get_used_ram, log)
 
 
 def _pca_sync_vb2(plot_widget) -> None:
@@ -124,6 +125,24 @@ class MainWindow(QMainWindow):
         settings.set("app/theme", theme)
         restart()
 
+    def _reset_layout_and_restart(self) -> None:
+        """Clear saved window/dock state and restart with default layout."""
+        settings.set("window/geometry", None)
+        settings.set("window/docks", {})
+        restart()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if getattr(self, "_pending_dock_restore", None) is not None:
+            arr = self._pending_dock_restore
+            self._pending_dock_restore = None
+            try:
+                self.ui.dock_area.restoreState(arr)
+            except Exception:
+                log("Could not restore dock layout; using default.", color="orange")
+                settings.set("window/docks", {})
+        event.accept()
+
     def closeEvent(self, event):
         if self._simulated_live:
             self._simulated_live.stop_stream()
@@ -144,6 +163,7 @@ class MainWindow(QMainWindow):
         self.ui.button_load_folder.clicked.connect(self.browse_folder)
         self.ui.action_load_tof.triggered.connect(self.browse_tof)
         self.ui.action_export.triggered.connect(self.export)
+        self.ui.action_reset_layout.triggered.connect(self._reset_layout_and_restart)
         self.ui.action_restart.triggered.connect(restart)
         self.ui.action_theme_dark.triggered.connect(
             lambda: self._set_theme_and_restart("dark")
@@ -213,10 +233,12 @@ class MainWindow(QMainWindow):
         self.ui.image_viewer.image_changed.connect(
             lambda: QTimer.singleShot(50, self._sync_lut_spinners)
         )
-        self.ui.image_viewer.image_changed.connect(
-            lambda: QTimer.singleShot(60, self._apply_lut_log_state)
+        self.ui.image_viewer.histogram_ready.connect(self._apply_lut_log_state)
+        self.ui.image_viewer.timeLine.sigPositionChanged.connect(
+            lambda: QTimer.singleShot(0, self._apply_lut_log_state)
         )
         self.ui.checkbox_lut_log.stateChanged.connect(self._on_lut_log_changed)
+        self._histogram_log_disconnected = False
         self._sync_lut_spinners()
 
         # option connections
@@ -557,6 +579,21 @@ class MainWindow(QMainWindow):
             self.ui.image_viewer.timeLine.show()
         self.ui.range_section_widget.setEnabled(needs_range)
         self.ui.combobox_reduce.setEnabled(n > 1)
+        # PCA requires frame stack (T>1); disable in aggregate view
+        if is_agg:
+            self.ui.button_pca_calc.setEnabled(False)
+            self.ui.button_pca_show.setEnabled(False)
+            self.ui.button_pca_calc.setToolTip(
+                "PCA requires frame view. Switch to Frame (Reduce=None) first."
+            )
+        else:
+            self.ui.button_pca_calc.setToolTip(
+                "Compute Principal Component Analysis (SVD). May take time."
+            )
+            if self.pca_adapter.is_calculated:
+                self.ui.button_pca_show.setEnabled(True)
+            if getattr(self.pca_adapter, "_calculator", None) is None:
+                self.ui.button_pca_calc.setEnabled(True)
         if needs_range:
             self.ui.timeline_stack.agg_sep.show()
             self.ui.timeline_stack.agg_sep_spacer.show()
@@ -571,20 +608,27 @@ class MainWindow(QMainWindow):
 
     def setup_sync(self) -> None:
         screen_geometry = QApplication.primaryScreen().availableGeometry()
-        relative_size = settings.get("window/relative_size")
-        width = int(screen_geometry.width() * relative_size)
-        height = int(screen_geometry.height() * relative_size)
-        self.setGeometry(
-            (screen_geometry.width() - width) // 2,
-            (screen_geometry.height() - height) // 2,
-            width,
-            height,
-        )
-        if relative_size == 1.0:
-            self.showMaximized()
+        geom = settings.get("window/geometry")
+        if geom:
+            ba = geom if isinstance(geom, QByteArray) else QByteArray(geom)
+            if ba.isEmpty() or not self.restoreGeometry(ba):
+                geom = None
+        if not geom:
+            relative_size = settings.get("window/relative_size")
+            width = int(screen_geometry.width() * relative_size)
+            height = int(screen_geometry.height() * relative_size)
+            self.setGeometry(
+                (screen_geometry.width() - width) // 2,
+                (screen_geometry.height() - height) // 2,
+                width,
+                height,
+            )
+            if relative_size == 1.0:
+                self.showMaximized()
 
-        if (docks_arrangement := settings.get("window/docks")):
-            self.ui.dock_area.restoreState(docks_arrangement)
+        docks_arrangement = settings.get("window/docks")
+        if docks_arrangement:
+            self._pending_dock_restore = docks_arrangement
 
         settings.connect_sync(
             "default/load_8bit",
@@ -651,8 +695,9 @@ class MainWindow(QMainWindow):
             self.ui.token_edit.text,
             self.ui.token_edit.setText,
         )
-        # Timeline splitter: match Options width (run after geometry/dock restore)
-        QTimer.singleShot(300, getattr(self.ui, "_set_timeline_splitter_sizes", lambda: None))
+        # Timeline splitter: only set default sizes when NO saved layout (else restore has it)
+        if not docks_arrangement:
+            QTimer.singleShot(300, getattr(self.ui, "_set_timeline_splitter_sizes", lambda: None))
 
     def sync_project_preloading(self) -> None:
         settings.connect_sync_project(
@@ -1257,55 +1302,66 @@ class MainWindow(QMainWindow):
     def on_strgC(self) -> None:
         cb = QApplication.clipboard()
         cb.clear()
-        cb.setText(self.ui.position_label.text())
+        cb.setText(
+            f"{self.ui.label_frames.text()}\n{self.ui.label_position.text()}\n"
+            f"{self.ui.label_color.text()}"
+        )
 
-    def update_statusbar_position(self, pos: tuple[int, int]) -> None:
-        x, y, value = self.ui.image_viewer.get_position_info(pos)
-        self.ui.position_label.setText(f"X: {x} | Y: {y} | Value: {value}")
-
-    def _update_numba_dot(self) -> None:
-        """Update numba dot in LUT panel: green = active, gray = off/unavailable."""
-        data = getattr(self.ui.image_viewer, "data", None)
-        if data is None:
-            self.ui.numba_dot.setStyleSheet(
-                "background-color: #565f89; border-radius: 5px;"
-            )
-            self.ui.numba_dot.setToolTip(
-                "Green: Numba accelerating pipeline/aggregation. Gray: not in use."
-            )
-        elif not optimized.HAS_NUMBA:
-            self.ui.numba_dot.setStyleSheet(
-                "background-color: #565f89; border-radius: 5px;"
-            )
-            self.ui.numba_dot.setToolTip("Numba unavailable (not installed).")
+    def _update_position_display(
+        self, pos: Optional[tuple[int, int]] = None
+    ) -> None:
+        """Update position box: Frames | Position | value · bits-MODE | patch.
+        Always uses actual matrix dtype (displayed array), never metadata."""
+        x, y, _value, raw, pv = self.ui.image_viewer.get_position_info(pos)
+        frame, max_frame, _ = self.ui.image_viewer.get_frame_info()
+        img = self.ui.image_viewer.image
+        if img is not None and pv is not None:
+            bits = 8 * img.dtype.itemsize
+            is_rgb = img.ndim == 4 and img.shape[-1] >= 3
+            mode = "RGB" if is_rgb else "GRAY"
+            val_str = format_pixel_value_fixed(pv, bits, is_rgb)
+            color_str = f"{bits}-{mode} · {val_str}"
         else:
-            on = _numba_active(data)
-            if on:
-                self.ui.numba_dot.setStyleSheet(
-                    "background-color: #9ece6a; border-radius: 5px;"
-                )
-                self.ui.numba_dot.setToolTip(
-                    "Numba active: accelerating pipeline (subtract/divide) or "
-                    "aggregation (Mean/Max/Min/Std)."
+            color_str = "— · —"
+        self.ui.label_frames.setText(f"Frames: {frame} / {max_frame}")
+        self.ui.label_position.setText(f"Position: X {x}  Y {y}")
+        self.ui.label_color.setText(color_str)
+        # Color swatch from LUT gradient
+        try:
+            hist = self.ui.image_viewer.ui.histogram
+            lo, hi = hist.getLevels()
+            if raw is not None and hi > lo:
+                norm = (raw - lo) / (hi - lo)
+                norm = max(0.0, min(1.0, norm))
+                r, g, b, a = hist.gradient.getColor(norm, toQColor=False)
+                self.ui.color_swatch.setStyleSheet(
+                    f"background-color: rgb({int(r)},{int(g)},{int(b)});"
+                    " border: 1px solid #565f89;"
                 )
             else:
-                self.ui.numba_dot.setStyleSheet(
-                    "background-color: #565f89; border-radius: 5px;"
+                self.ui.color_swatch.setStyleSheet(
+                    "background-color: #3b4261; border: 1px solid #565f89;"
                 )
-                self.ui.numba_dot.setToolTip(
-                    "Numba not in use (no pipeline or aggregation, or using Median)."
-                )
+        except (AttributeError, TypeError):
+            self.ui.color_swatch.setStyleSheet(
+                "background-color: #3b4261; border: 1px solid #565f89;"
+            )
+
+    def update_statusbar_position(self, pos: tuple[int, int]) -> None:
+        self._update_position_display(pos)
 
     def update_statusbar(self) -> None:
         frame, max_frame, name = self.ui.image_viewer.get_frame_info()
-        self.ui.frame_label.setText(f"Frame: {frame} / {max_frame}")
+        if self._is_aggregate_view():
+            s, e = (
+                self.ui.spinbox_crop_range_start.value(),
+                self.ui.spinbox_crop_range_end.value(),
+            )
+            self.ui.frame_label.setText(f"Mean: frames {s}–{e}")
+        else:
+            self.ui.frame_label.setText(f"Frame: {frame} / {max_frame}")
         self.ui.file_label.setText(f"File: {name}")
-        self.ui.ram_label.setText(
-            f"Available RAM: {get_available_ram():.2f} GB"
-        )
-        x, y, value = self.ui.image_viewer.get_position_info()
-        self.ui.position_label.setText(f"X: {x} | Y: {y} | Value: {value}")
-        self._update_numba_dot()
+        self._update_position_display()
 
     def _on_bench_show_stats_changed(self) -> None:
         """Show/hide CPU load in LUT panel. Timer runs for Bench tab or compact."""
@@ -1569,14 +1625,17 @@ class MainWindow(QMainWindow):
         img_item = self.ui.image_viewer.getImageItem()
         if img_item is None:
             vb.setLogMode("y", False)
+            self._reconnect_histogram_if_needed(log_on=False)
             return
         h = img_item.getHistogram()
         if h[0] is None:
             vb.setLogMode("y", False)
+            self._reconnect_histogram_if_needed(log_on=False)
             return
         xdata, ydata = np.asarray(h[0]), np.asarray(h[1], dtype=np.float64)
         if len(ydata) == 0:
             vb.setLogMode("y", False)
+            self._reconnect_histogram_if_needed(log_on=False)
             return
         with np.errstate(invalid="ignore"):
             ymax_raw = float(np.nanmax(ydata))
@@ -1584,19 +1643,54 @@ class MainWindow(QMainWindow):
             ymax_raw = 1.0
         vb.enableAutoRange(vb.YAxis, False)
         vb.setLogMode("y", False)
+        self._disconnect_histogram_when_log_on(log_on)
         if log_on:
-            y_transformed = np.log10(ydata + 1.0)
+            y_smooth = np.convolve(
+                ydata.astype(np.float64), np.ones(5) / 5, mode="same"
+            )
+            y_transformed = np.log10(y_smooth + 1.0)
             ymax_log = float(np.log10(ymax_raw + 1.0))
             plot.setData(xdata, y_transformed)
             vb.setYRange(0.0, ymax_log, padding=0)
         else:
             plot.setData(xdata, ydata)
             vb.setYRange(0.0, ymax_raw, padding=0)
+            self._reconnect_histogram_if_needed(log_on=False)
         vb.updateViewRange()
+
+    def _disconnect_histogram_when_log_on(self, log_on: bool) -> None:
+        """When Log on: disconnect HistogramLUTItem from ImageItem so it cannot overwrite our plot."""
+        hist = self.ui.image_viewer.ui.histogram
+        img_item = self.ui.image_viewer.getImageItem()
+        if img_item is None or not hasattr(hist, "imageChanged"):
+            return
+        if log_on and not getattr(self, "_histogram_log_disconnected", False):
+            try:
+                img_item.sigImageChanged.disconnect(hist.imageChanged)
+                self._histogram_log_disconnected = True
+            except TypeError:
+                pass
+        elif not log_on and getattr(self, "_histogram_log_disconnected", False):
+            self._reconnect_histogram_if_needed(log_on=False)
+
+    def _reconnect_histogram_if_needed(self, log_on: bool = False) -> None:
+        if log_on or not getattr(self, "_histogram_log_disconnected", False):
+            return
+        hist = self.ui.image_viewer.ui.histogram
+        img_item = self.ui.image_viewer.getImageItem()
+        if img_item is not None:
+            try:
+                img_item.sigImageChanged.connect(hist.imageChanged)
+                self._histogram_log_disconnected = False
+                hist.imageChanged()
+            except TypeError:
+                pass
 
     def _sync_lut_spinners(self) -> None:
         """Sync spinner values from imageItem (authoritative) or histogram."""
         img_item = self.ui.image_viewer.getImageItem()
+        if img_item is None:
+            return
         levels = img_item.getLevels()
         if levels is None:
             levels = self.ui.image_viewer.ui.histogram.getLevels()
@@ -1732,9 +1826,9 @@ class MainWindow(QMainWindow):
                 path = QUrl(path).toLocalFile()
             path = Path(path)
         # Sofortiges Feedback bei Drop/Open (Scan von Ordnern kann laenger dauern)
-        lbl = self.ui.blocking_status
-        lbl.setText("SCAN")
-        lbl.setStyleSheet(get_style("scan"))
+        self.ui.blocking_status.setText("SCAN")
+        self.ui.blocking_status.setStyleSheet(get_style("scan"))
+        _scan_shown = True
         QApplication.processEvents()
 
         try:
@@ -1751,10 +1845,9 @@ class MainWindow(QMainWindow):
             else:
                 self.load_images(path)
         finally:
-            # IDLE falls LoadingManager nicht aktiv (z.B. Dialog abgebrochen)
-            if lbl.text() == "SCAN":
-                lbl.setText("IDLE")
-                lbl.setStyleSheet(get_style("idle"))
+            if _scan_shown:
+                self.ui.blocking_status.setText("IDLE")
+                self.ui.blocking_status.setStyleSheet(get_style("idle"))
 
     def load_project(self, path: Path) -> None:
         log(f"Loading '{path.name}' configuration file...",
@@ -2190,6 +2283,11 @@ class MainWindow(QMainWindow):
         """Switch between Single Frame (Reduce=None) and Aggregated (Reduce=Mean/Max/etc)."""
         is_agg = self._is_aggregate_view()
         if is_agg:
+            # PCA requires frame stack; switch to aggregate -> turn off PCA view
+            if self.ui.button_pca_show.isChecked():
+                self.ui.button_pca_show.setChecked(False)
+                self.ui.button_pca_show.setText("View PCA")
+                self.pca_adapter.reset_view()
             data = getattr(self.ui.image_viewer, "data", None)
             cache_empty = (
                 data is not None
@@ -2204,8 +2302,11 @@ class MainWindow(QMainWindow):
             self.apply_ops(skip_update=True)
             self.apply_aggregation()
         else:
+            s = self.ui.spinbox_crop_range_start.value()
             with LoadingManager(self, "Switching...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
                 self.ui.image_viewer.unravel()
+            self.ui.image_viewer.setCurrentIndex(s)
+            self.ui.image_viewer.timeLine.setPos((s, 0))
             self.update_statusbar()
             self.update_bench()
 
@@ -2228,8 +2329,11 @@ class MainWindow(QMainWindow):
             data.preview_frame = None
         op = self.ui.combobox_reduce.currentData()
         if op is None:  # "None - current frame"
+            s = self.ui.spinbox_crop_range_start.value()
             with LoadingManager(self, "Switching...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
                 self.ui.image_viewer.unravel()
+            self.ui.image_viewer.setCurrentIndex(s)
+            self.ui.image_viewer.timeLine.setPos((s, 0))
             self.update_statusbar()
             self.update_bench()
             return
@@ -2252,6 +2356,7 @@ class MainWindow(QMainWindow):
             self.ui.image_viewer.reduce(op, bounds=bounds)
         s, e = bounds
         self.ui.image_viewer.timeLine.setPos((s, 0))
+        self.ui.image_viewer.roiChanged()
         self.update_statusbar()
         self.update_bench()
         log(f"{op.name} in {lm.duration:.2f}s")
@@ -2265,6 +2370,7 @@ class MainWindow(QMainWindow):
         self.ui.measure_roi.update_labels()
 
     def save_settings(self):
+        settings.set("window/geometry", self.saveGeometry())
         settings.set("window/docks", self.ui.dock_area.saveState())
         screen_geometry = QApplication.primaryScreen().availableGeometry()
         settings.set("window/relative_size",
@@ -2273,6 +2379,9 @@ class MainWindow(QMainWindow):
 
     # --- PCA ---
     def pca_calculate(self) -> None:
+        if self._is_aggregate_view():
+            log("PCA requires frame view. Switch to Frame (Reduce=None) first.", color="orange")
+            return
         if self.ui.button_pca_show.isChecked():
             self.ui.button_pca_show.setChecked(False)
             self.pca_adapter.reset_view()

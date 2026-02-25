@@ -121,6 +121,20 @@ class ROIMixin:
         if hasattr(self, "_update_estimates"):
             self._update_estimates()
 
+    def _apply_auto_transpose(self) -> None:
+        """Enable Flip XY when height > width so the longer side is horizontal."""
+        img = getattr(self, "_preview", None)
+        if img is None:
+            return
+        initial = getattr(self, "_initial_params", {}) or {}
+        if "flip_xy" in initial:
+            return  # user/session explicitly set it
+        h, w = img.shape[0], img.shape[1]
+        if h > w:
+            self.chk_flip_xy.blockSignals(True)
+            self.chk_flip_xy.setChecked(True)
+            self.chk_flip_xy.blockSignals(False)
+
     def _get_transformed_preview(self) -> np.ndarray:
         """Return the preview image with Flip XY applied."""
         img = self._preview

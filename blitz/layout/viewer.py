@@ -13,6 +13,7 @@ from .. import settings
 from ..data.load import DataLoader, ImageData
 from ..theme import get_viewer_bg, get_timeline_curve_color, get_timeline_curve_colors_rgbw
 from ..data.ops import ReduceOperation
+from ..lut_levels import calculate_lut_levels
 from ..tools import fit_text, format_pixel_value, log
 
 
@@ -23,6 +24,7 @@ class ImageViewer(pg.ImageView):
     file_dropped = pyqtSignal(str)
     image_size_changed = pyqtSignal()
     image_changed = pyqtSignal()
+    histogram_ready = pyqtSignal()
     image_mask_changed = pyqtSignal()
     image_crop_changed = pyqtSignal()
 
@@ -198,9 +200,9 @@ class ImageViewer(pg.ImageView):
             xmin = 0.0
             xmax = float(xvals.max())
             self.timeLine.setBounds([xmin, xmax])
-        self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
-        if in_agg and len(xvals) > 0:
-            self.ui.roiPlot.setXRange(0.0, float(xvals.max()), padding=0)
+            self.ui.roiPlot.setXRange(0.0, xmax, padding=0)
+        else:
+            self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
         self._update_reference_timeline_curve()
 
     def set_reference_timeline_curve(self, x: np.ndarray, y: np.ndarray) -> None:
@@ -281,11 +283,19 @@ class ImageViewer(pg.ImageView):
             if spatial != self._last_roi_spatial_shape:
                 self._last_roi_spatial_shape = spatial
                 self.init_roi()
+        self.histogram_ready.emit()
         self.image_changed.emit()
 
     def updateImage(self, autoHistogramRange: bool = False) -> None:
-        """Override: when Auto fit is off, never recalc LUT on frame change (timeline click/drag)."""
+        """Override: when Auto fit is off, never recalc LUT on frame change (timeline click/drag).
+        When Auto fit is on, re-apply LUT percentile levels after parent (which uses min/max).
+        """
         super().updateImage(autoHistogramRange=self._auto_fit)
+        if self._auto_fit and self.image is not None:
+            mn, mx = self._calculate_levels(self.image)
+            if np.isfinite(mn) and np.isfinite(mx) and mx > mn:
+                self.setLevels(min=mn, max=mx)
+                self.ui.histogram.setHistogramRange(mn, mx)
 
     def toggle_auto_colormap(self) -> None:
         self._auto_colormap = not self._auto_colormap
@@ -305,27 +315,32 @@ class ImageViewer(pg.ImageView):
         ):
             return self._levels_cache
 
-        with np.errstate(invalid="ignore", over="ignore"):
-            if self._lut_percentile <= 0:
-                mn = float(np.nanmin(image))
-                mx = float(np.nanmax(image))
-            else:
-                p_lo = self._lut_percentile
-                p_hi = 100.0 - p_lo
-                # Use nanpercentile to handle NaNs/Masked values
-                mn, mx = np.nanpercentile(image, [p_lo, p_hi])
-                mn, mx = float(mn), float(mx)
-
+        mn, mx = calculate_lut_levels(image, self._lut_percentile)
         self._levels_cache = (mn, mx)
         self._levels_cache_percentile = self._lut_percentile
         return mn, mx
 
     def autoLevels(self) -> None:
-        if self.data.is_greyscale() and self._auto_colormap:
-            self.auto_colormap()
-        else:
-            super().autoLevels()
-            self._ensure_finite_levels(self.image)
+        if self.image is None:
+            return
+        min_, max_ = self._calculate_levels(self.image)
+        if not np.isfinite(min_):
+            min_ = 0.0
+        if not np.isfinite(max_) or max_ <= min_:
+            max_ = min_ + 1.0
+        if (
+            self.data is not None
+            and self.data.is_greyscale()
+            and self._auto_colormap
+        ):
+            if min_ < 0 < max_:
+                r = max(abs(min_), max_)
+                min_, max_ = -r, r
+                self.ui.histogram.gradient.restoreState(Gradients['bipolar'])
+            else:
+                self.ui.histogram.gradient.restoreState(Gradients['plasma'])
+        self.setLevels(min=min_, max=max_)
+        self.ui.histogram.setHistogramRange(min_, max_)
 
     def auto_colormap(self) -> None:
         min_, max_ = self._calculate_levels(self.image)
@@ -593,7 +608,8 @@ class ImageViewer(pg.ImageView):
     def get_position_info(
         self,
         pos: Optional[tuple[int, int]] = None,
-    ) -> tuple[float, float, str | None]:
+    ) -> tuple[int, int, str | None, Optional[float], np.ndarray | None]:
+        """Returns (x, y, value_str, raw_value, pixel_value) for cursor position."""
         if pos is None:
             if self.ui.graphicsView.lastMousePos is not None:
                 pos = self.ui.graphicsView.lastMousePos
@@ -602,11 +618,17 @@ class ImageViewer(pg.ImageView):
         pt = QPointF(pos) if hasattr(pos, "x") else QPointF(pos[0], pos[1])
         img_coords = self.view.vb.mapSceneToView(pt)
         x, y = int(img_coords.x()), int(img_coords.y())
-        if (0 <= x < self.image.shape[1] and 0 <= y < self.image.shape[2]):
-            pixel_value = self.image[self.currentIndex, x, y]
-        else:
-            pixel_value = None
-        return x, y, format_pixel_value(pixel_value)
+        if (
+            self.image is not None
+            and 0 <= x < self.image.shape[1]
+            and 0 <= y < self.image.shape[2]
+        ):
+            pv = self.image[self.currentIndex, x, y]
+            arr = np.asarray(pv)
+            raw = float(arr.flat[0])  # for LUT color lookup (use first channel)
+            value_str = format_pixel_value(pv)  # full pv for RGB support
+            return x, y, value_str, raw, pv
+        return x, y, format_pixel_value(None), None, None
 
     def get_frame_info(self) -> tuple[int, int, str]:
         current_image = int(self.currentIndex)

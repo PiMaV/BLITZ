@@ -6,6 +6,7 @@ from PyQt6.QtCore import QMetaObject, QSettings, pyqtBoundSignal
 from .tools import log
 
 _default_core_settings = {
+    "window/geometry": None,
     "window/relative_size": 0.85,
     "window/docks": {},
 
@@ -14,6 +15,7 @@ _default_core_settings = {
     "viewer/font_size_log": 9,
     "viewer/max_file_name_length": 40,
     "viewer/intersection_point_size": 10,
+    "viewer/splitter_handle_width": 6,
 
     "default/multicore_size_threshold": 300 * (1024**2),
     "default/multicore_files_threshold": 300,
@@ -34,8 +36,12 @@ _default_core_settings = {
     "app/restart_exit_code": -12341234,
     "app/theme": "dark",
 
-    "bench/show_stats": False,
+    "bench/show_stats": True,
 }
+
+# Opaque settings: stored/retrieved without type coercion (e.g. dock state from pyqtgraph)
+_OPAQUE_SETTINGS = frozenset({"window/docks", "window/geometry"})
+
 
 _default_project_settings = {
     "size_ratio": 1.0,
@@ -103,21 +109,23 @@ class _Settings:
 
     def __getitem__(self, setting: str) -> Any:
         self.settings.sync()
-        return self.settings.value(
-            setting,
-            self._default[setting],
-            type(self._default[setting]),
-        )
+        default = self._default[setting]
+        if setting in _OPAQUE_SETTINGS:
+            val = self.settings.value(setting, default)
+            return default if (val is None or val == "") else val
+        return self.settings.value(setting, default, type(default))
 
     def __setitem__(self, setting: str, value: Any) -> None:
-        if (def_type := type(self._default[setting])) != type(value):
-            try:
-                value = def_type(value)
-            except Exception:
-                raise ValueError(
-                    f"Setting '{setting}' of type {def_type} was given as "
-                    f"incorrect type {type(value)}"
-                )
+        if setting not in _OPAQUE_SETTINGS:
+            def_type = type(self._default[setting])
+            if def_type != type(value):
+                try:
+                    value = def_type(value)
+                except Exception:
+                    raise ValueError(
+                        f"Setting '{setting}' of type {def_type} was given as "
+                        f"incorrect type {type(value)}"
+                    )
         self.settings.setValue(setting, value)
 
     def remove(self) -> None:

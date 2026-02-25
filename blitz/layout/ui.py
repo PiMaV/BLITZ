@@ -15,6 +15,7 @@ from pyqtgraph.dockarea import Dock, DockArea
 from .. import __version__, settings
 from .. import resources  # noqa: F401  (import registers Qt resources)
 from ..data.ops import ReduceOperation, reduce_display_name
+from .. import settings
 from ..theme import get_style, get_plot_bg, get_agg_groupbox_stylesheet, get_agg_separator_stylesheet
 from ..tools import LoggingTextEdit, get_available_ram, setup_logger
 from .bench_compact import BenchCompact
@@ -81,12 +82,12 @@ class UI_MainWindow(QWidget):
 
         self.dock_lookup = Dock(
             "LUT",
-            size=(right_col_w, 0.6*viewer_height),
+            size=(right_col_w, int(0.33 * viewer_height)),
             hideTitle=True,
         )
         self.dock_option = Dock(
             "Options",
-            size=(right_col_w, 0.4*viewer_height),
+            size=(right_col_w, int(0.67 * viewer_height)),
             hideTitle=True,
         )
         self.dock_status = Dock(
@@ -126,17 +127,43 @@ class UI_MainWindow(QWidget):
     def setup_logger(self) -> None:
         logger = LoggingTextEdit()
         logger.setReadOnly(True)
+        self.logger_widget = logger
 
-        file_info_widget = QWidget()
-        file_info_widget.setMinimumHeight(getattr(self, "_top_band_h", 100))
-        layout = QVBoxLayout()
-        layout.addWidget(logger)
-        file_info_widget.setLayout(layout)
-        self.dock_status.addWidget(file_info_widget)
-        setup_logger(logger)
+        # dock_status: Frames | Position | Color (RGB/Grayscale); bit | patch
+        position_widget = QWidget()
+        position_widget.setMinimumHeight(getattr(self, "_top_band_h", 100))
+        pos_layout = QVBoxLayout(position_widget)
+        pos_layout.setContentsMargins(4, 2, 4, 2)
+        pos_layout.setSpacing(2)
+        self.label_frames = QLabel("Frames: —")
+        self.label_frames.setFont(QFont("Courier New", 10))
+        self.label_frames.setMinimumWidth(100)
+        pos_layout.addWidget(self.label_frames, 0)
+        self.label_position = QLabel("Position: X —  Y —")
+        self.label_position.setFont(QFont("Courier New", 10))
+        self.label_position.setMinimumWidth(120)
+        pos_layout.addWidget(self.label_position, 0)
+        self.label_color = QLabel("— · —")
+        self.label_color.setFont(QFont("Courier New", 10))
+        self.label_color.setMinimumWidth(200)
+        pos_layout.addWidget(self.label_color, 0)
+        self.color_swatch = QLabel()
+        self.color_swatch.setFixedSize(24, 24)
+        self.color_swatch.setFrameShape(QFrame.Shape.StyledPanel)
+        self.color_swatch.setFrameShadow(QFrame.Shadow.Sunken)
+        self.color_swatch.setStyleSheet(
+            "background-color: #3b4261; border: 1px solid #565f89;"
+        )
+        self.color_swatch.setToolTip("Color at cursor (LUT-mapped)")
+        pos_layout.addWidget(self.color_swatch, 0, Qt.AlignmentFlag.AlignLeft)
+        pos_layout.addStretch(1)
+        self.dock_status.addWidget(position_widget)
+        setup_logger(logger)  # one_liner set in setup_menu_and_status_bar
 
     def setup_image_and_line_viewers(self) -> None:
+        handle_w = settings.get("viewer/splitter_handle_width")
         self.image_viewer = ImageViewer()
+        self.image_viewer.ui.splitter.setHandleWidth(handle_w)
         self.dock_viewer.addWidget(self.image_viewer)
 
         self.h_plot = ExtractionPlot(self.image_viewer)
@@ -162,6 +189,7 @@ class UI_MainWindow(QWidget):
         timeline_decoy = pg.PlotWidget(self.image_viewer.ui.splitter)
         timeline_decoy.hide()
         self.timeline_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.timeline_splitter.setHandleWidth(handle_w)
         self.timeline_splitter.addWidget(self.timeline_stack)
         self.timeline_splitter.setStretchFactor(0, 1)
         timeline_container = QWidget()
@@ -191,6 +219,7 @@ class UI_MainWindow(QWidget):
         file_menu.addSeparator()
         self.action_export = file_menu.addAction("Export")
         file_menu.addSeparator()
+        self.action_reset_layout = file_menu.addAction("Reset Window Layout")
         self.action_restart = file_menu.addAction("Restart")
         self.menubar.addMenu(file_menu)
 
@@ -217,18 +246,19 @@ class UI_MainWindow(QWidget):
         font_status.setPointSize(settings.get("viewer/font_size_status_bar"))
 
         self.statusbar = QStatusBar()
-        self.position_label = QLabel("")
-        self.position_label.setFont(font_status)
-        self.statusbar.addPermanentWidget(self.position_label)
-        self.frame_label = QLabel("")
-        self.frame_label.setFont(font_status)
-        self.statusbar.addWidget(self.frame_label)
         self.file_label = QLabel("")
         self.file_label.setFont(font_status)
         self.statusbar.addWidget(self.file_label)
-        self.ram_label = QLabel("")
-        self.ram_label.setFont(font_status)
-        self.statusbar.addWidget(self.ram_label)
+        self.frame_label = QLabel("")
+        self.frame_label.setFont(font_status)
+        self.statusbar.addWidget(self.frame_label)
+        self.log_label = QLabel("")
+        self.log_label.setFont(font_status)
+        self.log_label.setMinimumWidth(100)
+        self.log_label.setMaximumWidth(400)
+        self.log_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.statusbar.addPermanentWidget(self.log_label)
+        setup_logger(self.logger_widget, one_liner_label=self.log_label)
 
     def setup_lut_dock(self) -> None:
         # Replace default vertical histogram with horizontal (more space, min-left max-right)
@@ -284,14 +314,12 @@ class UI_MainWindow(QWidget):
 
         self.button_autofit = QPushButton("Fit")
         self.spinbox_lut_percentile = QSpinBox()
-        self.spinbox_lut_percentile.setPrefix("Range: ")
+        self.spinbox_lut_percentile.setPrefix("Clip: ")
         self.spinbox_lut_percentile.setSuffix("%")
         self.spinbox_lut_percentile.setRange(0, 49)
         self.spinbox_lut_percentile.setValue(0)
         self.spinbox_lut_percentile.setSpecialValueText("Min/Max")
-        self.spinbox_lut_percentile.setToolTip(
-            "Percentile scaling: 0 = Min/Max, >0 = saturate top/bottom X%."
-        )
+        # Tooltip from tooltips.json (spinbox_lut_percentile)
         self.checkbox_auto_fit = QCheckBox("Auto fit")
         self.checkbox_auto_fit.setChecked(True)
         self.checkbox_auto_colormap = QCheckBox("Auto colormap")
@@ -335,16 +363,10 @@ class UI_MainWindow(QWidget):
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(2)
-        self.numba_dot = QLabel()
-        self.numba_dot.setFixedSize(10, 10)
-        self.numba_dot.setStyleSheet(
-            "background-color: #565f89; border-radius: 5px;"  # gray
-        )
-        self.numba_dot.setToolTip("Numba: —")
         right_layout.addWidget(self.blocking_status, 1)
         right_layout.addWidget(self.bench_compact, 0)
-        right_layout.addWidget(self.numba_dot, 0, Qt.AlignmentFlag.AlignCenter)
         lut_splitter = QSplitter(Qt.Orientation.Horizontal)
+        lut_splitter.setHandleWidth(settings.get("viewer/splitter_handle_width"))
         lut_splitter.addWidget(lut_left)
         lut_splitter.addWidget(right_panel)
         lut_splitter.setStretchFactor(0, 1)
@@ -503,7 +525,7 @@ class UI_MainWindow(QWidget):
         self.checkbox_minmax_per_image = QCheckBox("Min/Max per image")
         self.checkbox_minmax_per_image.setChecked(False)
         self.checkbox_envelope_per_crosshair = QCheckBox("Envelope per crosshair")
-        self.checkbox_envelope_per_crosshair.setChecked(False)
+        self.checkbox_envelope_per_crosshair.setChecked(True)
         self.checkbox_envelope_per_dataset = QCheckBox("Envelope per position (dataset)")
         self.checkbox_envelope_per_dataset.setChecked(False)
         self.spinbox_envelope_pct = QSpinBox()
@@ -805,7 +827,8 @@ class UI_MainWindow(QWidget):
                 self.timeline_splitter.setSizes([max(200, iv - bw), bw])
 
         self._set_timeline_splitter_sizes = _set_timeline_splitter_sizes
-        QTimer.singleShot(150, _set_timeline_splitter_sizes)
+        if not settings.get("window/docks"):
+            QTimer.singleShot(150, _set_timeline_splitter_sizes)
 
         # --- Tools ---
         tools_layout = QVBoxLayout()
@@ -1044,7 +1067,7 @@ class UI_MainWindow(QWidget):
             bool(settings.get("bench/show_stats"))
         )
         self.checkbox_bench_show_stats.setToolTip(
-            "CPU sparkline in LUT panel below IDLE. Disabled by default."
+            "CPU sparkline in LUT panel below IDLE."
         )
         bench_layout.addWidget(self.checkbox_bench_show_stats)
         self.bench_sparklines = BenchSparklines(self.bench_data)
@@ -1100,6 +1123,8 @@ class UI_MainWindow(QWidget):
         stream_layout.addLayout(connect_lay)
         stream_layout.addStretch()
         self.create_option_tab(stream_layout, "Stream")
+
+        self.option_tabwidget.addTab(self.logger_widget, "Log")
 
     def assign_tooltips(self) -> None:
         file = QFile(":/docs/tooltips.json")

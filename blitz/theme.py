@@ -11,7 +11,10 @@ def set_theme(theme: str) -> None:
 
 
 def get_stylesheet() -> str:
-    return STYLESHEET_LIGHT if _current_theme == "light" else STYLESHEET_FULL
+    from . import settings as _st
+    base = STYLESHEET_LIGHT if _current_theme == "light" else STYLESHEET_FULL
+    w = _st.get("viewer/splitter_handle_width")
+    return base.replace("__SPLITTER_W__", str(w))
 
 
 def get_style(name: str) -> str:
@@ -137,6 +140,10 @@ COLOR_BG_DARKER = "#1a1b26"
 STYLE_IDLE = f"background-color: {COLOR_BG_DARK}; color: {COLOR_FG};"
 STYLE_SCAN = f"background-color: {COLOR_ORANGE}; color: {COLOR_BG_DARKER};"
 STYLE_BUSY = f"background-color: {COLOR_RED}; color: white;"
+
+# Statusbar background (idle = subtle, busy = strong orange for visibility)
+STYLE_STATUSBAR_IDLE = f"QStatusBar {{ background-color: {COLOR_BG_DARK}; }}"
+STYLE_STATUSBAR_BUSY = f"QStatusBar {{ background-color: {COLOR_ORANGE}; color: {COLOR_BG_DARKER}; }}"
 
 # Option tab section headings
 STYLE_HEADING = f"""
@@ -329,6 +336,8 @@ _STYLES = {
         "idle": STYLE_IDLE,
         "scan": STYLE_SCAN,
         "busy": STYLE_BUSY,
+        "statusbar_idle": STYLE_STATUSBAR_IDLE,
+        "statusbar_busy": STYLE_STATUSBAR_BUSY,
         "heading": STYLE_HEADING,
         "heading_small": STYLE_HEADING_SMALL,
         "button_primary": STYLE_BUTTON_PRIMARY,
@@ -339,6 +348,8 @@ _STYLES = {
         "idle": STYLE_IDLE_LIGHT,
         "scan": STYLE_SCAN_LIGHT,
         "busy": STYLE_BUSY_LIGHT,
+        "statusbar_idle": "QStatusBar { background-color: #e0e2e8; }",
+        "statusbar_busy": "QStatusBar { background-color: #e0af68; color: #1a1b26; }",
         "heading": STYLE_HEADING_LIGHT,
         "heading_small": STYLE_HEADING_SMALL_LIGHT,
         "button_primary": STYLE_BUTTON_PRIMARY_LIGHT,
@@ -482,7 +493,7 @@ QGroupBox {
 QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; }
 
 QFrame { background-color: transparent; color: #a9b1d6; }
-QSplitter::handle { background-color: #3b4261; width: 2px; height: 2px; }
+QSplitter::handle { background-color: #3b4261; width: __SPLITTER_W__px; height: __SPLITTER_W__px; min-width: __SPLITTER_W__px; min-height: __SPLITTER_W__px; }
 
 QProgressBar {
     background-color: #1e2030;
@@ -618,7 +629,7 @@ QGroupBox { font-weight: bold; color: #7aa2f7; border: 1px solid #9aa5ce; border
 QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; }
 
 QFrame { background-color: transparent; color: #565f89; }
-QSplitter::handle { background-color: #9aa5ce; width: 2px; height: 2px; }
+QSplitter::handle { background-color: #9aa5ce; width: __SPLITTER_W__px; height: __SPLITTER_W__px; min-width: __SPLITTER_W__px; min-height: __SPLITTER_W__px; }
 
 QProgressBar { background-color: #e0e2e8; border: 1px solid #9aa5ce; border-radius: 4px; text-align: center; }
 QProgressBar::chunk { background-color: #7aa2f7; border-radius: 3px; }
