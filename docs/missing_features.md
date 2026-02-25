@@ -34,7 +34,7 @@ This document outlines features that are mentioned in documentation or concepts 
 ## Conceptual Features
 
 ### Autograd Engine
-- **Status:** Concept only (see `docs/AUTOGRAD_POTENTIAL.md`).
+- **Status:** Concept only (see `docs/autograd_potential.md`).
 - **Description:** A lightweight autograd engine for parameter optimization (e.g., auto-tuning filter parameters).
 - **Reason:** Experimental idea, not yet implemented.
 

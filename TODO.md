@@ -19,7 +19,7 @@
 
 ## Low Priority / Long Term / Discussion
 
-*   **Project Files:** Restore Load/Save project file functionality in a different way than before?. See `docs/MISSING_FEATURES.md`.
+*   **Project Files:** Restore Load/Save project file functionality in a different way than before?. See `docs/missing_features.md`.
 
 - LUT autorefresh / zoom?
 - PCA Compoenten Table smaller 
@@ -27,4 +27,4 @@
 
 ## Notes on "Missing" Features
 
-See [`docs/MISSING_FEATURES.md`](docs/MISSING_FEATURES.md) for details on features that are hidden, deactivated, or planned for the "Full" build (e.g., OMERO, DICOM, Crop Widget).
+See [`docs/missing_features.md`](docs/missing_features.md) for details on features that are hidden, deactivated, or planned for the "Full" build (e.g., OMERO, DICOM, Crop Widget).

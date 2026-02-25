@@ -2,7 +2,7 @@
 
 ## Data Sources & Build Variants
 
-Fuer Standard vs. Full Build, Loader/Converter/Handler und die Dependency-Regel siehe **`docs/SOURCES_AND_VARIANTS.md`**.
+Fuer Standard vs. Full Build, Loader/Converter/Handler und die Dependency-Regel siehe **`docs/sources_and_variants.md`**.
 
 ---
 
@@ -29,7 +29,7 @@ BLITZ is a Python-based image viewer and analysis tool built with **PyQt6** and 
     *   Lazy evaluation of crops, masks, and flips.
     *   Normalization (subtract/divide).
     *   Reduction (Mean, Max, Min, Std).
-    *   **`image_timeline`**: Property fuer die Timeline im Aggregate-Modus – liefert vollen Stack (norm + mask) ohne Reduce. Siehe `docs/TIMELINE_AGGREGATION.md`.
+    *   **`image_timeline`**: Property fuer die Timeline im Aggregate-Modus – liefert vollen Stack (norm + mask) ohne Reduce. Siehe `docs/timeline_aggregation.md`.
 *   **`DataLoader` (`load.py`)**: Responsible for reading files (Images, Video, Numpy). It uses `multiprocessing.Pool` for parallel loading of large image sequences.
 
 ### 2. UI Layer (`blitz/layout`)

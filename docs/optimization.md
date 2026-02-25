@@ -61,7 +61,7 @@ When loading large datasets, profiling reveals that the post-load delay is domin
 ## Future Concepts
 
 ### Lightweight Autograd
-See `docs/MISSING_FEATURES.md` and `docs/AUTOGRAD_POTENTIAL.md` for a concept on using a minimal autograd engine for parameter tuning.
+See `docs/missing_features.md` and `docs/autograd_potential.md` for a concept on using a minimal autograd engine for parameter tuning.
 
 ### Video to Float32 on Disk
 **Idea:** Decode compressed video once to a raw float32 memory-mapped file on disk.
