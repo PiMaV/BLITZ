@@ -6,7 +6,7 @@ from PyQt6.QtGui import QClipboard, QFont, QIcon
 from PyQt6.QtWidgets import (QAbstractSpinBox, QApplication, QButtonGroup,
                              QCheckBox, QComboBox, QDoubleSpinBox, QFrame,
                              QGridLayout, QGroupBox, QHBoxLayout, QLabel,
-                             QLayout, QLineEdit, QMenu, QMenuBar, QMessageBox,
+                             QLayout, QLineEdit, QMenu, QMenuBar,
                              QPushButton, QRadioButton, QScrollArea, QSizePolicy,
                              QSlider, QSplitter, QSpinBox, QStatusBar, QTabWidget,
                              QTableWidget, QVBoxLayout, QWidget)
@@ -211,9 +211,6 @@ class UI_MainWindow(QWidget):
         self.action_link_inp = about_menu.addAction("INP Greifswald")
         self.action_link_github = about_menu.addAction("GitHub")
         self.action_link_mess = about_menu.addAction("M.E.S.S.")
-        about_menu.addSeparator()
-        self.action_debug_layout_sizes = about_menu.addAction("Debug: Layout sizes")
-        self.action_debug_layout_sizes.setToolTip("Show timeline range and top band sizes (for min limits)")
         self.menubar.addMenu(about_menu)
 
         font_status = QFont()
@@ -232,53 +229,6 @@ class UI_MainWindow(QWidget):
         self.ram_label = QLabel("")
         self.ram_label.setFont(font_status)
         self.statusbar.addWidget(self.ram_label)
-
-    def get_layout_sizes(self) -> str:
-        """Return current timeline range and top band sizes for min-limit tuning."""
-        lines = ["Layout sizes (copy for min limits):", ""]
-        try:
-            wrk_w, wrk_h = self._workspace_size()
-            lines.append(f"Workspace: {wrk_w} x {wrk_h}")
-        except Exception:
-            pass
-        try:
-            w = self.selection_panel.width()
-            h = self.selection_panel.height()
-            min_w = self.selection_panel.minimumWidth()
-            lines.append(f"Timeline range: width={w} height={h} minWidth={min_w}")
-        except Exception as e:
-            lines.append(f"Timeline range: (error: {e})")
-        try:
-            w = self.dock_h_plot.size().width()
-            h = self.dock_h_plot.size().height()
-            lines.append(f"Top band (H plot dock): width={w} height={h}")
-        except Exception as e:
-            lines.append(f"Top band dock: (error: {e})")
-        try:
-            h = self.h_plot.height()
-            min_h = self.h_plot.minimumHeight()
-            lines.append(f"Top band (H plot widget): height={h} minHeight={min_h}")
-        except Exception as e:
-            lines.append(f"Top band widget: (error: {e})")
-        try:
-            h = self.dock_status.size().height()
-            lines.append(f"Top band (Log/dock_status): height={h}")
-        except Exception as e:
-            lines.append(f"Log dock: (error: {e})")
-        try:
-            sizes = self.timeline_splitter.sizes()
-            lines.append(f"Timeline splitter sizes: {sizes}")
-        except Exception as e:
-            lines.append(f"Splitter: (error: {e})")
-        return "\n".join(lines)
-
-    def show_layout_sizes(self) -> None:
-        """Show layout sizes in dialog and copy to clipboard."""
-        text = self.get_layout_sizes()
-        clipboard = QApplication.clipboard()
-        if clipboard:
-            clipboard.setText(text)
-        QMessageBox.information(self, "Layout sizes", text + "\n\n(Copied to clipboard)")
 
     def setup_lut_dock(self) -> None:
         # Replace default vertical histogram with horizontal (more space, min-left max-right)
@@ -580,6 +530,26 @@ class UI_MainWindow(QWidget):
         roi_layout.addWidget(self.checkbox_roi_drop, 2, 1, 1, 1)
         roi_layout.addWidget(self.checkbox_tof, 3, 0, 1, 1)
         view_layout.addLayout(roi_layout)
+
+        isoline_label = QLabel("Isolines")
+        isoline_label.setStyleSheet(get_style("heading"))
+        view_layout.addWidget(isoline_label)
+        self.checkbox_show_isocurve = QCheckBox("Show")
+        self.checkbox_show_isocurve.setChecked(False)
+        self.spinbox_isocurves = QSpinBox()
+        self.spinbox_isocurves.setMinimum(1)
+        self.spinbox_isocurves.setValue(1)
+        self.spinbox_isocurves.setPrefix("Count: ")
+        iso_hlay = QHBoxLayout()
+        iso_hlay.addWidget(self.checkbox_show_isocurve)
+        iso_hlay.addWidget(self.spinbox_isocurves)
+        view_layout.addLayout(iso_hlay)
+        self.spinbox_iso_smoothing = QSpinBox()
+        self.spinbox_iso_smoothing.setPrefix("Smoothing: ")
+        self.spinbox_iso_smoothing.setMinimum(0)
+        self.spinbox_iso_smoothing.setValue(3)
+        view_layout.addWidget(self.spinbox_iso_smoothing)
+
         view_layout.addStretch()
         self.create_option_tab(view_layout, "View")
 
@@ -643,7 +613,8 @@ class UI_MainWindow(QWidget):
         ops_range_method_row.addStretch()
         self.ops_range_method_widget.setVisible(False)
         self.ops_range_method_widget.setToolTip(
-            "Reduce method for Range and Sliding range (Mean, Max, Min, etc.)."
+            "Metric over the selection range: Mean (typical for background removal), Max, Min, Std, Median. "
+            "Max subtracts the brightest value per pixel (can yield dark/negative values)."
         )
         ops_layout.addWidget(self.ops_range_method_widget)
         self.ops_norm_widget = QWidget()
@@ -930,20 +901,6 @@ class UI_MainWindow(QWidget):
         rosee_hlay2.addWidget(self.checkbox_rosee_in_image_h)
         rosee_hlay2.addWidget(self.checkbox_rosee_in_image_v)
         rosee_layout.addLayout(rosee_hlay2)
-        self.checkbox_show_isocurve = QCheckBox("Isocurves")
-        self.checkbox_show_isocurve.setChecked(False)
-        self.spinbox_isocurves = QSpinBox()
-        self.spinbox_isocurves.setMinimum(1)
-        self.spinbox_isocurves.setValue(1)
-        iso_hlay = QHBoxLayout()
-        iso_hlay.addWidget(self.checkbox_show_isocurve)
-        iso_hlay.addWidget(self.spinbox_isocurves)
-        rosee_layout.addLayout(iso_hlay)
-        self.spinbox_iso_smoothing = QSpinBox()
-        self.spinbox_iso_smoothing.setPrefix("Smoothing: ")
-        self.spinbox_iso_smoothing.setMinimum(0)
-        self.spinbox_iso_smoothing.setValue(3)
-        rosee_layout.addWidget(self.spinbox_iso_smoothing)
         rosee_layout.addStretch()
         self.create_option_tab(rosee_layout, "RoSEE")
 

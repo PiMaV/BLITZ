@@ -64,6 +64,7 @@ from ..data.converters import get_ascii_metadata, load_ascii
 from .dialogs import (AsciiLoadOptionsDialog, CropTimelineDialog,
                      ImageLoadOptionsDialog, RealCameraDialog,
                      VideoLoadOptionsDialog)
+from .isoline import IsolineAdapter
 from .rosee import ROSEEAdapter
 from .simulated_live import SimulatedLiveWidget
 from .tof import TOFAdapter
@@ -107,6 +108,10 @@ class MainWindow(QMainWindow):
             (self.ui.textbox_rosee_slope_h,
              self.ui.textbox_rosee_slope_v),
         )
+        self.isoline_adapter = IsolineAdapter(self.ui.image_viewer)
+        self._iso_throttle_timer = QTimer(self)
+        self._iso_throttle_timer.setSingleShot(True)
+        self._iso_throttle_timer.timeout.connect(self.update_isocurves)
         self.setup_connections()
         self.reset_options()
         self.setup_sync()
@@ -155,10 +160,6 @@ class MainWindow(QMainWindow):
         self.ui.action_link_mess.triggered.connect(
             lambda: QDesktopServices.openUrl(URL_MESS)  # type: ignore
         )
-        self.ui.action_debug_layout_sizes.triggered.connect(
-            self.ui.show_layout_sizes
-        )
-
         # image_viewer connections
         self.ui.image_viewer.file_dropped.connect(self.load)
         self.ui.roi_plot.crop_range.sigRegionChanged.connect(
@@ -335,8 +336,8 @@ class MainWindow(QMainWindow):
         )
         self.ui.slider_ops_divide.valueChanged.connect(self.apply_ops)
         self.ui.button_ops_load_file.clicked.connect(self.load_ops_file)
-        self.ui.spinbox_crop_range_start.editingFinished.connect(self.apply_ops)
-        self.ui.spinbox_crop_range_end.editingFinished.connect(self.apply_ops)
+        # crop range: _on_selection_changed calls apply_ops(skip_update=True) when aggregate
+        # to avoid double mean computation (apply_aggregation handles refresh)
         # Reduce dropdown: only _on_reduce_changed (not apply_ops) to avoid double mean computation
         self.ui.roi_plot.clicked_to_set_frame.connect(
             self._on_timeline_clicked_to_frame
@@ -379,9 +380,6 @@ class MainWindow(QMainWindow):
             self._update_envelope_options
         )
         self.ui.checkbox_rosee_active.stateChanged.connect(self.toggle_rosee)
-        self.ui.checkbox_rosee_active.stateChanged.connect(
-            self.update_isocurves
-        )
         self.ui.checkbox_rosee_h.stateChanged.connect(self.toggle_rosee)
         self.ui.checkbox_rosee_v.stateChanged.connect(self.toggle_rosee)
         self.ui.checkbox_rosee_local_extrema.stateChanged.connect(
@@ -415,6 +413,7 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_show_isocurve.stateChanged.connect(
             self.update_isocurves
         )
+        self.ui.spinbox_isocurves.valueChanged.connect(self.update_isocurves)
         self.ui.button_pca_calc.clicked.connect(self.pca_calculate)
         self.ui.button_pca_show.clicked.connect(self.pca_toggle_show)
         self.ui.checkbox_pca_exact.stateChanged.connect(self._pca_on_exact_changed)
@@ -424,11 +423,14 @@ class MainWindow(QMainWindow):
         self.pca_adapter.started.connect(self.pca_on_started)
         self.pca_adapter.finished.connect(self.pca_on_finished)
         self.pca_adapter.error.connect(self.pca_on_error)
-        self.ui.spinbox_isocurves.editingFinished.connect(
+        self.ui.spinbox_iso_smoothing.valueChanged.connect(
             self.update_isocurves
         )
-        self.ui.spinbox_iso_smoothing.editingFinished.connect(
-            self.update_isocurves
+        self.ui.image_viewer.timeLine.sigPositionChanged.connect(
+            self._schedule_isocurves_update
+        )
+        self.ui.image_viewer.image_changed.connect(
+            self._schedule_isocurves_update
         )
         self.ui.image_viewer.image_changed.connect(self.update_bench)
         self.ui.image_viewer.image_changed.connect(self._update_selection_visibility)
@@ -735,9 +737,8 @@ class MainWindow(QMainWindow):
         )
 
     def _on_crop_range_for_ops(self) -> None:
-        """Crop range changed -> update Ops if Aggregate is used."""
+        """Crop range changed (drag). Pipeline/refresh via _on_selection_changed (same signal)."""
         s = self.ui.spinbox_crop_range_start.value()
-        self.apply_ops()
         self.ui.image_viewer.setCurrentIndex(s)
         self.ui.image_viewer.timeLine.setPos((s, 0))
 
@@ -844,7 +845,6 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_rosee_smoothing.setMaximum(
             min(self.ui.image_viewer.data.shape)
         )
-        self.ui.spinbox_isocurves.setValue(1)
         self.ui.checkbox_rosee_active.setChecked(False)
         self.ui.checkbox_rosee_h.setEnabled(False)
         self.ui.checkbox_rosee_h.setChecked(True)
@@ -852,10 +852,8 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_rosee_v.setChecked(True)
         self.ui.checkbox_rosee_normalize.setEnabled(False)
         self.ui.spinbox_rosee_smoothing.setEnabled(False)
-        self.ui.spinbox_isocurves.setEnabled(False)
-        self.ui.checkbox_show_isocurve.setEnabled(False)
+        self.ui.spinbox_isocurves.setValue(1)
         self.ui.checkbox_show_isocurve.setChecked(False)
-        self.ui.spinbox_iso_smoothing.setEnabled(False)
         self.ui.checkbox_rosee_local_extrema.setEnabled(False)
         self.ui.checkbox_rosee_show_lines.setEnabled(False)
         self.ui.checkbox_rosee_show_indices.setEnabled(False)
@@ -1009,8 +1007,10 @@ class MainWindow(QMainWindow):
         self.ui.v_plot.toggle_mark_position()
         self.ui.v_plot.draw_line()
 
-    def reset_selection_range(self) -> None:
-        """Set Selection auf volle Range [0, n-1]."""
+    def reset_selection_range(self, skip_apply: bool = False) -> None:
+        """Set Selection auf volle Range [0, n-1].
+        skip_apply: when True, do not call _on_selection_changed (caller handles apply).
+        Used by update_view_mode to avoid double mean computation."""
         if not hasattr(self.ui.image_viewer, "data") or self.ui.image_viewer.data is None:
             return
         n = max(1, self.ui.image_viewer.data.n_images)
@@ -1025,7 +1025,8 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_selection_window.blockSignals(False)
         self.ui.roi_plot.crop_range.setRegion((0, n - 1))
         self._update_full_range_button_style()
-        self._on_selection_changed()
+        if not skip_apply:
+            self._on_selection_changed()
 
     def _update_full_range_button_style(self) -> None:
         """Full Range button: highlighted when range is [0, n-1], default otherwise."""
@@ -1169,9 +1170,6 @@ class MainWindow(QMainWindow):
             self.ui.checkbox_rosee_v.setEnabled(True)
             self.ui.checkbox_rosee_normalize.setEnabled(True)
             self.ui.spinbox_rosee_smoothing.setEnabled(True)
-            self.ui.spinbox_isocurves.setEnabled(True)
-            self.ui.checkbox_show_isocurve.setEnabled(True)
-            self.ui.spinbox_iso_smoothing.setEnabled(True)
             self.ui.checkbox_rosee_local_extrema.setEnabled(True)
             self.ui.checkbox_rosee_show_lines.setEnabled(True)
             self.ui.checkbox_rosee_show_indices.setEnabled(True)
@@ -1184,9 +1182,6 @@ class MainWindow(QMainWindow):
             self.ui.checkbox_rosee_v.setEnabled(False)
             self.ui.checkbox_rosee_normalize.setEnabled(False)
             self.ui.spinbox_rosee_smoothing.setEnabled(False)
-            self.ui.spinbox_isocurves.setEnabled(False)
-            self.ui.checkbox_show_isocurve.setEnabled(False)
-            self.ui.spinbox_iso_smoothing.setEnabled(False)
             self.ui.checkbox_rosee_local_extrema.setEnabled(False)
             self.ui.checkbox_rosee_show_lines.setEnabled(False)
             self.ui.checkbox_rosee_show_indices.setEnabled(False)
@@ -1205,14 +1200,17 @@ class MainWindow(QMainWindow):
             smoothing=self.ui.spinbox_rosee_smoothing.value(),
             normalized=self.ui.checkbox_rosee_normalize.isChecked(),
             show_indices=self.ui.checkbox_rosee_show_indices.isChecked(),
-            iso_smoothing=self.ui.spinbox_iso_smoothing.value(),
             show_index_lines=self.ui.checkbox_rosee_show_lines.isChecked(),
         )
 
+    def _schedule_isocurves_update(self) -> None:
+        """Throttle isoline updates during timeline scrub / image changes."""
+        self._iso_throttle_timer.stop()
+        self._iso_throttle_timer.start(80)
+
     def update_isocurves(self) -> None:
-        self.rosee_adapter.update_iso(
-            on=self.ui.checkbox_show_isocurve.isChecked()
-                and self.ui.checkbox_rosee_active.isChecked(),
+        self.isoline_adapter.update(
+            on=self.ui.checkbox_show_isocurve.isChecked(),
             n=self.ui.spinbox_isocurves.value(),
             smoothing=self.ui.spinbox_iso_smoothing.value(),
         )
@@ -2040,9 +2038,12 @@ class MainWindow(QMainWindow):
         self._set_preview_frame_for_ops()
         self.ui.image_viewer.update_image(keep_timestep=True)
 
-    def apply_ops(self) -> None:
-        """Build Ops pipeline from UI and set on data."""
-        if self.ui.image_viewer.data.is_single_image():
+    def apply_ops(self, skip_update: bool = False) -> None:
+        """Build Ops pipeline from UI and set on data.
+        skip_update: when True, set pipeline but do not call update_image (caller does refresh).
+        Used when in aggregate view to avoid double mean computation."""
+        data = self.ui.image_viewer.data
+        if data is None:
             return
         bounds = (
             self.ui.spinbox_crop_range_start.value(),
@@ -2086,7 +2087,24 @@ class MainWindow(QMainWindow):
             (sub_src == "sliding_aggregate" and sub_amt > 0)
             or (div_src == "sliding_aggregate" and div_amt > 0)
         )
-        self.ui.ops_range_method_widget.setVisible(has_range_step or has_sliding_step)
+        need_range_method = has_range_step or has_sliding_step
+        was_hidden = not self.ui.ops_range_method_widget.isVisible()
+        self.ui.ops_range_method_widget.setVisible(need_range_method)
+        if need_range_method:
+            QApplication.processEvents()
+            if was_hidden:
+                self.ui.combobox_ops_range_method.blockSignals(True)
+                self.ui.combobox_ops_range_method.setCurrentIndex(0)
+                self.ui.combobox_ops_range_method.blockSignals(False)
+                QApplication.processEvents()
+            range_method = self.ui.combobox_ops_range_method.currentData()
+            if range_method is None:
+                self.ui.combobox_ops_range_method.blockSignals(True)
+                self.ui.combobox_ops_range_method.setCurrentIndex(0)
+                self.ui.combobox_ops_range_method.blockSignals(False)
+                range_method = ReduceOperation.MEAN
+        else:
+            range_method = ReduceOperation.MEAN
         if has_range_step and self._is_aggregate_view():
             # Range subtraction in Aggregate view = mean minus mean (artifact).
             # Switch to Frame so user sees frame - mean instead.
@@ -2106,13 +2124,22 @@ class MainWindow(QMainWindow):
             pipeline["divide"] = div
 
         if pipeline:
+            def _method_label(step: dict) -> str:
+                m = step.get("method", "MEAN")
+                name = m.name if hasattr(m, "name") else str(m)
+                return name.capitalize()
             parts = []
             if "subtract" in pipeline:
-                parts.append("Subtracting")
+                s = pipeline["subtract"]
+                lbl = _method_label(s) if s.get("source") == "aggregate" else ""
+                parts.append(f"Subtracting ({lbl})" if lbl else "Subtracting")
             if "divide" in pipeline:
-                parts.append(
-                    "Dividing" if div_src != "sliding_aggregate" else "Normalizing"
-                )
+                d = pipeline["divide"]
+                lbl = _method_label(d) if d.get("source") == "aggregate" else ""
+                if div_src != "sliding_aggregate":
+                    parts.append(f"Dividing ({lbl})" if lbl else "Dividing")
+                else:
+                    parts.append("Normalizing")
             msg = " & ".join(parts) + "..."
         else:
             msg = None
@@ -2120,12 +2147,14 @@ class MainWindow(QMainWindow):
             with LoadingManager(self, msg, blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
                 self.ui.image_viewer.data.set_ops_pipeline(pipeline)
                 self._set_preview_frame_for_ops()
-                keep = self._is_sliding_mean_preview() or (has_range_step and not self._is_aggregate_view())
-                self.ui.image_viewer.update_image(keep_timestep=keep)
+                if not skip_update:
+                    keep = self._is_sliding_mean_preview() or (has_range_step and not self._is_aggregate_view())
+                    self.ui.image_viewer.update_image(keep_timestep=keep)
         else:
             self.ui.image_viewer.data.set_ops_pipeline(None)
             self.ui.image_viewer.data.preview_frame = None
-            self.ui.image_viewer.update_image()
+            if not skip_update:
+                self.ui.image_viewer.update_image()
 
     def update_view_mode(self) -> None:
         """Switch between Single Frame (Reduce=None) and Aggregated (Reduce=Mean/Max/etc)."""
@@ -2138,10 +2167,11 @@ class MainWindow(QMainWindow):
                 and len(getattr(data, "_result_cache", {})) == 0
             )
             if getattr(self, "_aggregate_first_open", True) and cache_empty:
-                self.reset_selection_range()
+                self.reset_selection_range(skip_apply=True)
                 self._aggregate_first_open = False
         self._update_selection_visibility()
         if is_agg:
+            self.apply_ops(skip_update=True)
             self.apply_aggregation()
         else:
             with LoadingManager(self, "Switching...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
@@ -2154,6 +2184,8 @@ class MainWindow(QMainWindow):
         s = self.ui.spinbox_crop_range_start.value()
         self.ui.image_viewer.setCurrentIndex(s)
         self.ui.image_viewer.timeLine.setPos((s, 0))
+        # Update pipeline (bounds) first; skip update_image when aggregate to avoid double mean
+        self.apply_ops(skip_update=self._is_aggregate_view())
         if self._is_aggregate_view():
             self.apply_aggregation()
 
@@ -2175,7 +2207,18 @@ class MainWindow(QMainWindow):
             self.ui.spinbox_crop_range_start.value(),
             self.ui.spinbox_crop_range_end.value(),
         )
-        with LoadingManager(self, f"Computing {op.name}...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0) as lm:
+        # Include range method when pipeline has subtract/divide with Range
+        p = getattr(data, "_ops_pipeline", None) or {}
+        sub = p.get("subtract") or {}
+        div = p.get("divide") or {}
+        range_label = ""
+        for s in (sub, div):
+            if s.get("source") == "aggregate":
+                m = s.get("method", "MEAN")
+                range_label = f" (range: {m.name if hasattr(m, 'name') else m})"
+                break
+        msg = f"Computing {op.name}{range_label}..."
+        with LoadingManager(self, msg, blocking_label=self.ui.blocking_status, blocking_delay_ms=0) as lm:
             self.ui.image_viewer.reduce(op, bounds=bounds)
         s, e = bounds
         self.ui.image_viewer.timeLine.setPos((s, 0))

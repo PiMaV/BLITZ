@@ -2,6 +2,9 @@
 
 ## TL;DR
 
+Most folder-based image workflows still treat images as files.  
+**BLITZ** treats them as structured data.
+
 **BLITZ** is a high-performance, matrix-based image viewer for efficiently managing massive datasets and single-image analysis.  
 Version 2.0 features a fully refactored architecture with improved performance, stability, and maintainability.
 
@@ -20,16 +23,15 @@ For Ubuntu, make the file executable:
 
 **Key Features:**
 
-- **Fast Data Handling:** Handles very large datasets efficiently (e.g. 21,000 images (~25GB) in ~35 seconds on a standard gaming laptop).
-- **Easy Data Handling:** Drag-and-drop support for image, video, and NUMPY matrix (*.npy) formats.
-- **Easy-to-use:** Automatic resource management for small and large datasets.
+- **High-Performance Data Handling:** Efficiently processes very large datasets (e.g. loading, scaling, and converting ~21,000 RGB images (~2.5 GB raw data) into ~6.2 GB of grayscale matrix data in ~30 s on a standard gaming laptop).
+- **Easy Data Handling:** Drag-and-drop support for image, video, and NumPy matrix (*.npy) formats.
+- **Easy to Use:** Automatic resource management for small and large datasets.
 - **User-Friendly Interface:** Intuitive GUI with mouse-based navigation and shortcuts.
 - **Advanced Image Processing:** Matrix-based processing with fast, Numba-accelerated statistics.
 - **Live View:** Support for real USB cameras and simulated data streams.
 - **Built on Python:** Using Qt and PyQtGraph for high performance and flexibility.
 
 ![BLITZ Interface](docs/images/BLITZ_overview_V2.png)
-
 ---
 
 (Click if animation is not playing)

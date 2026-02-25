@@ -2,7 +2,9 @@
 
 ## Known Issues (Bugs)
 
-- ...
+- deactivate PCA when aggragation images are seleccted
+- LUT: nicht min max sondern perecntiles?
+
 
 ## High Priority Features
 
@@ -16,6 +18,7 @@
 *   **Proper Exporter:** Dialog with Options to export as *.npy or image for Raw / Pipeline / PCA data
 *   **RoSEE:** Check Isolines and normalization (Autozoom should activate).
 *   **Mouse Wheel Zoom:** Allow zooming only on one axis (in extraction plots?).
+* Check Docker build
 
 ## Low Priority / Long Term / Discussion
 
@@ -24,6 +27,8 @@
 - LUT autorefresh / zoom?
 - PCA Compoenten Table smaller 
 - Binary Mask Eval?
+- reintroduce pickle for numpy?
+- if data is grayscale, but image is rgb or such: identify from first image and simply load only first channel? Just as quick check
 
 ## Notes on "Missing" Features
 

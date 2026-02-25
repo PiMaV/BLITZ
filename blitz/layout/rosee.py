@@ -36,58 +36,6 @@ class ROSEEAdapter:
         self._all_lines_h: list[pg.PlotDataItem] = []
         self._all_lines_v: list[pg.PlotDataItem] = []
 
-        self._show_iso: bool = False
-        self._n_iso = 1
-        self._isocurves: list[pg.IsocurveItem] = []
-        self._isolines: list[pg.InfiniteLine] = []
-        self.reset_iso()
-
-    def reset_iso(self):
-        while len(self._isocurves) > 0:
-            curve = self._isocurves.pop()
-            self.viewer.view.removeItem(curve)
-            line = self._isolines.pop()
-            self.viewer.getHistogramWidget().vb.removeItem(line)
-
-        cmap: pg.ColorMap = pg.colormap.get("CET-C6")  # type: ignore
-        for i in range(self._n_iso):
-            curve = pg.IsocurveItem(
-                level=0,
-                pen=pg.mkPen(cmap[(i+1) / self._n_iso]),
-            )
-            line = pg.InfiniteLine(
-                angle=0,
-                movable=True,
-                pen=pg.mkPen(
-                    cmap[(i+1) / self._n_iso],
-                    width=3,
-                ),
-            )
-            line.setZValue(1000)
-            line.sigPositionChanged.connect(self._update_iso_level)
-            self._isocurves.append(curve)
-            self._isolines.append(line)
-            self.viewer.view.addItem(curve)
-            self.viewer.getHistogramWidget().vb.addItem(line)
-            if not self._show_iso:
-                curve.hide()
-                line.hide()
-
-        mean_val = np.mean(self.viewer.now)
-        if self._n_iso > 1:
-            std_val = np.std(self.viewer.now)
-            levels = np.linspace(
-                mean_val-std_val,
-                mean_val+std_val,
-                self._n_iso,
-            )
-            levels = np.clip(levels, 0, np.max(self.viewer.now))
-        else:
-            levels = [mean_val]
-
-        for isoLine, level in zip(self._isolines, levels):
-            isoLine.setValue(level)
-
     def toggle(
         self,
         h_plot: bool = False,
@@ -100,27 +48,6 @@ class ROSEEAdapter:
         self._show_h_image = h_image
         self._show_v_image = v_image
 
-    def update_iso(
-        self,
-        on: bool,
-        n: int = 1,
-        smoothing: int = 0,
-    ) -> None:
-        if on != self._show_iso:
-            if self._show_iso:
-                for curve, line in zip(self._isocurves, self._isolines):
-                    curve.hide()
-                    line.hide()
-            else:
-                for curve, line in zip(self._isocurves, self._isolines):
-                    curve.show()
-                    line.show()
-            self._show_iso = not self._show_iso
-        if n != self._n_iso:
-            self._n_iso = n
-            self.reset_iso()
-        self._update_iso(smoothing=smoothing)
-
     def update(
         self,
         use_local_extrema: bool,
@@ -128,7 +55,6 @@ class ROSEEAdapter:
         normalized: bool,
         show_indices: bool,
         show_index_lines: bool,
-        iso_smoothing: int,
     ) -> None:
         if self._show_h_plot or self._show_h_image:
             self._update(
@@ -168,8 +94,6 @@ class ROSEEAdapter:
             self.v_plot.draw_line()
             self.interval_edit[1].setText("")
             self.slope_edit[1].setText("eye: ")
-        if self._show_iso:
-            self._update_iso(iso_smoothing)
 
     def _update(
         self,
@@ -450,29 +374,3 @@ class ROSEEAdapter:
             event_indices = np.array((start_index, max_slope, end_index))
 
         return cumsum, fluctuation, event_indices
-
-    def _update_iso(self, smoothing: int = 0) -> None:
-        mean_val = np.mean(self.viewer.now)
-        if self._n_iso > 1:
-            std_val = np.std(self.viewer.now)
-            levels = np.linspace(
-                mean_val-std_val,
-                mean_val+std_val,
-                self._n_iso,
-            )
-            levels = np.clip(levels, 0, np.max(self.viewer.now))
-        else:
-            levels = [mean_val]
-
-        filtered_data = pg.gaussianFilter(
-            self.viewer.now[..., 0],
-            (smoothing, smoothing),
-        )
-
-        for iso, line in zip(self._isocurves, self._isolines):
-            iso.setLevel(line.value())
-            iso.setData(filtered_data)
-
-    def _update_iso_level(self) -> None:
-        for curve, line in zip(self._isocurves, self._isolines):
-            curve.setLevel(line.value())

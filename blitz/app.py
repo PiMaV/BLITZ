@@ -1,5 +1,8 @@
 import multiprocessing
 import sys
+import traceback
+from datetime import datetime
+from pathlib import Path
 
 import pyqtgraph as pg
 from PyQt6.QtCore import QCoreApplication
@@ -32,7 +35,27 @@ from .layout.main import MainWindow
 from .theme import get_stylesheet, set_theme
 
 
+def _crash_log_path() -> Path:
+    """Path for crash log: next to exe when frozen, else cwd."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent / "blitz_crash.log"
+    return Path.cwd() / "blitz_crash.log"
+
+
+def _excepthook(exc_type, exc_value, exc_tb) -> None:
+    """Write uncaught exceptions to blitz_crash.log next to the exe."""
+    try:
+        path = _crash_log_path()
+        with path.open("a", encoding="utf-8") as f:
+            f.write(f"\n--- {datetime.now().isoformat()} ---\n")
+            traceback.print_exception(exc_type, exc_value, exc_tb, file=f)
+    except Exception:  # noqa: S110
+        pass
+    sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+
 def run() -> int:
+    sys.excepthook = _excepthook
     multiprocessing.freeze_support()
     pg.setConfigOptions(useNumba=False)
     exit_code = 0

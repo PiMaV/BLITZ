@@ -58,6 +58,7 @@ class ImageData:
         self._ops_pipeline: dict | None = None  # {subtract, divide} steps
         self._agg_bounds: tuple[int, int] | None = None  # Non-destructive agg range
         self._result_cache: dict[tuple[object, object], np.ndarray] = {}  # (op, bounds) -> result
+        self._ref_cache: dict[tuple[str, tuple[int, int]], np.ndarray] = {}  # (method, bounds) -> ref
         self._bench_cache_hits: int = 0  # For Bench tab
         self._bench_cache_misses: int = 0
         self.use_numba: bool = True
@@ -73,11 +74,36 @@ class ImageData:
         if src == "aggregate" and step.get("bounds") is not None:
             b0, b1 = step["bounds"]
             method = step.get("method", "MEAN")
-            ref = ops.get(method)(image[b0 : b1 + 1]).astype(np.float32)
+            # Support both ReduceOperation enum and string (e.g. from project load)
+            if hasattr(method, "name"):
+                method = method.name
+            method_str = str(method).upper()
+            cache_key = (method_str, (b0, b1))
+            if cache_key in self._ref_cache:
+                return self._ref_cache[cache_key]
+            slice_ = image[b0 : b1 + 1]
+            if slice_.size == 0:
+                return None
+            ref = ops.get(method)(slice_).astype(np.float32)
+            self._ref_cache[cache_key] = ref
             return ref
         if src == "file" and step.get("reference") is not None:
             ref_img = step["reference"]._image
-            if ref_img.shape[0] != 1 or ref_img.shape[1:] != image.shape[1:]:
+            if ref_img.shape[0] != 1:
+                if not getattr(self, "_logged_ref_multi_frame", False):
+                    self._logged_ref_multi_frame = True
+                    log("Reference must be single image (1 frame)", color="red")
+                return None
+            if ref_img.shape[1:] != image.shape[1:]:
+                key = ("file_shape", ref_img.shape[1:], image.shape[1:])
+                logged = getattr(self, "_ref_mismatch_logged", set())
+                if key not in logged:
+                    logged.add(key)
+                    self._ref_mismatch_logged = logged
+                    log(
+                        f"Reference shape {ref_img.shape[1:]} != data shape {image.shape[1:]}",
+                        color="red",
+                    )
                 return None
             return ref_img.astype(np.float32)
         if src == "sliding_mean":
@@ -222,6 +248,9 @@ class ImageData:
         """Clear result cache when input changes (pipeline, crop). Not on op/bounds change."""
         self._result_cache.clear()
         self._reduced.clear()
+        self._ref_cache.clear()
+        self._logged_ref_multi_frame = False
+        self._ref_mismatch_logged = set()
 
     def _get_cached_result(self, operation: object, bounds: object) -> np.ndarray | None:
         """Return cached result for (op, bounds) or None."""

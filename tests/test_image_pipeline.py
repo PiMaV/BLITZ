@@ -52,6 +52,20 @@ class TestOpsPipeline:
         out = img.image
         np.testing.assert_allclose(out[:, 0, 0, 0], [-10.0, 0.0, 10.0])
 
+    def test_subtract_aggregate_max(self) -> None:
+        """Range method Max: subtract per-pixel max over range from each frame."""
+        data = np.array([10, 20, 30], dtype=np.float32).reshape(3, 1, 1, 1)
+        meta = _make_meta(3)
+        img = ImageData(data, meta)
+
+        pipeline = {
+            "subtract": {"source": "aggregate", "bounds": (0, 2), "method": "MAX", "amount": 1.0},
+        }
+        img.set_ops_pipeline(pipeline)
+        out = img.image
+        # Ref max=30, frame - 30: [10-30, 20-30, 30-30] = [-20, -10, 0]
+        np.testing.assert_allclose(out[:, 0, 0, 0], [-20.0, -10.0, 0.0])
+
     def test_subtract_amount(self) -> None:
         data = np.ones((2, 2, 2, 1), dtype=np.float32) * 100.0
         meta = _make_meta(2)
