@@ -122,9 +122,15 @@ class _Settings:
 
     def remove(self) -> None:
         for signal, connection in self._connections:
-            signal.disconnect(connection)
+            try:
+                signal.disconnect(connection)
+            except TypeError:
+                pass  # Connection might already be disconnected
         if not self._keep:
-            self._path.unlink()
+            try:
+                self._path.unlink(missing_ok=True)
+            except OSError:
+                pass  # Ignore errors if file cannot be deleted
 
 
 SETTINGS: _Settings = None  # type: ignore

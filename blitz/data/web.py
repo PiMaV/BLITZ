@@ -5,7 +5,7 @@ from pathlib import Path
 import requests
 import socketio
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
-from requests.exceptions import ConnectTimeout
+from requests.exceptions import ConnectTimeout, RequestException
 from socketio.exceptions import ConnectionError, TimeoutError
 
 from .. import settings
@@ -83,9 +83,9 @@ class _WebDownloader(QObject):
         while attempts < max_attempts:
             try:
                 response = requests.get(self._target, timeout=2)
-            except ConnectTimeout:
-                log("[NET] Unable to reach server, "
-                    f"Attempt {attempts+1}/{max_attempts}")
+            except (ConnectTimeout, RequestException) as e:
+                log(f"[NET] Connection error: {e}, "
+                    f"Attempt {attempts+1}/{max_attempts}", color="orange")
                 attempts += 1
             else:
                 break
@@ -150,9 +150,17 @@ class WebDataLoader(QObject):
         self._download_thread.quit()
         self._download_thread.wait()
         if path is not None:
-            img = DataLoader(**self._load_kwargs).load(path)
-            os.remove(path)
-            self.image_received.emit(img)
+            try:
+                img = DataLoader(**self._load_kwargs).load(path)
+                self.image_received.emit(img)
+            except Exception as e:
+                log(f"[NET] Error loading downloaded file: {e}", color="red")
+                self.image_received.emit(None)
+            finally:
+                try:
+                    os.remove(path)
+                except OSError:
+                    log(f"[NET] Failed to remove temp file: {path}", color="orange")
 
     def start(self) -> None:
         self._start_listening()
