@@ -1,4 +1,4 @@
-# BLITZ
+# BLITZ V2.0
 
 ## TL;DR
 
