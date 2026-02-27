@@ -637,6 +637,12 @@ class MainWindow(QMainWindow):
             self.ui.checkbox_load_8bit.setChecked,
         )
         settings.connect_sync(
+            "default/load_normalize",
+            self.ui.checkbox_load_normalize.stateChanged,
+            self.ui.checkbox_load_normalize.isChecked,
+            self.ui.checkbox_load_normalize.setChecked,
+        )
+        settings.connect_sync(
             "default/load_grayscale",
             self.ui.checkbox_load_grayscale.stateChanged,
             self.ui.checkbox_load_grayscale.isChecked,
@@ -1511,6 +1517,7 @@ class MainWindow(QMainWindow):
         self._ascii_session_defaults = {
             "size_ratio": user_params["size_ratio"],
             "convert_to_8_bit": user_params["convert_to_8_bit"],
+            "normalize": user_params.get("normalize", False),
             "delimiter": user_params["delimiter"],
             "first_col_is_row_number": user_params["first_col_is_row_number"],
             "flip_xy": user_params.get("flip_xy", False),
@@ -1872,6 +1879,8 @@ class MainWindow(QMainWindow):
                     max_ram=self.ui.spinbox_max_ram.value(),
                     convert_to_8_bit=
                         self.ui.checkbox_load_8bit.isChecked(),
+                    normalize=
+                        self.ui.checkbox_load_normalize.isChecked(),
                     grayscale=self.ui.checkbox_load_grayscale.isChecked(),
                     mask=mask,
                     crop=crop,
@@ -1906,6 +1915,7 @@ class MainWindow(QMainWindow):
             "subset_ratio": self.ui.spinbox_load_subset.value(),
             "max_ram": self.ui.spinbox_max_ram.value(),
             "convert_to_8_bit": self.ui.checkbox_load_8bit.isChecked(),
+            "normalize": self.ui.checkbox_load_normalize.isChecked(),
             "grayscale": self.ui.checkbox_load_grayscale.isChecked(),
         }
 
@@ -1935,6 +1945,7 @@ class MainWindow(QMainWindow):
                             "step": user_params["step"],
                             "grayscale": user_params["grayscale"],
                             "convert_to_8_bit": user_params.get("convert_to_8_bit", False),
+                            "normalize": user_params.get("normalize", False),
                             "flip_xy": user_params.get("flip_xy", False),
                             "_data_size": video_data_size,
                         }
@@ -1958,6 +1969,9 @@ class MainWindow(QMainWindow):
                         self.ui.checkbox_load_8bit.setChecked(
                             user_params.get("convert_to_8_bit", False),
                         )
+                        self.ui.checkbox_load_normalize.setChecked(
+                            user_params.get("normalize", False),
+                        )
                     else:
                         return
                 else:
@@ -1976,11 +1990,17 @@ class MainWindow(QMainWindow):
                         params["convert_to_8_bit"] = self._video_session_defaults.get(
                             "convert_to_8_bit", params["convert_to_8_bit"]
                         )
+                        params["normalize"] = self._video_session_defaults.get(
+                            "normalize", False,
+                        )
                         params["flip_xy"] = self._video_session_defaults.get("flip_xy", False)
                         self.ui.spinbox_load_size.setValue(params["size_ratio"])
                         self.ui.spinbox_load_subset.setValue(params["subset_ratio"])
                         self.ui.checkbox_load_grayscale.setChecked(params["grayscale"])
                         self.ui.checkbox_load_8bit.setChecked(params["convert_to_8_bit"])
+                        self.ui.checkbox_load_normalize.setChecked(
+                            params.get("normalize", False),
+                        )
                         if "mask_rel" in self._video_session_defaults:
                             r = self._video_session_defaults["mask_rel"]
                             sr = params["size_ratio"]
@@ -2021,6 +2041,7 @@ class MainWindow(QMainWindow):
                                 "size_ratio": user_params["size_ratio"],
                                 "grayscale": user_params["grayscale"],
                                 "convert_to_8_bit": user_params.get("convert_to_8_bit", False),
+                                "normalize": user_params.get("normalize", False),
                                 "flip_xy": user_params.get("flip_xy", False),
                                 "_data_size": image_data_size,
                             }
@@ -2046,6 +2067,9 @@ class MainWindow(QMainWindow):
                             self.ui.checkbox_load_8bit.setChecked(
                                 user_params.get("convert_to_8_bit", False),
                             )
+                            self.ui.checkbox_load_normalize.setChecked(
+                                user_params.get("normalize", False),
+                            )
                         else:
                             return
                     else:
@@ -2062,11 +2086,17 @@ class MainWindow(QMainWindow):
                             params["convert_to_8_bit"] = self._image_session_defaults.get(
                                 "convert_to_8_bit", params["convert_to_8_bit"]
                             )
+                            params["normalize"] = self._image_session_defaults.get(
+                                "normalize", False,
+                            )
                             params["flip_xy"] = self._image_session_defaults.get("flip_xy", False)
                             self.ui.spinbox_load_size.setValue(params["size_ratio"])
                             self.ui.spinbox_load_subset.setValue(params["subset_ratio"])
                             self.ui.checkbox_load_grayscale.setChecked(params["grayscale"])
                             self.ui.checkbox_load_8bit.setChecked(params["convert_to_8_bit"])
+                            self.ui.checkbox_load_normalize.setChecked(
+                                params.get("normalize", False),
+                            )
                             if "mask_rel" in self._image_session_defaults:
                                 r = self._image_session_defaults["mask_rel"]
                                 sr = params["size_ratio"]

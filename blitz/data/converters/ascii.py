@@ -185,6 +185,7 @@ def _load_single_ascii_file(
     size_ratio: float,
     mask: Optional[tuple[slice, slice]],
     convert_to_8_bit: bool,
+    normalize: bool = False,
 ) -> Optional[tuple[np.ndarray, MetaData]]:
     """Load one ASCII file. Returns (matrix, metadata) or None on failure. Top-level for Pool."""
     arr = _parse_ascii(path, delimiter, first_col_is_row_number)
@@ -196,13 +197,19 @@ def _load_single_ascii_file(
         new_shape = tuple(int(dim * size_ratio) for dim in arr.shape[:2])
         arr = cv2.resize(arr.astype(np.float64), (new_shape[1], new_shape[0]), interpolation=cv2.INTER_AREA)
         if convert_to_8_bit:
-            lo, hi = np.nanpercentile(arr, (2, 98))
-            if hi > lo:
-                arr = np.clip((arr - lo) / (hi - lo) * 255, 0, 255)
+            if normalize:
+                lo, hi = np.nanpercentile(arr, (2, 98))
+                if hi > lo:
+                    arr = np.clip((arr - lo) / (hi - lo) * 255, 0, 255)
+                    arr = np.nan_to_num(arr, nan=0.0, posinf=255, neginf=0)
+                    arr = arr.astype(np.uint8)
+                else:
+                    arr = np.zeros_like(arr, dtype=np.uint8)
+            else:
+                # Fixed scale 0..1 -> 0..255 so brightness is comparable across files
+                arr = (arr.astype(np.float64) * 255.0).clip(0, 255)
                 arr = np.nan_to_num(arr, nan=0.0, posinf=255, neginf=0)
                 arr = arr.astype(np.uint8)
-            else:
-                arr = np.zeros_like(arr, dtype=np.uint8)
         h, w = arr.shape[0], arr.shape[1]
         meta = MetaData(
             file_name=path.name,
@@ -238,6 +245,7 @@ def load_ascii(
     subset_ratio: float = 1.0,
     mask: Optional[tuple[slice, slice]] = None,
     convert_to_8_bit: bool = False,
+    normalize: bool = False,
     delimiter: str = "\t",
     first_col_is_row_number: bool = True,
     *,
@@ -256,7 +264,7 @@ def load_ascii(
     n = len(files)
 
     sample = _load_single_ascii_file(
-        files[0], delimiter, first_col_is_row_number, size_ratio, mask, convert_to_8_bit
+        files[0], delimiter, first_col_is_row_number, size_ratio, mask, convert_to_8_bit, normalize
     )
     total_size_estimate = 0
     if sample is not None:
@@ -268,7 +276,7 @@ def load_ascii(
     size_thresh = settings.get("default/multicore_size_threshold")
     use_multicore = n > files_thresh or total_size_estimate > size_thresh
 
-    args = [(fp, delimiter, first_col_is_row_number, size_ratio, mask, convert_to_8_bit) for fp in files]
+    args = [(fp, delimiter, first_col_is_row_number, size_ratio, mask, convert_to_8_bit, normalize) for fp in files]
     if use_multicore:
         reason = []
         if n > files_thresh:
@@ -296,7 +304,7 @@ def load_ascii(
         for i, fp in enumerate(files):
             if message_callback:
                 message_callback(f"Loading {fp.name}..." + (f" ({i+1}/{n})" if n > 1 else ""))
-            results.append(_load_single_ascii_file(fp, delimiter, first_col_is_row_number, size_ratio, mask, convert_to_8_bit))
+            results.append(_load_single_ascii_file(fp, delimiter, first_col_is_row_number, size_ratio, mask, convert_to_8_bit, normalize))
             if progress_callback and n > 0:
                 progress_callback(int(100 * (i + 1) / n))
 

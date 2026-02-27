@@ -98,6 +98,7 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
             self.spin_step.setValue(initial_params.get("step", 1))
             self.chk_grayscale.setChecked(is_gray or initial_params.get("grayscale", False))
             self.chk_8bit.setChecked(is_uint8 or initial_params.get("convert_to_8_bit", False))
+            self.chk_normalize.setChecked(initial_params.get("normalize", False))
             # Set transform checkboxes
             self.chk_flip_xy.setChecked(initial_params.get("flip_xy", False))
         else:
@@ -163,8 +164,12 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
         self.chk_grayscale.setChecked(False)
         self.chk_8bit = QCheckBox("Convert to 8 bit")
         self.chk_8bit.setChecked(False)
+        self.chk_normalize = QCheckBox("Normalize")
+        self.chk_normalize.setChecked(False)
+        self.chk_normalize.setToolTip("Stretch each frame to full range (per-frame). Works for 8/16 bit and float. Off = comparable brightness.")
         controls_layout.addRow("", self.chk_grayscale)
         controls_layout.addRow("", self.chk_8bit)
+        controls_layout.addRow("", self.chk_normalize)
 
         layout.addLayout(controls_layout)
 
@@ -398,6 +403,7 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
             "size_ratio": self.spin_resize.value() / 100.0,
             "grayscale": self.chk_grayscale.isChecked(),
             "convert_to_8_bit": self.chk_8bit.isChecked(),
+            "normalize": self.chk_normalize.isChecked(),
             "flip_xy": self.chk_flip_xy.isChecked(),
         }
 
@@ -471,6 +477,7 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
             )
             self.chk_grayscale.setChecked(is_gray or initial_params.get("grayscale", False))
             self.chk_8bit.setChecked(is_uint8 or initial_params.get("convert_to_8_bit", False))
+            self.chk_normalize.setChecked(initial_params.get("normalize", False))
             if self._is_folder and "subset_ratio" in initial_params:
                 self.spin_subset.setValue(initial_params["subset_ratio"])
             self.chk_flip_xy.setChecked(initial_params.get("flip_xy", False))
@@ -533,8 +540,12 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
         self.chk_grayscale.setChecked(False)
         self.chk_8bit = QCheckBox("Convert to 8 bit")
         self.chk_8bit.setChecked(False)
+        self.chk_normalize = QCheckBox("Normalize")
+        self.chk_normalize.setChecked(False)
+        self.chk_normalize.setToolTip("Stretch each image to full range (per-image). Works for 8/16 bit and float. Off = comparable brightness.")
         controls_layout.addRow("", self.chk_grayscale)
         controls_layout.addRow("", self.chk_8bit)
+        controls_layout.addRow("", self.chk_normalize)
         layout.addLayout(controls_layout)
 
         layout.addWidget(QLabel("<b>Preview / Crop</b>"))
@@ -746,6 +757,7 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
             "size_ratio": self.spin_resize.value() / 100.0,
             "grayscale": self.chk_grayscale.isChecked(),
             "convert_to_8_bit": self.chk_8bit.isChecked(),
+            "normalize": self.chk_normalize.isChecked(),
             "flip_xy": self.chk_flip_xy.isChecked(),
         }
         if self._is_folder:
@@ -798,6 +810,9 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
             self.spin_resize.setValue(int(initial_params.get("size_ratio", 1.0) * 100))
             self.chk_8bit.setChecked(
                 is_uint8_source or initial_params.get("convert_to_8_bit", False)
+            )
+            self.chk_normalize.setChecked(
+                initial_params.get("normalize", False),
             )
             self.chk_row_number.blockSignals(True)
             self.chk_row_number.setChecked(
@@ -883,7 +898,11 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
 
         self.chk_8bit = QCheckBox("Convert to 8 bit")
         self.chk_8bit.setChecked(False)
+        self.chk_normalize = QCheckBox("Normalize")
+        self.chk_normalize.setChecked(False)
+        self.chk_normalize.setToolTip("Stretch each file to full range (per-file). If off: fixed scale 0-1 -> 0-255 (comparable brightness).")
         controls_layout.addRow("", self.chk_8bit)
+        controls_layout.addRow("", self.chk_normalize)
         layout.addLayout(controls_layout)
 
         layout.addWidget(QLabel("<b>Preview / Crop</b>"))
@@ -1090,6 +1109,7 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
         out: dict[str, Any] = {
             "size_ratio": self.spin_resize.value() / 100.0,
             "convert_to_8_bit": self.chk_8bit.isChecked(),
+            "normalize": self.chk_normalize.isChecked(),
             "delimiter": self._get_delimiter(),
             "first_col_is_row_number": self.chk_row_number.isChecked(),
             "flip_xy": self.chk_flip_xy.isChecked(),

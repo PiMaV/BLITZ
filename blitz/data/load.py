@@ -364,6 +364,7 @@ class DataLoader:
         subset_ratio: float = 1.0,
         max_ram: float = 1.0,
         convert_to_8_bit: bool = False,
+        normalize: bool = False,
         grayscale: bool = False,
         mask: Optional[tuple[slice, slice]] = None,
         crop: Optional[tuple[int, int]] = None
@@ -372,6 +373,7 @@ class DataLoader:
         self.size_ratio = size_ratio
         self.subset_ratio = subset_ratio
         self.convert_to_8_bit = convert_to_8_bit
+        self.normalize = normalize
         self.grayscale = grayscale
         self.mask = mask
         if mask is not None:
@@ -403,6 +405,7 @@ class DataLoader:
     def _log_arguments(self, data: ImageData) -> None:
         args = [
             ("8bit", str(self.convert_to_8_bit)),
+            ("normalize", str(self.normalize)),
             ("grayscale", str(data.meta[0].color_model == "grayscale")),
             ("max. RAM", round(self.max_ram, 3)),
             ("Size-ratio", round(self.size_ratio, 3)),
@@ -607,6 +610,7 @@ class DataLoader:
             image,
             self.size_ratio,
             self.convert_to_8_bit,
+            self.normalize,
         )
         if self.mask is not None:
             image = image[self.mask]
@@ -715,6 +719,7 @@ class DataLoader:
                     cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY),
                 _size_ratio,
                 self.convert_to_8_bit,
+                self.normalize,
             )
             if self.mask is not None:
                 image = image[self.mask]
@@ -800,6 +805,7 @@ class DataLoader:
                 x,
                 self.size_ratio,
                 self.convert_to_8_bit,
+                self.normalize,
             )
 
         total_size_estimate = array[0].nbytes * array.shape[0]
@@ -861,6 +867,7 @@ class DataLoader:
             array,
             self.size_ratio,
             self.convert_to_8_bit,
+            self.normalize,
         )
         if self.mask is not None:
             array = array[self.mask]

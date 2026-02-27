@@ -4,22 +4,69 @@ import numpy as np
 from . import ops, optimized
 
 
+def _to_8bit_fixed_scale(arr: np.ndarray) -> np.ndarray:
+    """Convert to uint8 using dtype range only (no per-image normalization). Preserves relative brightness."""
+    if arr.dtype == np.uint8:
+        return np.ascontiguousarray(arr)
+    if arr.dtype == np.uint16:
+        out = (arr.astype(np.float32) / 65535.0 * 255.0).clip(0, 255)
+        return out.astype(np.uint8)
+    if arr.dtype in (np.float32, np.float64):
+        # Assume 0..1; values outside get clipped
+        out = (arr.astype(np.float64) * 255.0).clip(0, 255)
+        return np.nan_to_num(out, nan=0.0, posinf=255, neginf=0).astype(np.uint8)
+    # Fallback: treat as 0..max(dtype)
+    mx = np.iinfo(arr.dtype).max if np.issubdtype(arr.dtype, np.integer) else 1.0
+    out = (arr.astype(np.float64) / mx * 255.0).clip(0, 255)
+    return out.astype(np.uint8)
+
+
+def _stretch_to_full_range(
+    arr: np.ndarray,
+    convert_to_8_bit: bool,
+    original_dtype: np.dtype,
+) -> np.ndarray:
+    """Per-image min-max stretch to full range of target dtype. Works for 8, 16 bit and float."""
+    with np.errstate(invalid="ignore"):
+        mn, mx = np.nanmin(arr), np.nanmax(arr)
+    if not np.isfinite(mn):
+        mn = 0.0
+    if not np.isfinite(mx) or mx <= mn:
+        if convert_to_8_bit:
+            return np.zeros_like(arr, dtype=np.uint8)
+        return np.ascontiguousarray(arr).astype(original_dtype)
+    arr = arr.astype(np.float64)
+    arr = (arr - mn) / (mx - mn)
+    arr = np.nan_to_num(arr, nan=0.0, posinf=1.0, neginf=0.0).clip(0, 1)
+    if convert_to_8_bit:
+        return (arr * 255).astype(np.uint8)
+    if original_dtype in (np.float32, np.float64):
+        return arr.astype(original_dtype)
+    if original_dtype == np.uint8:
+        return (arr * 255).astype(np.uint8)
+    return (arr * 65535).astype(np.uint16)
+
+
 def resize_and_convert(
     image: np.ndarray,
     size: float,
     convert_to_8_bit: bool,
+    normalize: bool = False,
 ) -> np.ndarray:
+    """Resize and optionally convert. normalize=False: no per-image stretch (loading default).
+    normalize=True: stretch each image to full range of target dtype (8/16/float)."""
     h, w = image.shape[:2]
     resized_image = cv2.resize(
         image,
         (int(w*size), int(h*size)),
         interpolation=cv2.INTER_AREA,
     )
+    if normalize:
+        return _stretch_to_full_range(
+            resized_image, convert_to_8_bit, resized_image.dtype
+        )
     if convert_to_8_bit:
-        mx = resized_image.max()
-        if mx <= 0:
-            return np.zeros_like(resized_image, dtype=np.uint8)
-        return (resized_image / mx * 255).astype(np.uint8)
+        return _to_8bit_fixed_scale(resized_image)
     return resized_image
 
 
@@ -27,14 +74,16 @@ def resize_and_convert_to_8_bit(
     array: np.ndarray,
     size_ratio: float,
     convert_to_8_bit: bool,
+    normalize: bool = False,
 ) -> np.ndarray:
     new_shape = tuple(int(dim * size_ratio) for dim in array.shape[:2])
     resized_array = cv2.resize(array, new_shape[::-1])
-    if convert_to_8_bit:
-        mx = np.max(resized_array)
-        if mx <= 0:
-            return np.zeros_like(resized_array, dtype=np.uint8)
-        resized_array = (resized_array / mx * 255).astype(np.uint8)
+    if normalize:
+        resized_array = _stretch_to_full_range(
+            resized_array, convert_to_8_bit, resized_array.dtype
+        )
+    elif convert_to_8_bit:
+        resized_array = _to_8bit_fixed_scale(resized_array)
     return resized_array
 
 

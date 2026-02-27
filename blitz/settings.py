@@ -20,6 +20,7 @@ _default_core_settings = {
     "default/multicore_size_threshold": 300 * (1024**2),
     "default/multicore_files_threshold": 300,
     "default/load_8bit": False,
+    "default/load_normalize": False,
     "default/load_grayscale": True,
     "default/max_ram": 2.,
     "default/show_load_dialog": True,
