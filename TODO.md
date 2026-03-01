@@ -2,6 +2,8 @@
 
 ## Known Issues (Bugs)
 
+- Statusleiste wurde kaputt gemacht und muss erst gefixt werden bevor wir pushen
+- BLITZ nach WOLKE sync macht noch komische Dinge: es gibt ein Delay und BLITZ ist auch kurz "busy" was eigentlihc nicht sein sollte, da er die matrix ja schon da hat; wenn er nachlädt wäre da sbizarr
 
 ## High Priority Features
 

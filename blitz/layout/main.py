@@ -938,6 +938,18 @@ class MainWindow(QMainWindow):
         self.ui.label_rosee_plots.setEnabled(False)
         self.ui.label_rosee_image.setEnabled(False)
         self.update_view_mode()
+        # Restore web index if set (in case any path still reset frame to 0)
+        pending = getattr(self, "_web_restore_index_after_reset", None)
+        if pending is not None:
+            data = getattr(self.ui.image_viewer, "data", None)
+            if data is not None:
+                n = max(1, data.n_images)
+                idx = max(0, min(pending, n - 1))
+                self.ui.image_viewer.setCurrentIndex(idx)
+                self.ui.image_viewer.timeLine.setPos((idx, 0))
+                self.ui.spinbox_current_frame.blockSignals(True)
+                self.ui.spinbox_current_frame.setValue(idx)
+                self.ui.spinbox_current_frame.blockSignals(False)
 
     def update_crop_range_labels(self) -> None:
         """Region-Drag -> Snap auf Int, Spinboxen + Window aktualisieren.
@@ -982,6 +994,8 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_current_frame.setMaximum(max(0, n - 1))
         self.ui.spinbox_current_frame.setValue(idx)
         self.ui.spinbox_current_frame.blockSignals(False)
+        if getattr(self, "_web_suppress_emit_index", False):
+            return
         conn = getattr(self, "_web_connection", None)
         if conn is not None:
             conn.emit_index(idx)
@@ -990,6 +1004,8 @@ class MainWindow(QMainWindow):
         """Idx-Spinbox -> setCurrentIndex. If web connected, sync index to WOLKE."""
         idx = self.ui.spinbox_current_frame.value()
         self.ui.image_viewer.setCurrentIndex(idx)
+        if getattr(self, "_web_suppress_emit_index", False):
+            return
         conn = getattr(self, "_web_connection", None)
         if conn is not None:
             conn.emit_index(idx)
@@ -1744,16 +1760,32 @@ class MainWindow(QMainWindow):
         self, img: ImageData | None, index: int | None = None
     ) -> None:
         if img is not None:
+            if index is not None:
+                self._web_suppress_emit_index = True
+                self._web_restore_index_after_reset = index
             self.ui.image_viewer.set_image(img)
             if index is not None:
                 n = max(1, img.n_images)
                 idx = max(0, min(index, n - 1))
                 self.ui.image_viewer.setCurrentIndex(idx)
+                self.ui.image_viewer.timeLine.setPos((idx, 0))
                 self.ui.spinbox_current_frame.blockSignals(True)
                 self.ui.spinbox_current_frame.setMaximum(max(0, n - 1))
                 self.ui.spinbox_current_frame.setValue(idx)
                 self.ui.spinbox_current_frame.blockSignals(False)
             self.reset_options()
+            if index is not None:
+                n = max(1, img.n_images)
+                idx = max(0, min(index, n - 1))
+                self.ui.image_viewer.setCurrentIndex(idx)
+                self.ui.image_viewer.timeLine.setPos((idx, 0))
+                self.ui.spinbox_current_frame.blockSignals(True)
+                self.ui.spinbox_current_frame.setMaximum(max(0, n - 1))
+                self.ui.spinbox_current_frame.setValue(idx)
+                self.ui.spinbox_current_frame.blockSignals(False)
+                self._web_suppress_emit_index = False
+                # Clear web-restore flag after any deferred apply_ops (e.g. singleShot(0)) has run
+                QTimer.singleShot(50, lambda: setattr(self, "_web_restore_index_after_reset", None))
         else:
             self._web_connection.stop()
             self.ui.address_edit.setEnabled(True)
@@ -2318,12 +2350,15 @@ class MainWindow(QMainWindow):
                 self._set_preview_frame_for_ops()
                 if not skip_update:
                     keep = self._is_sliding_mean_preview() or (has_range_step and not self._is_aggregate_view())
+                    if getattr(self, "_web_restore_index_after_reset", None) is not None:
+                        keep = True
                     self.ui.image_viewer.update_image(keep_timestep=keep)
         else:
             self.ui.image_viewer.data.set_ops_pipeline(None)
             self.ui.image_viewer.data.preview_frame = None
             if not skip_update:
-                self.ui.image_viewer.update_image()
+                keep = getattr(self, "_web_restore_index_after_reset", None) is not None
+                self.ui.image_viewer.update_image(keep_timestep=keep)
 
     def update_view_mode(self) -> None:
         """Switch between Single Frame (Reduce=None) and Aggregated (Reduce=Mean/Max/etc)."""
