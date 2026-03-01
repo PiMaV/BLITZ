@@ -2,8 +2,6 @@
 
 ## Known Issues (Bugs)
 
-- deactivate PCA when aggragation images are seleccted
-
 
 ## High Priority Features
 
@@ -29,6 +27,10 @@
 - Binary Mask Eval?
 - reintroduce pickle for numpy?
 - if data is grayscale, but image is rgb or such: identify from first image and simply load only first channel? Just as quick check
+- would it be nice to have a point within the main view if we are hovering along the vert and horz splines?
+- Woudl it be ncie to have the envolope of the splines wtihin the main view?
+- what about 3D? one could "simple" add an option to view 3D as a checkbox; should actually not be that complex for a first shot
+- Calculating Mean should be checked; is kind of "slow" compared to the other OPs with small data sets
 
 ## Notes on "Missing" Features
 

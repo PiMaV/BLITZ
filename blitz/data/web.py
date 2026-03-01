@@ -1,6 +1,7 @@
 import os
 import tempfile
 from pathlib import Path
+from queue import Empty, Queue
 
 import requests
 import socketio
@@ -10,6 +11,7 @@ from socketio.exceptions import ConnectionError, TimeoutError
 
 from .. import settings
 from ..tools import log
+from .image import ImageData
 from .load import DataLoader
 
 
@@ -21,6 +23,7 @@ class _WebSocket(QObject):
         super().__init__()
         self._target = target_address
         self._listening = True
+        self._emit_queue: Queue = Queue()
         self.sio = socketio.SimpleClient()
 
     @property
@@ -30,6 +33,10 @@ class _WebSocket(QObject):
     @listening.setter
     def listening(self, listening: bool) -> None:
         self._listening = listening
+
+    def queue_emit(self, event: str, data: dict) -> None:
+        """Thread-safe: main thread can enqueue viewer->server messages."""
+        self._emit_queue.put((event, data))
 
     def listen(self) -> None:
         log("[NET] Attempting to connect...")
@@ -55,13 +62,19 @@ class _WebSocket(QObject):
         log("[NET] Listening to incoming data", color="green")
 
         while self.listening:
+            while True:
+                try:
+                    event, data = self._emit_queue.get_nowait()
+                    self.sio.emit(event, data)
+                except Empty:
+                    break
             try:
                 message = self.sio.receive(timeout=1)
             except TimeoutError:
                 pass
             else:
                 if message[0] == "send_file_message":
-                    self.message_received.emit(message[1]["file_name"])
+                    self.message_received.emit(message[1])
                 elif message[0] == "Connected successfully":
                     log("[NET] Connected to server", color="green")
                 else:
@@ -108,7 +121,7 @@ class _WebDownloader(QObject):
 
 class WebDataLoader(QObject):
 
-    image_received = pyqtSignal(object)
+    image_received = pyqtSignal(object, object)
 
     def __init__(self, target_address: str, token: str, **kwargs) -> None:
         super().__init__()
@@ -117,6 +130,9 @@ class WebDataLoader(QObject):
         self._connect_thread = QThread()
         self._download_thread = QThread()
         self._load_kwargs = kwargs
+        self._selection_imagedata: ImageData | None = None
+        self._pending_file_name: str | None = None
+        self._pending_index: int | None = None
 
     def _start_listening(self) -> None:
         self._socket = _WebSocket(self._target)
@@ -125,15 +141,27 @@ class WebDataLoader(QObject):
         self._socket.message_received.connect(self._finish_connect)
         self._connect_thread.start()
 
-    def _finish_connect(self, file_name: str | None) -> None:
-        if file_name is not None:
-            self._start_download(file_name)
-        else:
-            self.image_received.emit(None)
+    def _finish_connect(self, payload: dict | None) -> None:
+        if payload is None:
+            self.image_received.emit(None, None)
             self._connect_thread.quit()
             self._connect_thread.wait()
+            return
+        file_name = payload.get("file_name")
+        index = payload.get("index")
+        index = index if isinstance(index, int) else None
+        if (
+            file_name == "__selection__.npy"
+            and index is not None
+            and self._selection_imagedata is not None
+        ):
+            self.image_received.emit(self._selection_imagedata, index)
+            return
+        self._pending_file_name = file_name
+        self._pending_index = index
+        self._start_download(file_name)
 
-    def _start_download(self, file_name: str):
+    def _start_download(self, file_name: str) -> None:
         target = self._target
         if not target.endswith("/"):
             target += "/"
@@ -152,15 +180,32 @@ class WebDataLoader(QObject):
         if path is not None:
             try:
                 img = DataLoader(**self._load_kwargs).load(path)
-                self.image_received.emit(img)
+                if self._pending_file_name == "__selection__.npy":
+                    self._selection_imagedata = img
+                    display_index = (
+                        self._pending_index
+                        if self._pending_index is not None
+                        else 0
+                    )
+                    self.image_received.emit(img, display_index)
+                else:
+                    self._selection_imagedata = None
+                    self.image_received.emit(img, None)
             except Exception as e:
                 log(f"[NET] Error loading downloaded file: {e}", color="red")
-                self.image_received.emit(None)
+                self.image_received.emit(None, None)
             finally:
                 try:
                     os.remove(path)
                 except OSError:
                     log(f"[NET] Failed to remove temp file: {path}", color="orange")
+        else:
+            self.image_received.emit(None, None)
+
+    def emit_index(self, index: int) -> None:
+        """Tell WOLKE which row index is shown (BLITZ -> WOLKE sync)."""
+        if getattr(self, "_socket", None) is not None:
+            self._socket.queue_emit("viewer_index", {"index": index})
 
     def start(self) -> None:
         self._start_listening()

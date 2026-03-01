@@ -970,7 +970,7 @@ class MainWindow(QMainWindow):
         self._update_full_range_button_style()
 
     def _sync_current_frame_spinbox(self) -> None:
-        """Timeline/Cursor -> Idx-Spinbox."""
+        """Timeline/Cursor -> Idx-Spinbox. If web connected, sync index to WOLKE."""
         try:
             idx = int(round(self.ui.image_viewer.timeLine.pos()[0]))
         except (AttributeError, TypeError):
@@ -982,11 +982,17 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_current_frame.setMaximum(max(0, n - 1))
         self.ui.spinbox_current_frame.setValue(idx)
         self.ui.spinbox_current_frame.blockSignals(False)
+        conn = getattr(self, "_web_connection", None)
+        if conn is not None:
+            conn.emit_index(idx)
 
     def _on_current_frame_spinbox_changed(self) -> None:
-        """Idx-Spinbox -> setCurrentIndex."""
+        """Idx-Spinbox -> setCurrentIndex. If web connected, sync index to WOLKE."""
         idx = self.ui.spinbox_current_frame.value()
         self.ui.image_viewer.setCurrentIndex(idx)
+        conn = getattr(self, "_web_connection", None)
+        if conn is not None:
+            conn.emit_index(idx)
 
     def _sync_selection_from_window_const(self) -> None:
         """Beim Toggle von Win const.: Range anpassen."""
@@ -1734,9 +1740,19 @@ class MainWindow(QMainWindow):
         self.ui.address_edit.setEnabled(False)
         self.ui.token_edit.setEnabled(False)
 
-    def end_web_connection(self, img: ImageData | None) -> None:
+    def end_web_connection(
+        self, img: ImageData | None, index: int | None = None
+    ) -> None:
         if img is not None:
             self.ui.image_viewer.set_image(img)
+            if index is not None:
+                n = max(1, img.n_images)
+                idx = max(0, min(index, n - 1))
+                self.ui.image_viewer.setCurrentIndex(idx)
+                self.ui.spinbox_current_frame.blockSignals(True)
+                self.ui.spinbox_current_frame.setMaximum(max(0, n - 1))
+                self.ui.spinbox_current_frame.setValue(idx)
+                self.ui.spinbox_current_frame.blockSignals(False)
             self.reset_options()
         else:
             self._web_connection.stop()
