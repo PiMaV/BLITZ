@@ -529,10 +529,8 @@ class ImageViewer(pg.ImageView):
         )
 
     def manipulate(self, operation: str) -> None:
-        if operation in ['rotate_90', 'flip_x', 'flip_y', 'transpose']:
+        if operation in {'rotate_90', 'flip_x', 'flip_y', 'transpose'}:
             getattr(self.data, operation)()
-        else:
-            raise RuntimeError(f"Operation {operation!r} not implemented")
         self.setImage(
             self.data.image,
             keep_timestep=True,
