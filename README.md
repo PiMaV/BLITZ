@@ -1,29 +1,52 @@
 # BLITZ V2.0
 
-## TL;DR
+![BLITZ Interface](/docs/images/BLITZ_overview_V2.png)
 
-Most folder-based image workflows still treat images as files.  
-**BLITZ** treats them as **structured data**.
+**BLITZ treats images as structured data.**
+
+A high-performance, matrix-based image viewer designed for efficiently exploring both **massive image datasets** and **single-image analysis workflows**.
 
 ---
 
-**BLITZ** is a high-performance, matrix-based image viewer for efficiently managing massive datasets and single-image analysis.  
-Version 2.0 features a fully refactored architecture with improved performance, stability, and maintainability.
+[![Release](https://img.shields.io/github/v/release/PiMaV/BLITZ)](https://github.com/PiMaV/BLITZ/releases/latest)
+[![License](https://img.shields.io/github/license/PiMaV/BLITZ)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.x-blue)]()
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)]()
 
-## Download
+---
+
+# Download
 
 [Download the latest release for Windows and Ubuntu](https://github.com/PiMaV/BLITZ/releases/latest)
 
-No installation needed — just a single, standalone binary.  
-For Ubuntu, make the file executable:
+No installation required — simply download and run the executable.
 
-    chmod +x BLITZ
+---
 
-## Overview
+## What is BLITZ
 
-**BLITZ** (Bulk Loading and Interactive Time series Zonal analysis) is an open-source image viewer developed and initially implemented by Philipp Mattern during his time at [INP Greifswald](https://www.inp-greifswald.de). It is actively maintained and further developed as part of his independent engineering work at [M.E.S.S.](https://mess.engineering).
+BLITZ (**Bulk Loading and Interactive Time series Zonal analysis**) is a high-performance, matrix-based image exploration and analysis tool designed for efficiently managing both massive datasets and single-image analysis.
 
-**Key Features:**
+It was originally developed and initially implemented by Philipp Mattern during his time at [INP Greifswald](https://www.inp-greifswald.de).
+
+It is actively maintained and further developed as part of his independent engineering work at [M.E.S.S. – Mattern Engineering & Software Solutions](https://mess.engineering).
+
+Version 2.0 introduces a fully refactored architecture with improved performance, stability, and maintainability.
+
+---
+
+## WETTER Framework
+
+BLITZ is the interactive viewer in the **WETTER framework**: *Raw Data → DAMPF → KEIM → WOLKE → BLITZ*. For the full pipeline, ecosystem overview, and links to all modules, see:
+
+**[WETTER Framework — wetter.mess.engineering](https://wetter.mess.engineering)**
+
+DPG Symposium presentation (architecture and BLITZ–WOLKE integration):  
+📄 [BLITZ_WOLKE_DPG25V2_Compact.pdf](https://wetter.mess.engineering/docs/BLITZ_WOLKE_DPG25V2_Compact.pdf)
+
+---
+
+## Key Features
 
 - **High-Performance Data Handling:** Efficiently processes very large datasets (e.g. loading, scaling, and converting ~21,000 RGB images (~2.5 GB raw data) into ~6.2 GB of grayscale matrix data in ~30 s on a standard gaming laptop).
 - **Easy Data Handling:** Drag-and-drop support for image, video, and NumPy matrix (*.npy) formats.
@@ -33,10 +56,12 @@ For Ubuntu, make the file executable:
 - **Live View:** Support for real USB cameras and simulated data streams.
 - **Built on Python:** Using Qt and PyQtGraph for high performance and flexibility.
 
-![BLITZ Interface](docs/images/BLITZ_overview_V2.png)
 ---
 
-(Click if animation is not playing)
+# Interface Preview
+
+*(Click if animation is not playing)*
+
 ![Quick Feature Overview](resources/public/blitz_demo.gif)
 
 ---

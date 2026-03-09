@@ -6,6 +6,10 @@ __pycache__/
 # C extensions
 *.so
 
+# INP related stuff:
+/docs/PPTs/BLITZ_Overview_V2.pptx
+/docs/PPTs/BLITZ_WOLKE_DPG25V2_Compact.pptx
+
 # BLITZ related stuff:
 _cache.ini
 # QSettings and user config (created at CWD when app runs)

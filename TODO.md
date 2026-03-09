@@ -5,6 +5,10 @@
 - Statusleiste wurde kaputt gemacht und muss erst gefixt werden bevor wir pushen
 - BLITZ nach WOLKE sync macht noch komische Dinge: es gibt ein Delay und BLITZ ist auch kurz "busy" was eigentlihc nicht sein sollte, da er die matrix ja schon da hat; wenn er nachlädt wäre da sbizarr
 
+- Farb patch ist in Colorscale und nicht in RGB (Histgram auch)
+
+- Envelops in RGB ausschalten?
+
 ## High Priority Features
 
 *   **DataSource Interface:** Unified interface for Loaders, Converters, and Handlers. Foundation for future plugins.
