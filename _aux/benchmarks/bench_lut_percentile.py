@@ -1,6 +1,6 @@
 """Benchmark LUT percentile (nanpercentile) vs min/max (nanmin/nanmax).
 
-Run: python benchmarks/bench_lut_percentile.py
+Run: python _aux/benchmarks/bench_lut_percentile.py
 
 On scroll, _levels_cache is used so percentile is not recomputed.
 This bench measures the cold path (load, crop, percentile change).
@@ -13,9 +13,9 @@ from pathlib import Path
 
 import numpy as np
 
-_project_root = Path(__file__).resolve().parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
+_repo_root = Path(__file__).resolve().parent.parent.parent
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
 
 
 def _nanminmax(img: np.ndarray) -> tuple[float, float]:

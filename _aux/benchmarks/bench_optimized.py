@@ -1,6 +1,6 @@
 """Benchmark apply_pipeline_fused (Numba) vs NumPy fallback.
 
-Run: uv run python tests/bench_optimized.py
+Run: uv run python _aux/benchmarks/bench_optimized.py
 """
 from __future__ import annotations
 
@@ -10,10 +10,10 @@ from pathlib import Path
 
 import numpy as np
 
-# Ensure blitz is importable (project root = parent of tests/)
-_project_root = Path(__file__).resolve().parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
+# Ensure blitz is importable (repo root = _aux/benchmarks -> parent.parent.parent)
+_repo_root = Path(__file__).resolve().parent.parent.parent
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
 
 from blitz.data import optimized
 

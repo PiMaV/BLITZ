@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 # Ensure blitz is importable
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 try:
     from blitz.data.image import ImageData, MetaData

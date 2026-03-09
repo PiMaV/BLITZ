@@ -5,13 +5,13 @@ Vergleicht Ladezeiten fuer unterschiedliche Dateianzahlen.
 Hinweis: Unter Windows benoetigt multiprocessing.Pool oft volle Rechte (kein Sandbox).
 
 Usage:
-  python scripts/benchmark_multicore_load.py <folder_path> [options]
-  python scripts/benchmark_multicore_load.py --generate 500  # erzeugt temp Testdaten
+  python _aux/benchmarks/benchmark_multicore_load.py <folder_path> [options]
+  python _aux/benchmarks/benchmark_multicore_load.py --generate 500  # erzeugt temp Testdaten
 
 Beispiele:
-  python scripts/benchmark_multicore_load.py D:/Bilder/mein_ordner
-  python scripts/benchmark_multicore_load.py D:/data/ascii_files --ascii
-  python scripts/benchmark_multicore_load.py --generate 500 --n-runs 3
+  python _aux/benchmarks/benchmark_multicore_load.py D:/Bilder/mein_ordner
+  python _aux/benchmarks/benchmark_multicore_load.py D:/data/ascii_files --ascii
+  python _aux/benchmarks/benchmark_multicore_load.py --generate 500 --n-runs 3
 """
 from __future__ import annotations
 
@@ -26,7 +26,8 @@ import cv2
 import numpy as np
 
 multiprocessing.freeze_support()
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(_REPO_ROOT))
 
 # Headless Qt (Windows/Linux)
 import os

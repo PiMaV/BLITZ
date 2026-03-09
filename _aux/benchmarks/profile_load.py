@@ -2,11 +2,11 @@
 Profile BLITZ app (incl. Load). Stats ausgeben nach dem Beenden.
 
 Verwendung:
-  1. python scripts/profile_load.py
+  1. python _aux/benchmarks/profile_load.py
   2. App startet, Load durchfuehren (42k Dateien @ 0.01), warten bis UI reagiert
   3. App schliessen
-  4. python scripts/profile_load.py --stats
-  5. python scripts/profile_load.py --stats -o profile_stats.txt  (in Datei speichern)
+  4. python _aux/benchmarks/profile_load.py --stats
+  5. python _aux/benchmarks/profile_load.py --stats -o profile_stats.txt  (in Datei speichern)
 """
 from __future__ import annotations
 
@@ -16,21 +16,22 @@ import sys
 from pathlib import Path
 from typing import TextIO
 
-PROF_FILE = Path(__file__).resolve().parent.parent / "profile_load.prof"
-STATS_FILE = Path(__file__).resolve().parent.parent / "profile_stats.txt"
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+PROF_FILE = _REPO_ROOT / "profile_load.prof"
+STATS_FILE = _REPO_ROOT / "profile_stats.txt"
 
 
 def run_app_profiled() -> None:
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    sys.path.insert(0, str(_REPO_ROOT))
     cProfile.run("from blitz.app import run; run()", str(PROF_FILE))
     print(f"Profile gespeichert: {PROF_FILE}")
-    print("Naechster Befehl:  python scripts/profile_load.py --stats")
+    print("Naechster Befehl:  python _aux/benchmarks/profile_load.py --stats")
 
 
 def print_stats(n: int = 40, out: TextIO | Path | None = None) -> None:
     if not PROF_FILE.exists():
         print(f"Kein Profil gefunden: {PROF_FILE}")
-        print("Zuerst:  python scripts/profile_load.py  (App starten, Load, schliessen)")
+        print("Zuerst:  python _aux/benchmarks/profile_load.py  (App starten, Load, schliessen)")
         sys.exit(1)
     p = pstats.Stats(str(PROF_FILE))
     p.sort_stats("cumtime")

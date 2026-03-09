@@ -2,10 +2,10 @@
 Benchmark Result-Cache: cached vs recompute.
 
 Verwendung:
-  python scripts/bench_result_cache.py [n_frames] [height] [width]
+  python _aux/benchmarks/bench_result_cache.py [n_frames] [height] [width]
 
 Beispiel mit 4000 Bildern:
-  python scripts/bench_result_cache.py 4000 64 64
+  python _aux/benchmarks/bench_result_cache.py 4000 64 64
 """
 from __future__ import annotations
 
@@ -16,7 +16,8 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(_REPO_ROOT))
 from blitz.data.image import ImageData, MetaData
 
 

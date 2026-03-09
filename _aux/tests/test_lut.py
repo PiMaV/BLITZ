@@ -1,6 +1,6 @@
 """Tests for LUT panel: level calculation (unit) and manual integration procedure.
 
-Run unit tests: pytest tests/test_lut.py -v
+Run unit tests: pytest _aux/tests/test_lut.py -v
 Unit tests need only numpy (no Qt).
 """
 from __future__ import annotations

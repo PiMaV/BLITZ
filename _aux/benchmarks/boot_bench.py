@@ -1,7 +1,7 @@
 """
 Boot-bench: Multicore threshold optimization (archived).
 
-Run manually: python scripts/boot_bench.py [config.json]
+Run manually: python _aux/benchmarks/boot_bench.py [config.json]
 Output: boot_bench_results.json, thresholds in settings.
 Moved from blitz.boot_bench; keep for optional re-use.
 """
@@ -19,11 +19,10 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Add project root for blitz imports
-_SCRIPTS_DIR = Path(__file__).resolve().parent
-_ROOT = _SCRIPTS_DIR.parent
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
+# Add project root for blitz imports (repo root = _aux/benchmarks -> parent.parent.parent)
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 # Headless Qt for settings
 if "QT_QPA_PLATFORM" not in os.environ:

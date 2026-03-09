@@ -14,7 +14,7 @@
   - Dateizahl variieren: 100, 200, 333, 500, 1000, 2000
   - Groesse pro Datei variieren (klein vs. gross)
 - **Metrik:** Sequential vs. Parallel auf gleichem Rechner (SSD vs. HDD getrennt betrachten).
-- **Skript:** `python scripts/benchmark_multicore_load.py <folder> [--ascii]` oder `--generate 500` fuer temp Testdaten.
+- **Skript:** `python _aux/scripts/benchmark_multicore_load.py <folder> [--ascii]` oder `--generate 500` fuer temp Testdaten.
 - **Deutung:** Par/Seq < 1 = Parallel schneller. Der *untere Punkt* (kleinster N mit Par schneller) wird als Empfehlung fuer `multicore_files_threshold` ausgegeben – kein Grund, hoher zu gehen.
 - **64 GB+ RAM:** Die Groessenschwelle (~1.3 GB) ist irrelevant; massgeblich ist die Dateizahl.
 

@@ -1,6 +1,6 @@
 """
 Standalone script: DICOM -> .npy converter for BLITZ.
-Knowledge store only - not imported by BLITZ. Run with: python scripts/dicom_converter.py ...
+Knowledge store only - not imported by BLITZ. Run with: python _aux/scripts/dicom_converter.py ...
 
 Dependencies (install manually): pip install pydicom numpy
 """
