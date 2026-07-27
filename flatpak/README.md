@@ -65,30 +65,22 @@ Match `--runtime` to the manifest `runtime-version` / SDK branch.
 ## Flathub submission
 
 1. **Domain verification** for `mess.engineering` (required for `engineering.mess.*`):
-   follow [Flathub app ID / verification](https://docs.flathub.org/docs/for-app-authors/verification).
-   Typical options: DNS TXT or `https://mess.engineering/.well-known/org.flathub.VerifiedApps.txt`.
+   follow [Flathub verification](https://docs.flathub.org/docs/for-app-authors/verification).
+   File: `https://mess.engineering/.well-known/org.flathub.VerifiedApps.txt`
+   (path reserved; paste the Developer Portal token after the app exists on Flathub).
 
-2. **Point the manifest at a release tag** (Flathub rejects local `dir` sources). In
-   `engineering.mess.Blitz.yml`, replace the `blitz` module `sources` with:
+2. **Pinned source:** `engineering.mess.Blitz.yml` already uses git tag `v2.0.2`.
+   When shipping a new release, bump `tag` and `commit` together.
 
-   ```yaml
-   sources:
-     - type: git
-       url: https://github.com/PiMaV/BLITZ.git
-       tag: v2.0.2   # must match pyproject version / a real tag
-       commit: <full-commit-sha>
-   ```
+3. Fork [flathub/flathub](https://github.com/flathub/flathub), open a PR against
+   base branch **`new-pr`** with this manifest and `python3-blitz-deps.yml`
+   (title: `Add engineering.mess.Blitz`).
 
-3. Fork [flathub/flathub](https://github.com/flathub/flathub), open a PR that adds the
-   app (new repo request / submission flow per current Flathub docs), using this
-   manifest and `python3-blitz-deps.yml`.
+4. After `flathub/engineering.mess.Blitz` exists, Flathub CI builds x86_64
+   (and aarch64 when the pinned wheels cover it).
 
-4. After the app repo exists (`flathub/engineering.mess.Blitz`), Flathub CI builds
-   x86_64 (and aarch64 if the pinned wheels cover it — this manifest already lists
-   both arches for binary wheels).
-
-5. Ship further suite apps later under the same `engineering.mess.*` IDs; do not
-   wrap the PyInstaller binary for Flathub.
+5. Further suite apps later under `engineering.mess.*`; do not wrap PyInstaller
+   for Flathub.
 
 ## Layout in this repo
 

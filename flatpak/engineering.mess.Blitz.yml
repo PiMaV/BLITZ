@@ -2,13 +2,15 @@
 # App ID / Flathub name: engineering.mess.Blitz
 # Brand: M.E.S.S. (mess.engineering) — future suite apps use engineering.mess.*
 #
-# Local build (from this directory):
+# Build (from this directory):
 #   flatpak run org.flatpak.Builder --user --install --force-clean \
 #     --install-deps-from=flathub build-dir engineering.mess.Blitz.yml
 #   flatpak run engineering.mess.Blitz
 #
-# For Flathub submission, replace the `dir` source below with a git tag/commit
-# on https://github.com/PiMaV/BLITZ (see README.md).
+# This manifest is Flathub-ready (git source). For a local tree build without
+# pushing, temporarily switch the blitz module source to:
+#   - type: dir
+#     path: ..
 
 id: engineering.mess.Blitz
 runtime: org.kde.Platform
@@ -53,5 +55,7 @@ modules:
       - install -Dm644 data/icons/hicolor/256x256/apps/engineering.mess.Blitz.png
           ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/engineering.mess.Blitz.png
     sources:
-      - type: dir
-        path: ..
+      - type: git
+        url: https://github.com/PiMaV/BLITZ.git
+        tag: v2.0.2
+        commit: 0a989c8ffc3f432483c0c72f59e7f0adf53d389d
