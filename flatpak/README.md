@@ -1,0 +1,105 @@
+# BLITZ Flatpak / Flathub
+
+## Identity convention (M.E.S.S.)
+
+| Role | Value |
+|------|--------|
+| Flatpak / AppStream / desktop ID | `engineering.mess.Blitz` |
+| Brand / publisher | **M.E.S.S.** — [mess.engineering](https://mess.engineering) |
+| Source repository | [github.com/PiMaV/BLITZ](https://github.com/PiMaV/BLITZ) (PiMaV = maintainer nickname only) |
+| Do not use | `CodeSchmiedeHGW`, `io.github.PiMaV.*` as product IDs |
+
+Future WETTER apps use the same namespace: `engineering.mess.Dampf`, `engineering.mess.Wolke`, …
+
+## Prerequisites
+
+- Flatpak + Flathub remote
+- Builder: `flatpak install --user flathub org.flatpak.Builder`
+- Runtime/SDK/BaseApp are pulled automatically with `--install-deps-from=flathub`
+
+## Local build & install
+
+From this `flatpak/` directory:
+
+```bash
+flatpak run org.flatpak.Builder --user --install --force-clean \
+  --install-deps-from=flathub build-dir engineering.mess.Blitz.yml
+
+flatpak run engineering.mess.Blitz
+```
+
+If Builder fails with `bwrap: Can't find source path .../ccache`, unset `CCACHE_DIR` (or `mkdir -p` that path) and retry with `CCACHE_DISABLE=1`.
+
+Validate AppStream metadata (from repo root):
+
+```bash
+appstreamcli validate --no-net data/engineering.mess.Blitz.metainfo.xml
+desktop-file-validate data/engineering.mess.Blitz.desktop
+```
+
+### Webcam
+
+Default sandbox has no raw camera devices. To enable USB webcam:
+
+```bash
+flatpak override --user --device=all engineering.mess.Blitz
+```
+
+## Regenerating Python dependency modules
+
+PyQt6 comes from `com.riverbankcomputing.PyQt.BaseApp` — it must **not** be in `requirements-flatpak.txt`.
+
+```bash
+# needs: flatpak-builder-tools pip generator + org.kde.Sdk//6.10
+python3 flatpak-pip-generator.py \
+  -r requirements-flatpak.txt \
+  -o python3-blitz-deps \
+  --prefer-wheels=numpy,opencv-python-headless,numba,llvmlite,psutil \
+  --runtime=org.kde.Sdk//6.10 \
+  --yaml
+mv python3-blitz-deps.yaml python3-blitz-deps.yml
+```
+
+Match `--runtime` to the manifest `runtime-version` / SDK branch.
+
+## Flathub submission
+
+1. **Domain verification** for `mess.engineering` (required for `engineering.mess.*`):
+   follow [Flathub app ID / verification](https://docs.flathub.org/docs/for-app-authors/verification).
+   Typical options: DNS TXT or `https://mess.engineering/.well-known/org.flathub.VerifiedApps.txt`.
+
+2. **Point the manifest at a release tag** (Flathub rejects local `dir` sources). In
+   `engineering.mess.Blitz.yml`, replace the `blitz` module `sources` with:
+
+   ```yaml
+   sources:
+     - type: git
+       url: https://github.com/PiMaV/BLITZ.git
+       tag: v2.0.2   # must match pyproject version / a real tag
+       commit: <full-commit-sha>
+   ```
+
+3. Fork [flathub/flathub](https://github.com/flathub/flathub), open a PR that adds the
+   app (new repo request / submission flow per current Flathub docs), using this
+   manifest and `python3-blitz-deps.yml`.
+
+4. After the app repo exists (`flathub/engineering.mess.Blitz`), Flathub CI builds
+   x86_64 (and aarch64 if the pinned wheels cover it — this manifest already lists
+   both arches for binary wheels).
+
+5. Ship further suite apps later under the same `engineering.mess.*` IDs; do not
+   wrap the PyInstaller binary for Flathub.
+
+## Layout in this repo
+
+```
+data/
+  engineering.mess.Blitz.desktop
+  engineering.mess.Blitz.metainfo.xml
+  icons/hicolor/{64,128,256}x…/apps/engineering.mess.Blitz.png
+flatpak/
+  engineering.mess.Blitz.yml
+  python3-blitz-deps.yml
+  requirements-flatpak.txt
+  README.md
+```

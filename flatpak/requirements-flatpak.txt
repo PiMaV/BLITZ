@@ -1,0 +1,11 @@
+# Prefer wheels so Flathub does not compile binary packages from sdists.
+# Regenerate after editing: see README.md
+numpy>=2.0.2,<3
+opencv-python-headless>=4.10.0.84,<5
+natsort>=8.4.0,<9
+requests>=2.32.3,<3
+python-socketio>=5.11.4,<6
+websocket-client>=1.8.0,<2
+psutil>=6.1.0,<7
+pyqtgraph>=0.13.7,<0.14
+numba>=0.61.0,<1

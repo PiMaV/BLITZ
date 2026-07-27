@@ -1,6 +1,6 @@
-import sys
+"""python -m blitz"""
 
-from .app import run
+from blitz.cli import main
 
 if __name__ == "__main__":
-    sys.exit(run())
+    main()

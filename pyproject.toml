@@ -27,6 +27,9 @@ dependencies = [
     "numba>=0.61.0,<1",
 ]
 
+[project.scripts]
+blitz = "blitz.cli:main"
+
 [dependency-groups]
 dev = [
     "pyinstaller>=6.16.0,<7",
@@ -36,12 +39,13 @@ dev = [
 [tool.uv]
 constraint-dependencies = []
 
-[tool.uv.build-backend]
-module-root = ""
-
 [build-system]
-requires = ["uv_build>=0.10.3,<0.11.0"]
-build-backend = "uv_build"
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["blitz*"]
 
 [tool.pytest.ini_options]
 testpaths = ["_aux/tests"]
