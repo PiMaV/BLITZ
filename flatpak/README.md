@@ -45,6 +45,13 @@ Default sandbox has no raw camera devices. To enable USB webcam:
 flatpak override --user --device=all engineering.mess.Blitz
 ```
 
+### Filesystem
+
+The manifest uses `--filesystem=home:ro` so Drag-and-Drop / open of datasets
+under `$HOME` works. Exports use `QFileDialog.getSaveFileName` (XDG portal).
+Flathub requires a linter exception for `home:ro` — justify with DnD from the
+file manager for scientific image folders.
+
 ## Regenerating Python dependency modules
 
 PyQt6 comes from `com.riverbankcomputing.PyQt.BaseApp` — it must **not** be in `requirements-flatpak.txt`.
