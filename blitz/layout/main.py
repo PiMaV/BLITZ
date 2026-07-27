@@ -1617,15 +1617,15 @@ class MainWindow(QMainWindow):
                     f"appropriately structured '.json' file. Error: {e}", color="red")
 
     def save_lut(self) -> None:
-        path = QFileDialog.getExistingDirectory(
-            caption="Choose LUT File Location",
-            directory=str(self.last_file_dir),
+        file, _ = QFileDialog.getSaveFileName(
+            caption="Save LUT File",
+            directory=str(self.last_file_dir / "lut_config.json"),
+            filter="JSON (*.json)",
         )
-        if path:
+        if file:
             lut_config = self.ui.image_viewer.get_lut_config()
-            file = Path(path) / "lut_config.json"
             with open(file, "w", encoding="utf-8") as f:
-                lut_config = json.dump(
+                json.dump(
                     lut_config,
                     f,
                     ensure_ascii=False,

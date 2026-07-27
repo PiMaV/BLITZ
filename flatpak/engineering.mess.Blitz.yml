@@ -30,10 +30,11 @@ finish-args:
   - --socket=wayland
   - --device=dri
   - --share=network
-  - --filesystem=home
+  - --filesystem=home:ro
   # Webcam (OpenCV /dev/video*): enable with:
   #   flatpak override --user --device=all engineering.mess.Blitz
-
+  # home:ro — DnD/open datasets under $HOME (Flathub exception with rationale).
+  # Writes use QFileDialog getSaveFileName (portal); no write into dropped folders.
 cleanup-commands:
   - /app/cleanup-BaseApp.sh
 
