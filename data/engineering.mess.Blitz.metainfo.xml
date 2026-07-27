@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2025-2026 Philipp Mattern / M.E.S.S. -->
+<component type="desktop-application">
+  <id>engineering.mess.Blitz</id>
+  <name>BLITZ</name>
+  <summary>Bulk Loading and Interactive Time series Zonal analysis</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="engineering.mess">
+    <name>M.E.S.S. – Mattern Engineering &amp; Software Solutions</name>
+  </developer>
+  <description>
+    <p>
+      BLITZ (Bulk Loading and Interactive Time series Zonal analysis) is a
+      high-performance, matrix-based image exploration and analysis tool.
+      It is designed for efficiently managing both massive image datasets
+      and single-image analysis workflows.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Fast loading of large image sets, video, and NumPy matrix (*.npy) data</li>
+      <li>Drag-and-drop workflows with automatic resource management</li>
+      <li>Matrix-based processing with Numba-accelerated statistics</li>
+      <li>Interactive zones, timelines, and visualization on top of PyQtGraph</li>
+      <li>Optional sync with WOLKE over the network</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">engineering.mess.Blitz.desktop</launchable>
+  <url type="homepage">https://mess.engineering</url>
+  <url type="help">https://wetter.mess.engineering</url>
+  <url type="bugtracker">https://github.com/PiMaV/BLITZ/issues</url>
+  <url type="vcs-browser">https://github.com/PiMaV/BLITZ</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>BLITZ main interface</caption>
+      <image>https://raw.githubusercontent.com/PiMaV/BLITZ/main/docs/images/BLITZ_overview_V2.png</image>
+    </screenshot>
+  </screenshots>
+  <releases>
+    <release version="2.0.2" date="2026-03-01"/>
+  </releases>
+  <content_rating type="oars-1.1"/>
+  <categories>
+    <category>Science</category>
+    <category>Graphics</category>
+    <category>Education</category>
+  </categories>
+  <keywords>
+    <keyword>image</keyword>
+    <keyword>analysis</keyword>
+    <keyword>matrix</keyword>
+    <keyword>npy</keyword>
+    <keyword>thermal</keyword>
+  </keywords>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <branding>
+    <color type="primary" scheme_preference="light">#ff5a4f</color>
+    <color type="primary" scheme_preference="dark">#ff5a4f</color>
+  </branding>
+</component>

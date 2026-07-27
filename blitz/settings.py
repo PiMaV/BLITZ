@@ -1,9 +1,19 @@
+import os
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 from PyQt6.QtCore import QMetaObject, QSettings, pyqtBoundSignal
 
 from .tools import log
+
+
+def _default_core_settings_path() -> Path:
+    """XDG config path for core settings (Flatpak-safe under the sandbox)."""
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    base = Path(xdg) if xdg else Path.home() / ".config"
+    config_dir = base / "blitz"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return config_dir / "settings.blitz"
 
 _default_core_settings = {
     "window/geometry": None,
@@ -64,7 +74,9 @@ _default_project_settings = {
 class _Settings:
 
     def __init__(self, default: dict, path: Optional[Path] = None) -> None:
-        self._path = (Path.cwd() / "settings.blitz") if path is None else path
+        self._path = (
+            _default_core_settings_path() if path is None else path
+        )
         self._default = default
         self.settings = QSettings(str(self._path), QSettings.Format.IniFormat)
         self._keep = False

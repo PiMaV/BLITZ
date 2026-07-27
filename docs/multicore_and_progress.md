@@ -33,7 +33,7 @@ Beim ersten Start prueft BLITZ `boot_bench_done`. Falls False: Splash "Erstoptim
 ## 2. Hardcoded Grenzen – Bewertung
 
 ### Aktuell
-- **Einstellungen:** `multicore_files_threshold` (333) und `multicore_size_threshold` (~1.3 GB) liegen bereits in `settings.blitz` – also nicht wirklich hardcoded, sondern konfigurierbar.
+- **Einstellungen:** `multicore_files_threshold` und `multicore_size_threshold` liegen in den Core-Settings (`~/.config/blitz/settings.blitz` bzw. `$XDG_CONFIG_HOME/blitz/settings.blitz`) – konfigurierbar, nicht hardcoded.
 - **Default:** Heuristik aus Erfahrung, nicht empirisch gemessen.
 
 ### Optionen

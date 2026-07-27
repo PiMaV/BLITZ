@@ -12,7 +12,7 @@ __pycache__/
 
 # BLITZ related stuff:
 _cache.ini
-# QSettings and user config (created at CWD when app runs)
+# QSettings / user config (XDG: ~/.config/blitz/settings.blitz)
 settings.blitz
 settings.blitz.*
 boot_bench_results.json
@@ -20,6 +20,10 @@ boot_bench_results/
 .bench_config.json
 profile_stats.txt
 *.prof
+
+# Flatpak local builds
+flatpak/build-dir/
+flatpak/.flatpak-builder/
 
 # Generated test data (regenerate bei Bedarf: _aux/benchmarks/benchmark_multicore_load.py --generate N)
 /_af/

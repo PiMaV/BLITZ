@@ -72,7 +72,7 @@ from .tof import TOFAdapter
 from .pca import PCAAdapter
 from .ui import UI_MainWindow
 
-URL_GITHUB = QUrl("https://github.com/CodeSchmiedeHGW/BLITZ")
+URL_GITHUB = QUrl("https://github.com/PiMaV/BLITZ")
 URL_INP = QUrl("https://www.inp-greifswald.de/")
 URL_MESS = QUrl("https://mess.engineering")
 
