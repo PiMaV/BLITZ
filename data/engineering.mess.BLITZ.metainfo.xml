@@ -3,7 +3,7 @@
 <component type="desktop-application">
   <id>engineering.mess.BLITZ</id>
   <name>BLITZ</name>
-  <summary>Bulk Loading and Interactive Time series Zonal analysis</summary>
+  <summary>Explore large image datasets</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <developer id="engineering.mess">
@@ -11,10 +11,15 @@
   </developer>
   <description>
     <p>
-      BLITZ (Bulk Loading and Interactive Time series Zonal analysis) is a
-      high-performance, matrix-based image exploration and analysis tool.
-      It is designed for efficiently managing both massive image datasets
-      and single-image analysis workflows.
+      BLITZ (Bulk Loading and Interactive Time series Zonal analysis) is the
+      viewer component of the WETTER Framework. It is a high-performance,
+      matrix-based image exploration and analysis tool for massive image
+      datasets as well as single-image workflows.
+    </p>
+    <p>
+      Drag and drop an old, dusty image folder and get it back in action:
+      browse stacks, inspect zones, and work with timelines without a heavy
+      setup.
     </p>
     <p>Features:</p>
     <ul>
@@ -26,8 +31,8 @@
     </ul>
   </description>
   <launchable type="desktop-id">engineering.mess.BLITZ.desktop</launchable>
-  <url type="homepage">https://mess.engineering</url>
-  <url type="help">https://wetter.mess.engineering</url>
+  <!-- Product / framework site (not end-user "help" docs). Brand: mess.engineering -->
+  <url type="homepage">https://wetter.mess.engineering</url>
   <url type="bugtracker">https://github.com/PiMaV/BLITZ/issues</url>
   <url type="vcs-browser">https://github.com/PiMaV/BLITZ</url>
   <screenshots>
@@ -37,6 +42,7 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="2.0.5" date="2026-07-28"/>
     <release version="2.0.4" date="2026-07-28"/>
   </releases>
   <content_rating type="oars-1.1"/>
@@ -50,7 +56,8 @@
     <keyword>analysis</keyword>
     <keyword>matrix</keyword>
     <keyword>npy</keyword>
-    <keyword>thermal</keyword>
+    <keyword>viewer</keyword>
+    <keyword>bigdata</keyword>
   </keywords>
   <supports>
     <control>pointing</control>
