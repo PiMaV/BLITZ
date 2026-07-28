@@ -21,6 +21,7 @@ from ..tools import LoggingTextEdit, get_available_ram, setup_logger
 from .bench_compact import BenchCompact
 from .bench_data import BenchData
 from .bench_sparklines import BenchSparklines
+from .polyline_profile import PolylineProfileController
 from .viewer import ImageViewer
 from .widgets import ExtractionPlot, MeasureROI, TimelineStack
 
@@ -115,6 +116,11 @@ class UI_MainWindow(QWidget):
             size=(image_viewer_size, bottom_band_h),
             hideTitle=True,
         )
+        self.dock_polyline = Dock(
+            "Polyline",
+            size=(image_viewer_size, max(160, top_band_h + 40)),
+            hideTitle=False,
+        )
 
         self.dock_area.addDock(self.dock_t_line, 'bottom')
         self.dock_area.addDock(self.dock_viewer, 'top', self.dock_t_line)
@@ -123,6 +129,11 @@ class UI_MainWindow(QWidget):
         self.dock_area.addDock(self.dock_option, 'top', self.dock_lookup)
         self.dock_area.addDock(self.dock_h_plot, 'top', self.dock_viewer)
         self.dock_area.addDock(self.dock_status, 'top', self.dock_v_plot)
+        # Under the image, above the timeline (not next to H extraction plot).
+        self.dock_area.addDock(self.dock_polyline, 'bottom', self.dock_viewer)
+        # Polyline starts hidden (Tools → Show). Do NOT hide Timeline here —
+        # it is the layout anchor; hiding it before the window is shown breaks DockArea.
+        self.dock_polyline.hide()
 
     def setup_logger(self) -> None:
         logger = LoggingTextEdit()
@@ -207,6 +218,9 @@ class UI_MainWindow(QWidget):
         # (pyqtgraph bug with linked views: unlinked axis keeps expanding on refresh)
         self.h_plot.getViewBox().enableAutoRange(y=False)
         self.v_plot.getViewBox().enableAutoRange(x=False)
+
+        self.polyline_profile = PolylineProfileController(self.image_viewer)
+        self.dock_polyline.addWidget(self.polyline_profile)
 
     def setup_menu_and_status_bar(self) -> None:
         self.menubar = QMenuBar()
@@ -929,6 +943,20 @@ class UI_MainWindow(QWidget):
         tools_layout.addWidget(self.textbox_area)
         tools_layout.addWidget(self.textbox_bounding_rect)
         tools_layout.addWidget(self.checkbox_show_bounding_rect)
+
+        hline = QFrame()
+        hline.setFrameShape(QFrame.Shape.HLine)
+        hline.setFrameShadow(QFrame.Shadow.Sunken)
+        tools_layout.addWidget(hline)
+        poly_label = QLabel("Polyline Profile")
+        poly_label.setStyleSheet(get_style("heading"))
+        tools_layout.addWidget(poly_label)
+        self.checkbox_polyline_profile = QCheckBox("Show")
+        self.checkbox_polyline_profile.setToolTip(
+            "Open polyline intensity profile (path length vs intensity)"
+        )
+        tools_layout.addWidget(self.checkbox_polyline_profile)
+
         tools_layout.addStretch()
         self.create_option_tab(tools_layout, "Tools")
         self.measure_roi = MeasureROI(

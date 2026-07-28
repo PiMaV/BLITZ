@@ -17,7 +17,12 @@ Related: [`docs/missing_features.md`](docs/missing_features.md) (hidden UI / con
 - Webcam: list only working capture devices; silence OpenCV probe WARNs; Linux V4L2
 - OpenCV pin `<4.14` (4.14.0.94 had Windows-only wheels, broke Linux `uv run`)
 - Extraction plots: wheel zooms spatial axis only; Alt+wheel = intensity axis
-- Linked cursor (View → Crosshair): image ↔ H/V profile hover markers
+- Linked cursor (View → Crosshair): spatial markers from image; curve point + value tip when hovering H/V; thicker 1×1 pixel outline
+- **v2.0.8** Polyline intensity profile (Tools → Show):
+  - open path ROI under image / above timeline; dock plot `s` vs mean-in-band
+  - Width = band mean; Envelope ⊥ / frames; CSV; path in au; handle numbers on path axis
+  - amber sync point on curve + value tips; compact axes + Stats in toolbar
+  - optional docks only when relevant (T>1 / Show on); dock_layout_rev 5
 
 ---
 
@@ -47,9 +52,6 @@ Relevant: `docs/extraction_envelopes.md`, `ExtractionPlot`.
 ---
 
 ## P2 — Features with clear user value
-
-### Polyline intensity profile
-Dock/window: intensity along a drawn polyline (we already have geometry `PolyLineROI`).
 
 ### Auto-crop in the load dialog
 MAX preview: threshold bounding box + margin; user confirms, no auto-apply on load.

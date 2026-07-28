@@ -919,17 +919,29 @@ class ExtractionPlot(pg.PlotWidget):
         self._extractionline.toggle()
 
 
-_LINKED_PEN = pg.mkPen((255, 0, 200), width=1)
+_LINKED_PEN = pg.mkPen((255, 0, 200), width=2)
 _LINKED_LINE_PEN = pg.mkPen((255, 0, 200, 140), width=1, style=Qt.PenStyle.DotLine)
 _LINKED_AXIS_PEN = pg.mkPen((255, 0, 200, 180), width=1)
 _LINKED_HL_PEN = pg.mkPen((255, 180, 60, 220), width=3)
+_LINKED_BRUSH = pg.mkBrush(255, 0, 200, 220)
+_LINKED_TIP_COLOR = (255, 200, 240)
+
+
+def _fmt_tip(val: float) -> str:
+    if not np.isfinite(val):
+        return "—"
+    if float(val) == int(val):
+        return str(int(val))
+    return f"{val:.4g}"
 
 
 class LinkedCursorController:
     """Optional hover link between main image and H/V extraction plots.
 
     View tab → Crosshair → Linked cursor.
-    Spatial axis markers only — never ride the extraction spline.
+    From main: spatial axis markers only on H/V.
+    From H/V plots: point on the profile curve (valid — probe is on the crosshair)
+    plus a small value tip.
     """
 
     def __init__(
@@ -960,6 +972,12 @@ class LinkedCursorController:
         while self._main_pixel.handles:
             self._main_pixel.removeHandle(0)
 
+        self._main_tip = pg.TextItem(
+            "", color=_LINKED_TIP_COLOR, anchor=(0.0, 1.0)
+        )
+        self._main_tip.setZValue(10_002)
+        self._main_tip.hide()
+
         self._main_v_line = pg.InfiniteLine(
             angle=90, pen=_LINKED_LINE_PEN, movable=False
         )
@@ -968,21 +986,45 @@ class LinkedCursorController:
         )
         self._main_v_line.setZValue(9_999)
         self._main_h_line.setZValue(9_999)
-        for item in (self._main_pixel, self._main_v_line, self._main_h_line):
+        for item in (
+            self._main_pixel,
+            self._main_tip,
+            self._main_v_line,
+            self._main_h_line,
+        ):
             item.hide()
             viewer.view.addItem(item)
 
-        # Spatial-only markers (not on the intensity curve)
+        # Spatial axis markers (from main or plots)
         self._h_axis = pg.InfiniteLine(
             angle=90, pen=_LINKED_AXIS_PEN, movable=False
         )
         self._v_axis = pg.InfiniteLine(
             angle=0, pen=_LINKED_AXIS_PEN, movable=False
         )
-        h_plot.register_overlay_item(self._h_axis)
-        v_plot.register_overlay_item(self._v_axis)
-        self._h_axis.hide()
-        self._v_axis.hide()
+        # Curve points only when hovering H/V (intensity matches probe)
+        self._h_point = pg.ScatterPlotItem(
+            size=9, symbol="o", pen=_LINKED_PEN, brush=_LINKED_BRUSH
+        )
+        self._v_point = pg.ScatterPlotItem(
+            size=9, symbol="o", pen=_LINKED_PEN, brush=_LINKED_BRUSH
+        )
+        self._h_tip = pg.TextItem("", color=_LINKED_TIP_COLOR, anchor=(0.0, 1.0))
+        self._v_tip = pg.TextItem("", color=_LINKED_TIP_COLOR, anchor=(0.0, 1.0))
+        for item in (
+            self._h_axis,
+            self._h_point,
+            self._h_tip,
+        ):
+            h_plot.register_overlay_item(item)
+            item.hide()
+        for item in (
+            self._v_axis,
+            self._v_point,
+            self._v_tip,
+        ):
+            v_plot.register_overlay_item(item)
+            item.hide()
 
         self._h_default_pen = pg.mkPen(h_plot._extractionline.pen)
         self._v_default_pen = pg.mkPen(v_plot._extractionline.pen)
@@ -1024,10 +1066,15 @@ class LinkedCursorController:
     def clear(self) -> None:
         self._source = None
         self._main_pixel.hide()
+        self._main_tip.hide()
         self._main_v_line.hide()
         self._main_h_line.hide()
         self._h_axis.hide()
         self._v_axis.hide()
+        self._h_point.hide()
+        self._v_point.hide()
+        self._h_tip.hide()
+        self._v_tip.hide()
         self._restore_line_pens()
 
     def _restore_line_pens(self) -> None:
@@ -1055,11 +1102,27 @@ class LinkedCursorController:
             return None
         return int(img.shape[1]), int(img.shape[2])  # W, H
 
+    def _pixel_value_at(self, x: int, y: int) -> float | None:
+        img = self._viewer.image
+        if img is None:
+            return None
+        if not (0 <= x < img.shape[1] and 0 <= y < img.shape[2]):
+            return None
+        pv = img[int(self._viewer.currentIndex), x, y]
+        return float(np.asarray(pv).flat[0])
+
     def _set_main_pixel(self, x: int, y: int) -> None:
         """Outline the exact image pixel (data units 1×1, zooms with the view)."""
         self._main_pixel.setPos([x, y])
         self._main_pixel.setSize([1, 1])
         self._main_pixel.show()
+        val = self._pixel_value_at(x, y)
+        if val is None:
+            self._main_tip.hide()
+            return
+        self._main_tip.setText(_fmt_tip(val))
+        self._main_tip.setPos(x + 1.2, y)
+        self._main_tip.show()
 
     def _probe(self, x: int, y: int) -> None:
         if self._on_probe is not None:
@@ -1072,6 +1135,38 @@ class LinkedCursorController:
     def _set_v_axis(self, spatial_y: float) -> None:
         self._v_axis.setPos(spatial_y + 0.5)
         self._v_axis.show()
+
+    def _set_h_curve_point(self, spatial_x: float) -> None:
+        inten = self._h.profile_value_at(spatial_x)
+        if inten is None:
+            self._h_point.hide()
+            self._h_tip.hide()
+            return
+        sx = spatial_x + 0.5
+        self._h_point.setData([sx], [inten])
+        self._h_point.show()
+        self._h_tip.setText(_fmt_tip(float(inten)))
+        self._h_tip.setPos(sx, float(inten))
+        self._h_tip.show()
+
+    def _set_v_curve_point(self, spatial_y: float) -> None:
+        inten = self._v.profile_value_at(spatial_y)
+        if inten is None:
+            self._v_point.hide()
+            self._v_tip.hide()
+            return
+        sy = spatial_y + 0.5
+        self._v_point.setData([inten], [sy])
+        self._v_point.show()
+        self._v_tip.setText(_fmt_tip(float(inten)))
+        self._v_tip.setPos(float(inten), sy)
+        self._v_tip.show()
+
+    def _hide_curve_points(self) -> None:
+        self._h_point.hide()
+        self._v_point.hide()
+        self._h_tip.hide()
+        self._v_tip.hide()
 
     def _on_main_moved(self, args) -> None:
         if not self._enabled:
@@ -1091,6 +1186,7 @@ class LinkedCursorController:
         self._restore_line_pens()
         self._main_v_line.hide()
         self._main_h_line.hide()
+        self._hide_curve_points()
         self._set_main_pixel(x, y)
         self._set_h_axis(x)
         self._set_v_axis(y)
@@ -1118,7 +1214,10 @@ class LinkedCursorController:
         self._highlight_h_line(True)
         self._highlight_v_line(False)
         self._set_h_axis(x)
+        self._set_h_curve_point(x)
         self._v_axis.hide()
+        self._v_point.hide()
+        self._v_tip.hide()
         self._set_main_pixel(x, y)
         self._main_v_line.setPos(x + 0.5)
         self._main_v_line.show()
@@ -1148,7 +1247,10 @@ class LinkedCursorController:
         self._highlight_v_line(True)
         self._highlight_h_line(False)
         self._set_v_axis(y)
+        self._set_v_curve_point(y)
         self._h_axis.hide()
+        self._h_point.hide()
+        self._h_tip.hide()
         self._set_main_pixel(x, y)
         self._main_h_line.setPos(y + 0.5)
         self._main_h_line.show()

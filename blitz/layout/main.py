@@ -118,6 +118,15 @@ class MainWindow(QMainWindow):
             self.ui.v_plot,
             on_probe=self._probe_at_image_xy,
         )
+        pp = self.ui.polyline_profile
+        pp._on_probe = self._probe_at_image_xy
+        pp._get_envelope_pct = (
+            lambda: float(self.ui.spinbox_envelope_pct.value())
+        )
+        pp._get_mm_scale = self._polyline_mm_scale
+        pp._linked_cursor_enabled = (
+            lambda: self.ui.checkbox_linked_cursor.isChecked()
+        )
         self._iso_throttle_timer = QTimer(self)
         self._iso_throttle_timer.setSingleShot(True)
         self._iso_throttle_timer.timeout.connect(self.update_isocurves)
@@ -127,6 +136,7 @@ class MainWindow(QMainWindow):
 
         self.ui.checkbox_roi.setChecked(False)
         self.ui.checkbox_roi.setChecked(True)
+        self._apply_optional_dock_visibility()
         log("Welcome to BLITZ", color=(122, 162, 247))
 
     def _set_theme_and_restart(self, theme: str) -> None:
@@ -137,7 +147,7 @@ class MainWindow(QMainWindow):
         """Clear saved window/dock state and restart with default layout."""
         settings.set("window/geometry", None)
         settings.set("window/docks", {})
-        settings.set("window/dock_layout_rev", 2)
+        settings.set("window/dock_layout_rev", 5)
         restart()
 
     def _dock_restore_compatible(self, state) -> bool:
@@ -152,6 +162,7 @@ class MainWindow(QMainWindow):
             "H Plot",
             "Image Viewer",
             "Timeline",
+            "Polyline",
         }
         try:
             if isinstance(state, dict):
@@ -189,15 +200,41 @@ class MainWindow(QMainWindow):
                         color="orange",
                     )
                     settings.set("window/docks", {})
+        # Defer: restoreState / hide during showEvent can corrupt DockArea and hang on quit.
+        QTimer.singleShot(0, self._apply_optional_dock_visibility)
         event.accept()
+
+    def _apply_optional_dock_visibility(self) -> None:
+        """Timeline only for T>1; Polyline dock only when Tools → Show is on."""
+        try:
+            self._update_selection_visibility()
+            if self.ui.checkbox_polyline_profile.isChecked():
+                self.ui.dock_polyline.show()
+            else:
+                self.ui.dock_polyline.hide()
+                if self.ui.polyline_profile.is_active():
+                    self.ui.polyline_profile.set_active(False)
+        except Exception:
+            pass
 
     def closeEvent(self, event):
         if self._simulated_live:
-            self._simulated_live.stop_stream()
+            try:
+                self._simulated_live.stop_stream()
+            except Exception:
+                pass
         if self._real_camera_dialog:
-            self._real_camera_dialog.stop_stream()
-        self.save_settings()
+            try:
+                self._real_camera_dialog.stop_stream()
+            except Exception:
+                pass
+        try:
+            self.save_settings()
+        except Exception:
+            pass
         event.accept()
+        # Ensure the event loop exits even if a dock/proxy kept the app alive
+        QTimer.singleShot(0, QApplication.instance().quit)
 
     def setup_connections(self) -> None:
         # MainWindow connections
@@ -452,6 +489,9 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_show_bounding_rect.stateChanged.connect(
             self.ui.measure_roi.toggle_bounding_rect
         )
+        self.ui.checkbox_polyline_profile.stateChanged.connect(
+            self._toggle_polyline_profile
+        )
         self.ui.checkbox_mm.stateChanged.connect(self.update_roi_settings)
         self.ui.spinbox_pixel.valueChanged.connect(self.update_roi_settings)
         self.ui.spinbox_mm.valueChanged.connect(self.update_roi_settings)
@@ -553,6 +593,8 @@ class MainWindow(QMainWindow):
         self.ui.v_plot.set_show_envelope_per_crosshair(per_crosshair)
         self.ui.v_plot.set_show_envelope_per_dataset(per_ds)
         self.ui.v_plot.set_envelope_percentile(pct)
+        if self.ui.polyline_profile.is_active():
+            self.ui.polyline_profile.refresh()
         rosee_active = self.ui.checkbox_rosee_active.isChecked()
         if not (rosee_active and self.ui.checkbox_rosee_h.isChecked()):
             self.ui.h_plot.draw_line()
@@ -686,6 +728,11 @@ class MainWindow(QMainWindow):
                 self.showMaximized()
 
         docks_arrangement = settings.get("window/docks")
+        layout_rev = int(settings.get("window/dock_layout_rev") or 0)
+        if layout_rev < 5:
+            # Reset after polyline dock / hide-timeline layout fixes.
+            docks_arrangement = {}
+            settings.set("window/docks", {})
         if docks_arrangement and not self._dock_restore_compatible(docks_arrangement):
             log(
                 "Ignoring incompatible saved dock layout.",
@@ -696,7 +743,7 @@ class MainWindow(QMainWindow):
         if docks_arrangement:
             self._pending_dock_restore = docks_arrangement
         # Persist current layout revision so future renames can invalidate.
-        settings.set("window/dock_layout_rev", 2)
+        settings.set("window/dock_layout_rev", 5)
 
         settings.connect_sync(
             "default/load_8bit",
@@ -942,6 +989,11 @@ class MainWindow(QMainWindow):
         self.ui.button_ops_load_file.setText("Load reference image")
         self.ui.image_viewer._background_image = None
         self.ui.checkbox_measure_roi.setChecked(False)
+        self.ui.checkbox_polyline_profile.blockSignals(True)
+        self.ui.checkbox_polyline_profile.setChecked(False)
+        self.ui.checkbox_polyline_profile.blockSignals(False)
+        self.ui.polyline_profile.set_active(False)
+        self.ui.dock_polyline.hide()
         self.ui.spinbox_crop_range_start.setValue(0)
         self.ui.spinbox_crop_range_start.setMaximum(
             self.ui.image_viewer.data.n_images - 1
@@ -2610,17 +2662,51 @@ class MainWindow(QMainWindow):
         self.ui.measure_roi.show_in_mm = self.ui.checkbox_mm.isChecked()
         self.ui.measure_roi.n_px = self.ui.spinbox_pixel.value()
         self.ui.measure_roi.px_in_mm = self.ui.spinbox_mm.value()
+        if self.ui.polyline_profile.is_active():
+            self.ui.polyline_profile.refresh()
         if not self.ui.checkbox_measure_roi.isChecked():
             return
         self.ui.measure_roi.update_labels()
 
-    def save_settings(self):
-        settings.set("window/geometry", self.saveGeometry())
-        settings.set("window/docks", self.ui.dock_area.saveState())
-        screen_geometry = QApplication.primaryScreen().availableGeometry()
-        settings.set("window/relative_size",
-            self.width() / screen_geometry.width(),
+    def _polyline_mm_scale(self) -> tuple[bool, float, float]:
+        """(use_calibration_available, n_px, px_in_mm) for path axis."""
+        return (
+            True,
+            float(self.ui.spinbox_pixel.value()),
+            float(self.ui.spinbox_mm.value()),
         )
+
+    def _toggle_polyline_profile(self) -> None:
+        on = self.ui.checkbox_polyline_profile.isChecked()
+        self.ui.polyline_profile.set_active(on)
+        if on:
+            self.ui.dock_polyline.show()
+            try:
+                self.ui.dock_polyline.raiseDock()
+            except Exception:
+                pass
+        else:
+            self.ui.dock_polyline.hide()
+
+    def save_settings(self):
+        try:
+            settings.set("window/geometry", self.saveGeometry())
+        except Exception:
+            pass
+        try:
+            settings.set("window/docks", self.ui.dock_area.saveState())
+        except Exception:
+            settings.set("window/docks", {})
+        try:
+            screen = QApplication.primaryScreen()
+            if screen is not None:
+                screen_geometry = screen.availableGeometry()
+                settings.set(
+                    "window/relative_size",
+                    self.width() / screen_geometry.width(),
+                )
+        except Exception:
+            pass
 
     # --- PCA ---
     def pca_calculate(self) -> None:
