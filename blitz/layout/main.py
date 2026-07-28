@@ -15,7 +15,7 @@ from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 from .. import settings
 from ..theme import get_style
 from ..data import optimized
-from ..data.image import ImageData
+from ..data.image import ImageData, MetaData, VideoMetaData
 from ..data.load import DataLoader, get_image_metadata, get_sample_format
 from ..data.web import WebDataLoader
 from ..data.ops import ReduceOperation
@@ -72,6 +72,7 @@ from .simulated_live import SimulatedLiveWidget
 from .tof import TOFAdapter
 from .pca import PCAAdapter
 from .ui import UI_MainWindow
+from .widgets import LinkedCursorController
 
 URL_GITHUB = QUrl("https://github.com/PiMaV/BLITZ")
 URL_INP = QUrl("https://www.inp-greifswald.de/")
@@ -111,6 +112,12 @@ class MainWindow(QMainWindow):
              self.ui.textbox_rosee_slope_v),
         )
         self.isoline_adapter = IsolineAdapter(self.ui.image_viewer)
+        self._linked_cursor = LinkedCursorController(
+            self.ui.image_viewer,
+            self.ui.h_plot,
+            self.ui.v_plot,
+            on_probe=self._probe_at_image_xy,
+        )
         self._iso_throttle_timer = QTimer(self)
         self._iso_throttle_timer.setSingleShot(True)
         self._iso_throttle_timer.timeout.connect(self.update_isocurves)
@@ -130,18 +137,58 @@ class MainWindow(QMainWindow):
         """Clear saved window/dock state and restart with default layout."""
         settings.set("window/geometry", None)
         settings.set("window/docks", {})
+        settings.set("window/dock_layout_rev", 2)
         restart()
+
+    def _dock_restore_compatible(self, state) -> bool:
+        """True if saved DockArea state matches current dock names (Probe, …)."""
+        if not state:
+            return False
+        expected = {
+            "LUT",
+            "Options",
+            "Probe",
+            "V Plot",
+            "H Plot",
+            "Image Viewer",
+            "Timeline",
+        }
+        try:
+            if isinstance(state, dict):
+                names = set(state.get("docks", state).keys()) if "docks" in state else set()
+                # pyqtgraph saveState: {'main': ..., 'float': ...} — dock names nested
+                # Fall back: stringify and require all expected labels
+                blob = str(state)
+            else:
+                blob = str(state)
+            # Reject pre-rename layouts that still mention File Metadata
+            if "File Metadata" in blob:
+                return False
+            return all(name in blob for name in expected)
+        except Exception:
+            return False
 
     def showEvent(self, event):
         super().showEvent(event)
         if getattr(self, "_pending_dock_restore", None) is not None:
             arr = self._pending_dock_restore
             self._pending_dock_restore = None
-            try:
-                self.ui.dock_area.restoreState(arr)
-            except Exception:
-                log("Could not restore dock layout; using default.", color="orange")
+            if not self._dock_restore_compatible(arr):
+                log(
+                    "Saved dock layout outdated (e.g. after Probe rename); "
+                    "using default. File → Reset Window Layout if needed.",
+                    color="orange",
+                )
                 settings.set("window/docks", {})
+            else:
+                try:
+                    self.ui.dock_area.restoreState(arr)
+                except Exception:
+                    log(
+                        "Could not restore dock layout; using default.",
+                        color="orange",
+                    )
+                    settings.set("window/docks", {})
         event.accept()
 
     def closeEvent(self, event):
@@ -274,6 +321,10 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_crosshair_marking.stateChanged.connect(
             self.toggle_hvplot_markings
         )
+        self.ui.checkbox_linked_cursor.stateChanged.connect(
+            self._on_linked_cursor_toggled
+        )
+        self._on_linked_cursor_toggled()
         self.ui.spinbox_width_h.valueChanged.connect(
             self.ui.h_plot.change_width
         )
@@ -564,18 +615,24 @@ class MainWindow(QMainWindow):
         return self.ui.combobox_reduce.currentData() is not None
 
     def _update_selection_visibility(self) -> None:
-        """Idx immer aktiv (wenn Daten). Range + aggregate band nur bei Multi-Frame."""
+        """Timeline band only for multi-frame series; hide entirely for single image."""
         data = getattr(self.ui.image_viewer, "data", None)
         n = data.n_images if data else 0
         needs_range = n > 1
         is_agg = self._is_aggregate_view()
+
+        # Whole bottom dock (plot + Frame/Range panel): no noise for T<=1
+        if needs_range:
+            self.ui.dock_t_line.show()
+        else:
+            self.ui.dock_t_line.hide()
 
         if n <= 1:
             self.ui.combobox_reduce.blockSignals(True)
             self.ui.combobox_reduce.setCurrentIndex(0)
             self.ui.combobox_reduce.blockSignals(False)
         self.ui.spinbox_current_frame.setEnabled(not is_agg and n > 0)
-        if is_agg:
+        if is_agg or n <= 1:
             self.ui.image_viewer.timeLine.hide()
         else:
             self.ui.image_viewer.timeLine.show()
@@ -629,8 +686,17 @@ class MainWindow(QMainWindow):
                 self.showMaximized()
 
         docks_arrangement = settings.get("window/docks")
+        if docks_arrangement and not self._dock_restore_compatible(docks_arrangement):
+            log(
+                "Ignoring incompatible saved dock layout.",
+                color="orange",
+            )
+            settings.set("window/docks", {})
+            docks_arrangement = {}
         if docks_arrangement:
             self._pending_dock_restore = docks_arrangement
+        # Persist current layout revision so future renames can invalidate.
+        settings.set("window/dock_layout_rev", 2)
 
         settings.connect_sync(
             "default/load_8bit",
@@ -1105,6 +1171,11 @@ class MainWindow(QMainWindow):
         self.ui.v_plot.toggle_mark_position()
         self.ui.v_plot.draw_line()
 
+    def _on_linked_cursor_toggled(self) -> None:
+        self._linked_cursor.set_enabled(
+            self.ui.checkbox_linked_cursor.isChecked()
+        )
+
     def reset_selection_range(self, skip_apply: bool = False) -> None:
         """Set Selection auf volle Range [0, n-1].
         skip_apply: when True, do not call _on_selection_changed (caller handles apply).
@@ -1337,14 +1408,32 @@ class MainWindow(QMainWindow):
             f"{self.ui.label_color.text()}"
         )
 
+    def _probe_at_image_xy(self, x: int, y: int) -> None:
+        """Update Probe panel from explicit image coordinates (linked cursor)."""
+        self._update_position_display(image_xy=(x, y))
+
     def _update_position_display(
-        self, pos: Optional[tuple[int, int]] = None
+        self,
+        pos: Optional[tuple[int, int]] = None,
+        image_xy: Optional[tuple[int, int]] = None,
     ) -> None:
         """Update position box: Frames | Position | value · bits-MODE | patch.
         Always uses actual matrix dtype (displayed array), never metadata."""
-        x, y, _value, raw, pv = self.ui.image_viewer.get_position_info(pos)
-        frame, max_frame, _ = self.ui.image_viewer.get_frame_info()
         img = self.ui.image_viewer.image
+        if image_xy is not None:
+            x, y = int(image_xy[0]), int(image_xy[1])
+            raw, pv = None, None
+            if (
+                img is not None
+                and 0 <= x < img.shape[1]
+                and 0 <= y < img.shape[2]
+            ):
+                pv = img[self.ui.image_viewer.currentIndex, x, y]
+                arr = np.asarray(pv)
+                raw = float(arr.flat[0])
+        else:
+            x, y, _value, raw, pv = self.ui.image_viewer.get_position_info(pos)
+        frame, max_frame, _ = self.ui.image_viewer.get_frame_info()
         if img is not None and pv is not None:
             bits = 8 * img.dtype.itemsize
             is_rgb = img.ndim == 4 and img.shape[-1] >= 3
@@ -1380,6 +1469,47 @@ class MainWindow(QMainWindow):
     def update_statusbar_position(self, pos: tuple[int, int]) -> None:
         self._update_position_display(pos)
 
+    def _update_meta_display(self) -> None:
+        """Refresh File-tab metadata block from current frame MetaData."""
+        ui = self.ui
+        dash = "—"
+        data = getattr(self.ui.image_viewer, "data", None)
+        meta_list = getattr(data, "meta", None) if data is not None else None
+        frame, _, _ = self.ui.image_viewer.get_frame_info()
+        meta: MetaData | None = None
+        if meta_list:
+            idx = max(0, min(int(frame), len(meta_list) - 1))
+            meta = meta_list[idx]
+
+        if meta is None:
+            ui.label_meta_name.setText(f"Name: {dash}")
+            ui.label_meta_size.setText(f"Size: {dash}")
+            ui.label_meta_dtype.setText(f"Dtype: {dash}")
+            ui.label_meta_bits.setText(f"Bit depth: {dash}")
+            ui.label_meta_color.setText(f"Color: {dash}")
+            ui.label_meta_video.setVisible(False)
+            ui.label_meta_video.setText(f"Video: {dash}")
+            ui.label_meta_exif.setText("EXIF: — (not loaded)")
+            return
+
+        h, w = meta.size
+        dtype_name = getattr(meta.dtype, "__name__", str(meta.dtype))
+        ui.label_meta_name.setText(f"Name: {meta.file_name}")
+        ui.label_meta_size.setText(f"Size: {h} × {w}  ({meta.file_size_MB:.2f} MB)")
+        ui.label_meta_dtype.setText(f"Dtype: {dtype_name}")
+        ui.label_meta_bits.setText(f"Bit depth: {meta.bit_depth}")
+        ui.label_meta_color.setText(f"Color: {meta.color_model}")
+        if isinstance(meta, VideoMetaData):
+            ui.label_meta_video.setVisible(True)
+            ui.label_meta_video.setText(
+                f"Video: {meta.fps} fps · {meta.frame_count} frames · "
+                f"codec {meta.codec or dash}"
+            )
+        else:
+            ui.label_meta_video.setVisible(False)
+            ui.label_meta_video.setText(f"Video: {dash}")
+        ui.label_meta_exif.setText("EXIF: — (not loaded)")
+
     def update_statusbar(self) -> None:
         frame, max_frame, name = self.ui.image_viewer.get_frame_info()
         if self._is_aggregate_view():
@@ -1392,6 +1522,7 @@ class MainWindow(QMainWindow):
             self.ui.frame_label.setText(f"Frame: {frame} / {max_frame}")
         self.ui.file_label.setText(f"File: {name}")
         self._update_position_display()
+        self._update_meta_display()
 
     def _on_bench_show_stats_changed(self) -> None:
         """Show/hide CPU load in LUT panel. Timer runs for Bench tab or compact."""

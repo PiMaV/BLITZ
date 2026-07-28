@@ -1219,12 +1219,14 @@ class RealCameraDialog(QDialog):
 
         form = QFormLayout()
 
-        # Device
+        # Device (only indices that actually capture)
         self.cmb_device = QComboBox()
-        self.cmb_device.addItems(["0", "1"])
-        self.cmb_device.setCurrentIndex(0)
-        self.cmb_device.setToolTip("0 = default webcam, 1 = second camera.")
+        self.cmb_device.setToolTip(
+            "Working capture devices only. On Linux, some /dev/videoN "
+            "nodes are metadata-only and are omitted."
+        )
         form.addRow("Device:", self.cmb_device)
+        self._refresh_devices()
 
         # Resolution
         self.cmb_res = QComboBox()
@@ -1302,6 +1304,26 @@ class RealCameraDialog(QDialog):
         self.spin_buffer_val.valueChanged.connect(self._update_estimates)
         self.radio_frames.toggled.connect(self._on_mode_changed)
         self.radio_seconds.toggled.connect(self._on_mode_changed)
+
+    def _refresh_devices(self) -> None:
+        """Fill device combo with cameras that open + read a frame."""
+        from ..data.live_camera import list_working_cameras
+        from ..tools import log
+
+        self.cmb_device.clear()
+        devices = list_working_cameras()
+        if not devices:
+            self.cmb_device.addItem("No camera found", -1)
+            self.cmb_device.setEnabled(False)
+            log(
+                "[CAM] No working camera devices found (checked indices 0–9).",
+                color="orange",
+            )
+            return
+        self.cmb_device.setEnabled(True)
+        for device_id, label in devices:
+            self.cmb_device.addItem(label, device_id)
+        self.cmb_device.setCurrentIndex(0)
 
     def _on_mode_changed(self, checked: bool) -> None:
         """Handle switching between frames and seconds mode with value conversion."""
@@ -1403,7 +1425,12 @@ class RealCameraDialog(QDialog):
             frames = val
         frames = max(1, frames)
 
-        device = self.cmb_device.currentIndex()
+        device = self.cmb_device.currentData()
+        if device is None or int(device) < 0:
+            from ..tools import log
+            log("[CAM] No working camera selected.", color="red")
+            return
+        device = int(device)
         gray = self.chk_grayscale.isChecked()
 
         self._handler = HandlerClass(
@@ -1426,16 +1453,42 @@ class RealCameraDialog(QDialog):
 
         self._handler.buffer_status.connect(self._on_buffer_status)
         self._handler.buffer_time_span_sec.connect(self._on_buffer_time_span)
+        self._handler.stopped.connect(self._on_handler_stopped_ui)
 
         self._handler.start()
         self.btn_toggle.setText("Stop")
         self._set_stream_controls_enabled(False)
+
+    def _on_handler_stopped_ui(self) -> None:
+        """Worker exited (open failure or finished stop) — reset Start UI if still armed."""
+        if self._handler is None:
+            return
+        handler = self._handler
+        self._handler = None
+        try:
+            if self._on_frame:
+                handler.frame_ready.disconnect(self._on_frame)
+            handler.buffer_status.disconnect(self._on_buffer_status)
+            handler.buffer_time_span_sec.disconnect(self._on_buffer_time_span)
+            handler.stopped.disconnect(self._on_handler_stopped_ui)
+        except (TypeError, RuntimeError):
+            pass
+        self._buffer_actual_sec = None
+        self._update_fps_label()
+        if self._on_stop:
+            self._on_stop()
+        self.btn_toggle.setText("Start")
+        self._set_stream_controls_enabled(True)
 
     def _stop(self) -> None:
         handler = self._handler
         self._handler = None  # clear immediately to avoid re-entrancy (e.g. closeEvent)
         if handler is None:
             return
+        try:
+            handler.stopped.disconnect(self._on_handler_stopped_ui)
+        except (TypeError, RuntimeError):
+            pass
         handler.stop()
         if not handler.wait_stopped(4000):
             from ..tools import log

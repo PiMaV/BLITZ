@@ -474,7 +474,42 @@ class ExtractionPlot(pg.PlotWidget):
         self._dataset_envelope_cache: tuple[np.ndarray, np.ndarray] | None = None
         self._dataset_envelope_cache_key: tuple[int, ...] | None = None
         self._stale: bool = False
+        self._last_profile: np.ndarray | None = None  # 1D intensity along spatial axis
+        self._overlay_items: list = []
         self.center_line()
+        # Wheel zooms one axis only (see wheelEvent); no dual-axis zoom.
+        if vertical:
+            tip = (
+                "Mouse wheel: zoom Y (spatial). "
+                "Alt+wheel: zoom X (intensity)."
+            )
+        else:
+            tip = (
+                "Mouse wheel: zoom X (spatial). "
+                "Alt+wheel: zoom Y (intensity)."
+            )
+        self.setToolTip(tip)
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        """One-axis zoom: default = spatial axis of this plot; Alt = the other.
+
+        H plot (top): wheel → X, Alt+wheel → Y.
+        V plot (left): wheel → Y, Alt+wheel → X.
+        Dual-axis zoom is intentionally unused here.
+        """
+        vb = self.getViewBox()
+        alt = bool(event.modifiers() & Qt.KeyboardModifier.AltModifier)
+        if self._vert:
+            # Left V plot: default Y, Alt → X
+            x_on, y_on = (True, False) if alt else (False, True)
+        else:
+            # Top H plot: default X, Alt → Y
+            x_on, y_on = (False, True) if alt else (True, False)
+        try:
+            vb.setMouseEnabled(x=x_on, y=y_on)
+            super().wheelEvent(event)
+        finally:
+            vb.setMouseEnabled(x=True, y=True)
 
     def _on_line_moved(self, *_args) -> None:
         self._dragging = True
@@ -533,6 +568,34 @@ class ExtractionPlot(pg.PlotWidget):
 
     def toggle_mark_position(self) -> None:
         self._mark_coupled_position = not self._mark_coupled_position
+
+    def register_overlay_item(self, item) -> None:
+        """Keep item across draw_line() clears (e.g. linked-cursor scatter)."""
+        if item not in self._overlay_items:
+            self._overlay_items.append(item)
+        if item.scene() is None:
+            self.plotItem.addItem(item)
+
+    def _restore_overlay_items(self) -> None:
+        for item in self._overlay_items:
+            try:
+                if item.scene() is None:
+                    self.plotItem.addItem(item)
+            except Exception:
+                pass
+
+    def leaveEvent(self, event) -> None:
+        hook = getattr(self, "_linked_cursor_leave", None)
+        if callable(hook):
+            hook()
+        super().leaveEvent(event)
+
+    def profile_value_at(self, spatial: float) -> float | None:
+        """Intensity on last drawn profile at spatial index (nearest)."""
+        if self._last_profile is None or self._last_profile.size == 0:
+            return None
+        i = int(np.clip(np.floor(spatial), 0, self._last_profile.shape[0] - 1))
+        return float(self._last_profile[i])
 
     def change_width(self, width: int) -> None:
         self._extractionline.change_width(width)
@@ -711,6 +774,7 @@ class ExtractionPlot(pg.PlotWidget):
                 if self._show_envelope_per_dataset:
                     ds_env = self._compute_dataset_envelope()
             self._fit_unlinked_axis(image, ds_env)
+        self._restore_overlay_items()
 
     def plot(
         self,
@@ -722,6 +786,10 @@ class ExtractionPlot(pg.PlotWidget):
             x_values = np.arange(image.shape[0]) + 0.5
         image = np.atleast_1d(image.squeeze())
         x_values = np.atleast_1d(x_values.squeeze())
+        if image.ndim == 2:
+            self._last_profile = np.asarray(image.mean(axis=1), dtype=float)
+        else:
+            self._last_profile = np.asarray(image, dtype=float).ravel()
         self.plot_x_y(x_values, image, **kwargs)
 
     def plot_x_y(self, x: np.ndarray, y: np.ndarray, **kwargs) -> None:
@@ -849,3 +917,240 @@ class ExtractionPlot(pg.PlotWidget):
 
     def toggle_line(self) -> None:
         self._extractionline.toggle()
+
+
+_LINKED_PEN = pg.mkPen((255, 0, 200), width=1)
+_LINKED_LINE_PEN = pg.mkPen((255, 0, 200, 140), width=1, style=Qt.PenStyle.DotLine)
+_LINKED_AXIS_PEN = pg.mkPen((255, 0, 200, 180), width=1)
+_LINKED_HL_PEN = pg.mkPen((255, 180, 60, 220), width=3)
+
+
+class LinkedCursorController:
+    """Optional hover link between main image and H/V extraction plots.
+
+    View tab → Crosshair → Linked cursor.
+    Spatial axis markers only — never ride the extraction spline.
+    """
+
+    def __init__(
+        self,
+        viewer: ImageViewer,
+        h_plot: ExtractionPlot,
+        v_plot: ExtractionPlot,
+        on_probe=None,
+    ) -> None:
+        self._viewer = viewer
+        self._h = h_plot
+        self._v = v_plot
+        self._on_probe = on_probe  # callable(x: int, y: int) -> None
+        self._enabled = False
+        self._source: str | None = None  # "main" | "h" | "v"
+
+        # 1×1 data-space ROI = true pixel outline (scales with zoom)
+        self._main_pixel = pg.ROI(
+            pos=[0, 0],
+            size=[1, 1],
+            pen=_LINKED_PEN,
+            movable=False,
+            rotatable=False,
+            resizable=False,
+        )
+        self._main_pixel.setZValue(10_000)
+        self._main_pixel.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+        while self._main_pixel.handles:
+            self._main_pixel.removeHandle(0)
+
+        self._main_v_line = pg.InfiniteLine(
+            angle=90, pen=_LINKED_LINE_PEN, movable=False
+        )
+        self._main_h_line = pg.InfiniteLine(
+            angle=0, pen=_LINKED_LINE_PEN, movable=False
+        )
+        self._main_v_line.setZValue(9_999)
+        self._main_h_line.setZValue(9_999)
+        for item in (self._main_pixel, self._main_v_line, self._main_h_line):
+            item.hide()
+            viewer.view.addItem(item)
+
+        # Spatial-only markers (not on the intensity curve)
+        self._h_axis = pg.InfiniteLine(
+            angle=90, pen=_LINKED_AXIS_PEN, movable=False
+        )
+        self._v_axis = pg.InfiniteLine(
+            angle=0, pen=_LINKED_AXIS_PEN, movable=False
+        )
+        h_plot.register_overlay_item(self._h_axis)
+        v_plot.register_overlay_item(self._v_axis)
+        self._h_axis.hide()
+        self._v_axis.hide()
+
+        self._h_default_pen = pg.mkPen(h_plot._extractionline.pen)
+        self._v_default_pen = pg.mkPen(v_plot._extractionline.pen)
+
+        h_plot._linked_cursor_leave = self.clear
+        v_plot._linked_cursor_leave = self.clear
+
+        self._proxy_main = None
+        self._proxy_h = None
+        self._proxy_v = None
+
+    def set_enabled(self, enabled: bool) -> None:
+        self._enabled = bool(enabled)
+        if not self._enabled:
+            self.clear()
+            return
+        self._connect()
+
+    def _connect(self) -> None:
+        if self._proxy_main is None:
+            self._proxy_main = pg.SignalProxy(
+                self._viewer.scene.sigMouseMoved,
+                rateLimit=40,
+                slot=self._on_main_moved,
+            )
+        if self._proxy_h is None:
+            self._proxy_h = pg.SignalProxy(
+                self._h.scene().sigMouseMoved,
+                rateLimit=40,
+                slot=self._on_h_moved,
+            )
+        if self._proxy_v is None:
+            self._proxy_v = pg.SignalProxy(
+                self._v.scene().sigMouseMoved,
+                rateLimit=40,
+                slot=self._on_v_moved,
+            )
+
+    def clear(self) -> None:
+        self._source = None
+        self._main_pixel.hide()
+        self._main_v_line.hide()
+        self._main_h_line.hide()
+        self._h_axis.hide()
+        self._v_axis.hide()
+        self._restore_line_pens()
+
+    def _restore_line_pens(self) -> None:
+        try:
+            self._h._extractionline.setPen(self._h_default_pen)
+            self._v._extractionline.setPen(self._v_default_pen)
+        except Exception:
+            pass
+
+    def _highlight_h_line(self, on: bool) -> None:
+        try:
+            self._h._extractionline.setPen(_LINKED_HL_PEN if on else self._h_default_pen)
+        except Exception:
+            pass
+
+    def _highlight_v_line(self, on: bool) -> None:
+        try:
+            self._v._extractionline.setPen(_LINKED_HL_PEN if on else self._v_default_pen)
+        except Exception:
+            pass
+
+    def _image_shape_ok(self) -> tuple[int, int] | None:
+        img = self._viewer.image
+        if img is None:
+            return None
+        return int(img.shape[1]), int(img.shape[2])  # W, H
+
+    def _set_main_pixel(self, x: int, y: int) -> None:
+        """Outline the exact image pixel (data units 1×1, zooms with the view)."""
+        self._main_pixel.setPos([x, y])
+        self._main_pixel.setSize([1, 1])
+        self._main_pixel.show()
+
+    def _probe(self, x: int, y: int) -> None:
+        if self._on_probe is not None:
+            self._on_probe(int(x), int(y))
+
+    def _set_h_axis(self, spatial_x: float) -> None:
+        self._h_axis.setPos(spatial_x + 0.5)
+        self._h_axis.show()
+
+    def _set_v_axis(self, spatial_y: float) -> None:
+        self._v_axis.setPos(spatial_y + 0.5)
+        self._v_axis.show()
+
+    def _on_main_moved(self, args) -> None:
+        if not self._enabled:
+            return
+        pos = args[0] if isinstance(args, (tuple, list)) else args
+        shape = self._image_shape_ok()
+        if shape is None:
+            self.clear()
+            return
+        w, h = shape
+        pt = self._viewer.view.vb.mapSceneToView(pos)
+        x, y = int(pt.x()), int(pt.y())
+        if not (0 <= x < w and 0 <= y < h):
+            self.clear()
+            return
+        self._source = "main"
+        self._restore_line_pens()
+        self._main_v_line.hide()
+        self._main_h_line.hide()
+        self._set_main_pixel(x, y)
+        self._set_h_axis(x)
+        self._set_v_axis(y)
+        self._probe(x, y)
+
+    def _on_h_moved(self, args) -> None:
+        if not self._enabled:
+            return
+        pos = args[0] if isinstance(args, (tuple, list)) else args
+        shape = self._image_shape_ok()
+        if shape is None:
+            return
+        w, h = shape
+        try:
+            pt = self._h.plotItem.vb.mapSceneToView(pos)
+        except Exception:
+            return
+        sx = float(pt.x())
+        if not (0 <= sx < w):
+            return
+        x = int(np.clip(np.floor(sx), 0, w - 1))
+        hy = float(self._h._extractionline.value())
+        y = int(np.clip(np.floor(hy), 0, h - 1))
+        self._source = "h"
+        self._highlight_h_line(True)
+        self._highlight_v_line(False)
+        self._set_h_axis(x)
+        self._v_axis.hide()
+        self._set_main_pixel(x, y)
+        self._main_v_line.setPos(x + 0.5)
+        self._main_v_line.show()
+        self._main_h_line.hide()
+        self._probe(x, y)
+
+    def _on_v_moved(self, args) -> None:
+        if not self._enabled:
+            return
+        pos = args[0] if isinstance(args, (tuple, list)) else args
+        shape = self._image_shape_ok()
+        if shape is None:
+            return
+        w, h = shape
+        try:
+            pt = self._v.plotItem.vb.mapSceneToView(pos)
+        except Exception:
+            return
+        # V plot: spatial along Y after invert
+        sy = float(pt.y())
+        if not (0 <= sy < h):
+            return
+        y = int(np.clip(np.floor(sy), 0, h - 1))
+        vx = float(self._v._extractionline.value())
+        x = int(np.clip(np.floor(vx), 0, w - 1))
+        self._source = "v"
+        self._highlight_v_line(True)
+        self._highlight_h_line(False)
+        self._set_v_axis(y)
+        self._h_axis.hide()
+        self._set_main_pixel(x, y)
+        self._main_h_line.setPos(y + 0.5)
+        self._main_h_line.show()
+        self._main_v_line.hide()
+        self._probe(x, y)

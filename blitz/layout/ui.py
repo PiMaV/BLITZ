@@ -69,8 +69,8 @@ class UI_MainWindow(QWidget):
         # Right column (Options, LUT): FD 17%, 4K 20%, 5K 22%
         right_pct = 0.22 if wrk_w >= 4000 else (0.20 if wrk_w >= 2500 else 0.17)
         right_col_w = max(260, int(right_pct * wrk_w))
-        # Bottom band (Timeline): ~5% height, min 70
-        bottom_band_h = max(220, int(0.05 * wrk_h))
+        # Bottom band: compact Frame|Range side panel (~one control row pair).
+        bottom_band_h = max(100, min(140, int(0.07 * wrk_h)))
         self._bottom_band_h = bottom_band_h
         # Top bands (H plot, Log): scales 100-240px
         top_band_h = self._layout_band_h(wrk_h)
@@ -91,7 +91,7 @@ class UI_MainWindow(QWidget):
             hideTitle=True,
         )
         self.dock_status = Dock(
-            "File Metadata",
+            "Probe",
             size=(left_col_w, top_band_h),
             hideTitle=True,
         )
@@ -158,7 +158,7 @@ class UI_MainWindow(QWidget):
         pos_layout.addWidget(self.color_swatch, 0, Qt.AlignmentFlag.AlignLeft)
         pos_layout.addStretch(1)
         self.dock_status.addWidget(position_widget)
-        setup_logger(logger)  # one_liner set in setup_menu_and_status_bar
+        # Logger registered with statusbar one-liner in setup_menu_and_status_bar
 
     def setup_image_and_line_viewers(self) -> None:
         handle_w = settings.get("viewer/splitter_handle_width")
@@ -193,7 +193,7 @@ class UI_MainWindow(QWidget):
         self.timeline_splitter.addWidget(self.timeline_stack)
         self.timeline_splitter.setStretchFactor(0, 1)
         timeline_container = QWidget()
-        timeline_container.setMinimumHeight(getattr(self, "_bottom_band_h", 70))
+        timeline_container.setMinimumHeight(96)
         timeline_vbox = QVBoxLayout(timeline_container)
         timeline_vbox.setContentsMargins(0, 0, 0, 0)
         timeline_vbox.setSpacing(0)
@@ -465,6 +465,32 @@ class UI_MainWindow(QWidget):
         crop_section_layout.addWidget(self.button_crop)
         file_layout.addWidget(self.crop_section_widget)
         self.crop_section_widget.setVisible(False)
+
+        meta_heading = QLabel("Metadata")
+        meta_heading.setStyleSheet(get_style("heading"))
+        file_layout.addWidget(meta_heading)
+        self.label_meta_name = QLabel("Name: —")
+        self.label_meta_size = QLabel("Size: —")
+        self.label_meta_dtype = QLabel("Dtype: —")
+        self.label_meta_bits = QLabel("Bit depth: —")
+        self.label_meta_color = QLabel("Color: —")
+        self.label_meta_video = QLabel("Video: —")
+        self.label_meta_exif = QLabel("EXIF: — (not loaded)")
+        for lbl in (
+            self.label_meta_name,
+            self.label_meta_size,
+            self.label_meta_dtype,
+            self.label_meta_bits,
+            self.label_meta_color,
+            self.label_meta_video,
+            self.label_meta_exif,
+        ):
+            lbl.setFont(QFont("Courier New", 9))
+            lbl.setWordWrap(True)
+            lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            file_layout.addWidget(lbl)
+        self.label_meta_video.setVisible(False)
+
         file_layout.addStretch()
         self.create_option_tab(file_layout, "File")
 
@@ -509,6 +535,13 @@ class UI_MainWindow(QWidget):
         crosshair_hlay.addWidget(self.checkbox_crosshair)
         crosshair_hlay.addWidget(self.checkbox_crosshair_marking)
         view_layout.addLayout(crosshair_hlay)
+        self.checkbox_linked_cursor = QCheckBox("Linked cursor")
+        self.checkbox_linked_cursor.setChecked(True)
+        self.checkbox_linked_cursor.setToolTip(
+            "Hover on the image: outline pixel + points on H/V profiles. "
+            "Hover on a profile: mark curve + highlight that crosshair on the image."
+        )
+        view_layout.addWidget(self.checkbox_linked_cursor)
         width_holay = QHBoxLayout()
         width_label = QLabel("Line width:")
         width_holay.addWidget(width_label)
@@ -718,30 +751,35 @@ class UI_MainWindow(QWidget):
         self.create_option_tab(ops_layout, "Ops")
         self.ops_tab_index = self.option_tabwidget.count() - 1
 
-        # --- Timeline Panel: 2 Tabs Frame | Agg (Tab-Wechsel = Modus) ---
+        # --- Timeline side panel: Frame | Range side-by-side (compact height) ---
         self.spinbox_current_frame = QSpinBox()
         self.spinbox_current_frame.setMinimum(0)
-        self.spinbox_current_frame.setPrefix("Idx: ")
-        self.spinbox_current_frame.setMinimumWidth(120)
+        self.spinbox_current_frame.setPrefix("Frame: ")
+        self.spinbox_current_frame.setMinimumWidth(110)
+        self.spinbox_current_frame.setToolTip(
+            "Current frame index (same as the yellow timeline marker)"
+        )
         self.spinbox_crop_range_start = QSpinBox()
         self.spinbox_crop_range_start.setMinimum(0)
-        self.spinbox_crop_range_start.setMinimumWidth(72)
+        self.spinbox_crop_range_start.setMinimumWidth(64)
         self.spinbox_crop_range_end = QSpinBox()
         self.spinbox_crop_range_end.setMinimum(0)
-        self.spinbox_crop_range_end.setMinimumWidth(72)
+        self.spinbox_crop_range_end.setMinimumWidth(64)
         self.spinbox_selection_window = QSpinBox()
         self.spinbox_selection_window.setPrefix("Win: ")
         self.spinbox_selection_window.setMinimum(1)
         self.spinbox_selection_window.setMinimumWidth(52)
         self.checkbox_window_const = QCheckBox("Win const.")
-        self.button_reset_range = QPushButton("Full Range")
+        self.button_reset_range = QPushButton("Full")
+        self.button_reset_range.setToolTip("Reset range to full timeline")
 
         self.combobox_reduce = QComboBox()
         self.combobox_reduce.addItem("None - current frame")
         for op in ReduceOperation:
             self.combobox_reduce.addItem(reduce_display_name(op), op)
+        self.combobox_reduce.setMinimumWidth(100)
 
-        self.checkbox_timeline_bands = QCheckBox("Upper/lower band")
+        self.checkbox_timeline_bands = QCheckBox("Bands")
         self.checkbox_timeline_bands.setChecked(False)
         self.checkbox_timeline_bands.setToolTip(
             "Show min/max envelope in the timeline plot"
@@ -752,61 +790,79 @@ class UI_MainWindow(QWidget):
         self.combobox_timeline_aggregation.setToolTip(
             "Aggregation within ROI per frame for the timeline curve"
         )
+        self.combobox_timeline_aggregation.setMaximumWidth(90)
 
-        self.range_section_widget = QWidget()
-        range_layout = QVBoxLayout(self.range_section_widget)
-        range_layout.setContentsMargins(0, 0, 0, 0)
-        sel_row1 = QHBoxLayout()
-        sel_row1.addWidget(QLabel("Start:"))
-        sel_row1.addWidget(self.spinbox_crop_range_start)
-        sel_row1.addWidget(QLabel("-"))
-        sel_row1.addWidget(QLabel("End:"))
-        sel_row1.addWidget(self.spinbox_crop_range_end)
-        range_layout.addLayout(sel_row1)
-        sel_win_row = QHBoxLayout()
-        sel_win_row.addWidget(self.spinbox_selection_window)
-        sel_win_row.addWidget(self.checkbox_window_const)
-        sel_win_row.addWidget(self.button_reset_range)
-        range_layout.addLayout(sel_win_row)
-
-        self.checkbox_agg_update_on_drag = QCheckBox("Update on drag")
+        self.checkbox_agg_update_on_drag = QCheckBox("Live")
         self.checkbox_agg_update_on_drag.setChecked(False)
         self.checkbox_agg_update_on_drag.setToolTip(
             "Range updates live while dragging (off = update on drop)"
         )
-        self.selection_panel = QWidget()
-        sel_layout = QVBoxLayout(self.selection_panel)
-        sel_layout.setContentsMargins(4, 2, 4, 2)
-        sel_layout.setSpacing(4)
-        frame_row = QHBoxLayout()
-        frame_row.addWidget(self.spinbox_current_frame)
-        frame_row.addWidget(QLabel("Curve:"))
-        frame_row.addWidget(self.combobox_timeline_aggregation)
-        frame_row.addStretch()
-        sel_layout.addLayout(frame_row)
-        sel_layout.addWidget(self.checkbox_timeline_bands)
-        sel_layout.addStretch()
-        range_sep = QFrame()
-        range_sep.setObjectName("range_sep")
-        range_sep.setFixedHeight(4)
-        range_sep.setStyleSheet(f"QFrame#range_sep {{ {get_agg_separator_stylesheet()} }}")
-        sel_layout.addWidget(range_sep)
-        agg_section = QGroupBox("Range")
-        agg_section.setObjectName("agg_section")
-        agg_section.setStyleSheet(get_agg_groupbox_stylesheet())
-        agg_layout = QVBoxLayout(agg_section)
-        agg_layout.setContentsMargins(6, 4, 6, 4)
+
+        # Compact Start–End + Win on one widget (no nested VBox stretch)
+        self.range_section_widget = QWidget()
+        range_layout = QVBoxLayout(self.range_section_widget)
+        range_layout.setContentsMargins(0, 0, 0, 0)
+        range_layout.setSpacing(2)
+        sel_row1 = QHBoxLayout()
+        sel_row1.setSpacing(2)
+        sel_row1.addWidget(self.spinbox_crop_range_start)
+        sel_row1.addWidget(QLabel("–"))
+        sel_row1.addWidget(self.spinbox_crop_range_end)
+        sel_row1.addWidget(self.spinbox_selection_window)
+        sel_row1.addWidget(self.button_reset_range)
+        range_layout.addLayout(sel_row1)
+        sel_win_row = QHBoxLayout()
+        sel_win_row.setSpacing(4)
+        sel_win_row.addWidget(self.checkbox_window_const)
+        sel_win_row.addWidget(self.checkbox_agg_update_on_drag)
+        sel_win_row.addStretch(1)
+        range_layout.addLayout(sel_win_row)
+
+        self.frame_section = QGroupBox("Frame")
+        self.frame_section.setSizePolicy(
+            QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred
+        )
+        frame_layout = QVBoxLayout(self.frame_section)
+        frame_layout.setContentsMargins(4, 2, 4, 2)
+        frame_layout.setSpacing(2)
+        frame_layout.addWidget(self.spinbox_current_frame)
+        curve_row = QHBoxLayout()
+        curve_row.setSpacing(2)
+        curve_row.addWidget(QLabel("Curve"))
+        curve_row.addWidget(self.combobox_timeline_aggregation)
+        curve_row.addWidget(self.checkbox_timeline_bands)
+        frame_layout.addLayout(curve_row)
+
+        self.agg_section = QGroupBox("Range")
+        self.agg_section.setObjectName("agg_section")
+        self.agg_section.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
+        self.agg_section.setStyleSheet(get_agg_groupbox_stylesheet())
+        agg_layout = QVBoxLayout(self.agg_section)
+        agg_layout.setContentsMargins(4, 2, 4, 2)
         agg_layout.setSpacing(2)
-        agg_layout.addWidget(QLabel("Reduce:"))
-        agg_layout.addWidget(self.combobox_reduce)
+        reduce_row = QHBoxLayout()
+        reduce_row.setSpacing(2)
+        reduce_row.addWidget(QLabel("Reduce"))
+        reduce_row.addWidget(self.combobox_reduce, 1)
+        agg_layout.addLayout(reduce_row)
         agg_layout.addWidget(self.range_section_widget)
-        agg_layout.addWidget(self.checkbox_agg_update_on_drag)
-        sel_layout.addWidget(agg_section)
-        wrk_w, wrk_h = self._workspace_size()
-        # Timeline range: min 180px width, height scales 100-200 (5K data)
-        range_panel_min = 180
+
+        self.selection_panel = QWidget()
+        sel_layout = QHBoxLayout(self.selection_panel)
+        sel_layout.setContentsMargins(2, 0, 2, 0)
+        sel_layout.setSpacing(4)
+        sel_layout.addWidget(self.frame_section, 0)
+        sel_layout.addWidget(self.agg_section, 1)
+
+        # Wide enough for Frame|Range side-by-side; timeline can give a little width.
+        range_panel_min = 340
         self.selection_panel.setMinimumWidth(range_panel_min)
-        self.selection_panel.setMinimumHeight(max(100, min(200, int(0.18 * wrk_h))))
+        self.selection_panel.setMinimumHeight(0)
+        self.selection_panel.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred
+        )
         self.timeline_splitter.addWidget(self.selection_panel)
 
         def _set_timeline_splitter_sizes():
@@ -818,8 +874,8 @@ class UI_MainWindow(QWidget):
                 wrk_w, _ = self._workspace_size()
                 right_pct = 0.22 if wrk_w >= 4000 else (0.20 if wrk_w >= 2500 else 0.17)
                 opt_w = max(260, int(right_pct * wrk_w))
-            # 5K good: ~328 width at opt~585; scale factor ~0.56
-            range_panel_w = max(range_panel_min, int(opt_w * 0.56))
+            # Side-by-side Frame|Range needs ~340px; timeline keeps the rest.
+            range_panel_w = max(range_panel_min, int(opt_w * 0.72))
             self.selection_panel.setMinimumWidth(range_panel_w)
             total = self.timeline_splitter.width()
             if total > 100:
@@ -827,7 +883,7 @@ class UI_MainWindow(QWidget):
             else:
                 wrk_w, _ = self._workspace_size()
                 right_pct = 0.22 if wrk_w >= 4000 else (0.20 if wrk_w >= 2500 else 0.17)
-                bw = max(range_panel_min, int(right_pct * wrk_w * 0.56))
+                bw = max(range_panel_min, int(right_pct * wrk_w * 0.72))
                 iv = int(0.75 * wrk_w)
                 self.timeline_splitter.setSizes([max(200, iv - bw), bw])
 

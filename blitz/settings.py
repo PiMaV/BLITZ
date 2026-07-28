@@ -19,6 +19,8 @@ _default_core_settings = {
     "window/geometry": None,
     "window/relative_size": 0.85,
     "window/docks": {},
+    # Bump when dock names/structure change (invalidates saved DockArea state).
+    "window/dock_layout_rev": 2,
 
     "viewer/ROI_on_drop_threshold": 500_000,
     "viewer/font_size_status_bar": 10,

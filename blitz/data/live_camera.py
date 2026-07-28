@@ -19,8 +19,64 @@ from PyQt6.QtCore import QObject, QThread, pyqtSignal
 from ..tools import log
 from .image import ImageData, MetaData
 
-# Backend: Windows webcams often need DirectShow
-_CAP_BACKEND = getattr(cv2, "CAP_DSHOW", 0) if sys.platform == "win32" else 0
+# Backend: Windows webcams often need DirectShow; Linux prefers V4L2
+if sys.platform == "win32":
+    _CAP_BACKEND = getattr(cv2, "CAP_DSHOW", 0)
+else:
+    _CAP_BACKEND = getattr(cv2, "CAP_V4L2", 0)
+
+
+def list_working_cameras(max_index: int = 10) -> list[tuple[int, str]]:
+    """Return (device_id, label) for indices that open and can read one frame.
+
+    On Linux, odd /dev/videoN nodes are often metadata-only siblings of a
+    working even index — probing avoids offering dead devices (e.g. 1, 3, 5).
+    """
+    found: list[tuple[int, str]] = []
+    # Mute OpenCV WARNs for dead indices during this probe only.
+    logging = getattr(getattr(cv2, "utils", None), "logging", None)
+    prev_level = None
+    if logging is not None:
+        try:
+            prev_level = logging.getLogLevel()
+            logging.setLogLevel(logging.LOG_LEVEL_SILENT)
+        except Exception:
+            prev_level = None
+    try:
+        for i in range(max_index):
+            cap = None
+            try:
+                cap = (
+                    cv2.VideoCapture(i, _CAP_BACKEND)
+                    if _CAP_BACKEND
+                    else cv2.VideoCapture(i)
+                )
+                if not cap.isOpened() and _CAP_BACKEND:
+                    cap.release()
+                    cap = cv2.VideoCapture(i)
+                if not cap.isOpened():
+                    continue
+                ok, frame = cap.read()
+                if not ok or frame is None:
+                    continue
+                h, w = frame.shape[:2]
+                found.append((i, f"{i}  ({w}×{h})"))
+            except Exception:
+                continue
+            finally:
+                if cap is not None:
+                    try:
+                        cap.release()
+                    except Exception:
+                        pass
+    finally:
+        if logging is not None and prev_level is not None:
+            try:
+                logging.setLogLevel(prev_level)
+            except Exception:
+                pass
+    return found
+
 
 # cv2 property ids (OpenCV 4+)
 _CAP_EXPOSURE = getattr(cv2, "CAP_PROP_EXPOSURE", 15)
@@ -88,12 +144,21 @@ class _CameraWorker(QObject):
         self._cap: Optional[cv2.VideoCapture] = None
 
     def run(self) -> None:
-        # Windows: CAP_DSHOW often fixes webcam; fallback to default
-        self._cap = cv2.VideoCapture(self._device, _CAP_BACKEND)
+        # Prefer platform backend (DSHOW / V4L2); fall back to default open
+        self._cap = (
+            cv2.VideoCapture(self._device, _CAP_BACKEND)
+            if _CAP_BACKEND
+            else cv2.VideoCapture(self._device)
+        )
         if not self._cap.isOpened() and _CAP_BACKEND:
             self._cap = cv2.VideoCapture(self._device)
         if not self._cap.isOpened():
-            log(f"[CAM] Cannot open camera {self._device} (try other device or backend)", color="red")
+            log(
+                f"[CAM] Cannot open camera {self._device} "
+                f"(pick a working device from the list — odd /dev/videoN "
+                f"are often metadata-only on Linux)",
+                color="red",
+            )
             self.stopped.emit()
             return
         try:
