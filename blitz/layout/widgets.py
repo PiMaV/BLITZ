@@ -10,7 +10,7 @@ _PEN_MIN_PER_CROSSHAIR = pg.mkPen((60, 160, 160), width=2)
 _PEN_MAX_PER_CROSSHAIR = pg.mkPen((100, 200, 200), width=2)
 _PEN_MIN_PER_DATASET = pg.mkPen((60, 80, 160), width=2)
 _PEN_MAX_PER_DATASET = pg.mkPen((100, 130, 220), width=2)
-from PyQt6.QtCore import QPointF, QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QPointF, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QKeyEvent, QMouseEvent, QShowEvent, QWheelEvent
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget, QLineEdit
 
@@ -452,7 +452,15 @@ class ExtractionPlot(pg.PlotWidget):
         super().__init__(plotItem=v_plot_item, background=get_plot_bg(), **kwargs)
 
         self._extractionline = ExtractionLine(viewer=viewer, vertical=vertical)
-        self._extractionline.sigPositionChanged.connect(self.draw_line)
+        # Live graphs while dragging, but rate-limited (~30 fps) to avoid CPU storms
+        # (especially under Flatpak). Heavy envelopes only when not dragging.
+        self._dragging = False
+        self._draw_pending = False
+        self._draw_timer = QTimer(self)
+        self._draw_timer.setSingleShot(True)
+        self._draw_timer.timeout.connect(self._flush_draw_line)
+        self._extractionline.sigPositionChanged.connect(self._on_line_moved)
+        self._extractionline.sigPositionChangeFinished.connect(self._on_line_finished)
         self._viewer.timeLine.sigPositionChanged.connect(self.draw_line)
         self._viewer.image_changed.connect(self.draw_line)
         self._viewer.image_changed.connect(self._invalidate_dataset_envelope_cache)
@@ -467,6 +475,27 @@ class ExtractionPlot(pg.PlotWidget):
         self._dataset_envelope_cache_key: tuple[int, ...] | None = None
         self._stale: bool = False
         self.center_line()
+
+    def _on_line_moved(self, *_args) -> None:
+        self._dragging = True
+        self._draw_pending = True
+        if not self._draw_timer.isActive():
+            self._flush_draw_line()
+
+    def _on_line_finished(self, *_args) -> None:
+        self._dragging = False
+        self._draw_timer.stop()
+        self._draw_pending = False
+        self.draw_line()
+
+    def _flush_draw_line(self) -> None:
+        if not self._draw_pending:
+            return
+        self._draw_pending = False
+        self.draw_line()
+        # Cooldown: further moves coalesce until timer fires again.
+        if self._dragging:
+            self._draw_timer.start(33)
 
     def set_envelope_percentile(self, pct: float) -> None:
         self._envelope_pct = pct
@@ -493,7 +522,8 @@ class ExtractionPlot(pg.PlotWidget):
             size=settings.get("viewer/intersection_point_size"),
         )
         self._extractionline.couple(plot._extractionline)
-        plot._extractionline.sigPositionChanged.connect(self.draw_line)
+        plot._extractionline.sigPositionChanged.connect(self._on_line_moved)
+        plot._extractionline.sigPositionChangeFinished.connect(self._on_line_finished)
         self._coupled = plot
 
     def center_line(self) -> None:
@@ -674,8 +704,12 @@ class ExtractionPlot(pg.PlotWidget):
         if (image := self.extract_data()) is not None:
             self.plot(image)
             self.draw_indicator(image)
-            self._draw_envelope_lines(image)
-            ds_env = self._compute_dataset_envelope() if self._show_envelope_per_dataset else None
+            # During drag: skip expensive envelopes (esp. per-dataset = all frames).
+            ds_env = None
+            if not self._dragging:
+                self._draw_envelope_lines(image)
+                if self._show_envelope_per_dataset:
+                    ds_env = self._compute_dataset_envelope()
             self._fit_unlinked_axis(image, ds_env)
 
     def plot(

@@ -174,7 +174,23 @@ def get_image_preview(
                     collected.append(img)
             if not collected:
                 return None
-            stack = np.stack(collected)
+            shapes = {a.shape for a in collected}
+            if len(shapes) > 1:
+                # Mixed sizes: full load-dialog strategy is TODO; do not crash preview.
+                log(
+                    "Preview skipped: images in folder have different sizes. "
+                    "Mixed-size load options are planned (see TODO).",
+                    color="yellow",
+                )
+                return None
+            try:
+                stack = np.stack(collected)
+            except ValueError:
+                log(
+                    "Preview skipped: cannot stack sampled images (shape mismatch).",
+                    color="yellow",
+                )
+                return None
             out = np.max(stack, axis=0).astype(np.uint8)
 
     if normalize and out.size > 0:
