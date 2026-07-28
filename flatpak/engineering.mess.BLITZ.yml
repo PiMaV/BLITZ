@@ -58,5 +58,5 @@ modules:
     sources:
       - type: git
         url: https://github.com/PiMaV/BLITZ.git
-        tag: v2.0.4
-        commit: 20bf5dba9c28a2154847ea733b847091060f1972
+        tag: v2.0.5
+        commit: 5f706912da1376f6b19de13bdde8866f16b4ae50
