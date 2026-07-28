@@ -65,6 +65,7 @@ from ..data.converters import get_ascii_metadata, load_ascii
 from .dialogs import (AsciiLoadOptionsDialog, CropTimelineDialog,
                      ImageLoadOptionsDialog, RealCameraDialog,
                      VideoLoadOptionsDialog)
+from .export_dialog import run_export
 from .isoline import IsolineAdapter
 from .rosee import ROSEEAdapter
 from .simulated_live import SimulatedLiveWidget
@@ -434,10 +435,11 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_rosee_in_image_v.stateChanged.connect(
             self.toggle_rosee
         )
-        self.ui.h_plot._extractionline.sigPositionChanged.connect(
+        # RoSEE is heavy — update when drag ends / timeline moves, not every pixel.
+        self.ui.h_plot._extractionline.sigPositionChangeFinished.connect(
             self.toggle_rosee
         )
-        self.ui.v_plot._extractionline.sigPositionChanged.connect(
+        self.ui.v_plot._extractionline.sigPositionChangeFinished.connect(
             self.toggle_rosee
         )
         self.ui.image_viewer.timeLine.sigPositionChanged.connect(
@@ -1598,8 +1600,11 @@ class MainWindow(QMainWindow):
             self.load(Path(folder_path))
 
     def export(self) -> None:
-        with LoadingManager(self, "Exporting...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
-            self.ui.image_viewer.exportClicked()
+        run_export(
+            self.ui.image_viewer,
+            parent=self,
+            last_dir=self.last_file_dir,
+        )
 
     def browse_lut(self) -> None:
         file, _ = QFileDialog.getOpenFileName(
@@ -1623,14 +1628,24 @@ class MainWindow(QMainWindow):
             filter="JSON (*.json)",
         )
         if file:
-            lut_config = self.ui.image_viewer.get_lut_config()
-            with open(file, "w", encoding="utf-8") as f:
-                json.dump(
-                    lut_config,
-                    f,
-                    ensure_ascii=False,
-                    indent=4,
+            try:
+                lut_config = self.ui.image_viewer.get_lut_config()
+                with open(file, "w", encoding="utf-8") as f:
+                    json.dump(
+                        lut_config,
+                        f,
+                        ensure_ascii=False,
+                        indent=4,
+                    )
+                log(f"Saved LUT → {file}", color="green")
+            except PermissionError as e:
+                log(
+                    f"LUT save failed (permission denied — Flatpak may need a "
+                    f"portal path): {e}",
+                    color="red",
                 )
+            except OSError as e:
+                log(f"LUT save failed: {e}", color="red")
 
     def _on_lut_spin_changed(self) -> None:
         """Apply LUT min/max from spinners to histogram."""
@@ -1946,8 +1961,26 @@ class MainWindow(QMainWindow):
             settings.set("path", "")
 
     def load_images(self, path: Path) -> None:
+        # npy / float stacks: never auto-enable 8-bit (0..1 scale destroys °C etc.)
+        is_npy_source = (
+            (path.is_file() and DataLoader._is_array(path))
+            or (
+                path.is_dir()
+                and any(
+                    f.is_file() and DataLoader._is_array(f)
+                    for f in path.iterdir()
+                )
+            )
+        )
+        if is_npy_source:
+            self.ui.checkbox_load_8bit.setChecked(False)
+            log(
+                "NPY source: 8-bit conversion left off so physical values "
+                "(e.g. temperature) stay intact.",
+                color="yellow",
+            )
         # Bei 8-bit / Grayscale Quelle: Checkboxen direkt setzen
-        if (
+        elif (
             DataLoader._is_video(path)
             or (path.is_file() and DataLoader._is_image(path))
             or (path.is_dir() and get_image_metadata(path) is not None)

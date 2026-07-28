@@ -34,7 +34,8 @@ finish-args:
   # Webcam (OpenCV /dev/video*): enable with:
   #   flatpak override --user --device=all engineering.mess.BLITZ
   # home:ro — DnD/open datasets under $HOME (Flathub exception with rationale).
-  # Writes use QFileDialog getSaveFileName (portal); no write into dropped folders.
+  # File→Export: current/stack = one portal file; frame range = folder of
+  # images natively, ZIP fallback inside Flatpak (see export_dialog.py).
 cleanup-commands:
   - /app/cleanup-BaseApp.sh
 
