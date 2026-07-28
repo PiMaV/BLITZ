@@ -4,7 +4,7 @@
 
 | Role | Value |
 |------|--------|
-| Flatpak / AppStream / desktop ID | `engineering.mess.Blitz` |
+| Flatpak / AppStream / desktop ID | `engineering.mess.BLITZ` |
 | Brand / publisher | **M.E.S.S.** — [mess.engineering](https://mess.engineering) |
 | Source repository | [github.com/PiMaV/BLITZ](https://github.com/PiMaV/BLITZ) (PiMaV = maintainer nickname only) |
 | Do not use | `CodeSchmiedeHGW`, `io.github.PiMaV.*` as product IDs |
@@ -23,9 +23,9 @@ From this `flatpak/` directory:
 
 ```bash
 flatpak run org.flatpak.Builder --user --install --force-clean \
-  --install-deps-from=flathub build-dir engineering.mess.Blitz.yml
+  --install-deps-from=flathub build-dir engineering.mess.BLITZ.yml
 
-flatpak run engineering.mess.Blitz
+flatpak run engineering.mess.BLITZ
 ```
 
 If Builder fails with `bwrap: Can't find source path .../ccache`, unset `CCACHE_DIR` (or `mkdir -p` that path) and retry with `CCACHE_DISABLE=1`.
@@ -33,8 +33,8 @@ If Builder fails with `bwrap: Can't find source path .../ccache`, unset `CCACHE_
 Validate AppStream metadata (from repo root):
 
 ```bash
-appstreamcli validate --no-net data/engineering.mess.Blitz.metainfo.xml
-desktop-file-validate data/engineering.mess.Blitz.desktop
+appstreamcli validate --no-net data/engineering.mess.BLITZ.metainfo.xml
+desktop-file-validate data/engineering.mess.BLITZ.desktop
 ```
 
 ### Webcam
@@ -42,7 +42,7 @@ desktop-file-validate data/engineering.mess.Blitz.desktop
 Default sandbox has no raw camera devices. To enable USB webcam:
 
 ```bash
-flatpak override --user --device=all engineering.mess.Blitz
+flatpak override --user --device=all engineering.mess.BLITZ
 ```
 
 ### Filesystem
@@ -76,14 +76,14 @@ Match `--runtime` to the manifest `runtime-version` / SDK branch.
    File: `https://mess.engineering/.well-known/org.flathub.VerifiedApps.txt`
    (path reserved; paste the Developer Portal token after the app exists on Flathub).
 
-2. **Pinned source:** `engineering.mess.Blitz.yml` already uses git tag `v2.0.2`.
+2. **Pinned source:** `engineering.mess.BLITZ.yml` already uses git tag `v2.0.2`.
    When shipping a new release, bump `tag` and `commit` together.
 
 3. Fork [flathub/flathub](https://github.com/flathub/flathub), open a PR against
    base branch **`new-pr`** with this manifest and `python3-blitz-deps.yml`
-   (title: `Add engineering.mess.Blitz`).
+   (title: `Add engineering.mess.BLITZ`).
 
-4. After `flathub/engineering.mess.Blitz` exists, Flathub CI builds x86_64
+4. After `flathub/engineering.mess.BLITZ` exists, Flathub CI builds x86_64
    (and aarch64 when the pinned wheels cover it).
 
 5. Further suite apps later under `engineering.mess.*`; do not wrap PyInstaller
@@ -93,11 +93,11 @@ Match `--runtime` to the manifest `runtime-version` / SDK branch.
 
 ```
 data/
-  engineering.mess.Blitz.desktop
-  engineering.mess.Blitz.metainfo.xml
-  icons/hicolor/{64,128,256}x…/apps/engineering.mess.Blitz.png
+  engineering.mess.BLITZ.desktop
+  engineering.mess.BLITZ.metainfo.xml
+  icons/hicolor/{64,128,256}x…/apps/engineering.mess.BLITZ.png
 flatpak/
-  engineering.mess.Blitz.yml
+  engineering.mess.BLITZ.yml
   python3-blitz-deps.yml
   requirements-flatpak.txt
   README.md

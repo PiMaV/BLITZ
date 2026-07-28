@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Copyright 2025-2026 Philipp Mattern / M.E.S.S. -->
 <component type="desktop-application">
-  <id>engineering.mess.Blitz</id>
+  <id>engineering.mess.BLITZ</id>
   <name>BLITZ</name>
   <summary>Bulk Loading and Interactive Time series Zonal analysis</summary>
   <metadata_license>CC0-1.0</metadata_license>
@@ -25,7 +25,7 @@
       <li>Optional sync with WOLKE over the network</li>
     </ul>
   </description>
-  <launchable type="desktop-id">engineering.mess.Blitz.desktop</launchable>
+  <launchable type="desktop-id">engineering.mess.BLITZ.desktop</launchable>
   <url type="homepage">https://mess.engineering</url>
   <url type="help">https://wetter.mess.engineering</url>
   <url type="bugtracker">https://github.com/PiMaV/BLITZ/issues</url>
@@ -37,7 +37,7 @@
     </screenshot>
   </screenshots>
   <releases>
-    <release version="2.0.2" date="2026-03-01"/>
+    <release version="2.0.3" date="2026-07-27"/>
   </releases>
   <content_rating type="oars-1.1"/>
   <categories>

@@ -82,7 +82,7 @@ Run BLITZ in a browser via Docker. See: [docker/README.md](docker/README.md)
 ## Flatpak / Flathub
 
 Linux App Store packaging lives under [flatpak/](flatpak/README.md)
-(`engineering.mess.Blitz`, M.E.S.S. branding). Build and Flathub notes are there.
+(`engineering.mess.BLITZ`, M.E.S.S. branding). Build and Flathub notes are there.
 
 ## Development
 
