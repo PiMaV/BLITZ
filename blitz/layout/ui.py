@@ -443,8 +443,11 @@ class UI_MainWindow(QWidget):
         self.checkbox_load_8bit = QCheckBox("8 bit")
         self.checkbox_load_8bit.setToolTip("Convert to 8 bit (fixed scale by dtype; no per-image brightness normalization)")
         load_hlay.addWidget(self.checkbox_load_8bit)
-        self.checkbox_load_normalize = QCheckBox("Normalize")
-        self.checkbox_load_normalize.setToolTip("Stretch each image/frame to full range (per-image). Works for 8 bit, 16 bit and float. Off = comparable brightness across images.")
+        self.checkbox_load_normalize = QCheckBox("Normalize each image")
+        self.checkbox_load_normalize.setToolTip(
+            "On load: stretch each image/frame to full range (per-image). "
+            "Works for 8/16 bit and float. Off = comparable brightness across images."
+        )
         self.checkbox_load_normalize.setChecked(False)
         load_hlay.addWidget(self.checkbox_load_normalize)
         self.checkbox_load_grayscale = QCheckBox("grayscale")

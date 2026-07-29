@@ -180,7 +180,7 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
             self.chk_8bit.setChecked(is_uint8 or initial_params.get("convert_to_8_bit", False))
             self.chk_normalize.setChecked(initial_params.get("normalize", False))
             # Set transform checkboxes
-            self.chk_flip_xy.setChecked(initial_params.get("flip_xy", False))
+            self._apply_initial_transforms(initial_params)
         else:
             self.chk_grayscale.setChecked(is_gray)
             self.chk_8bit.setChecked(is_uint8)
@@ -249,14 +249,22 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
         self.chk_grayscale.setChecked(False)
         self.chk_8bit = QCheckBox("Convert to 8 bit")
         self.chk_8bit.setChecked(False)
-        self.chk_normalize = QCheckBox("Normalize")
+        self.chk_normalize = QCheckBox("Normalize each frame")
         self.chk_normalize.setChecked(False)
-        self.chk_normalize.setToolTip("Stretch each frame to full range (per-frame). Works for 8/16 bit and float. Off = comparable brightness.")
+        self.chk_normalize.setToolTip(
+            "On load: stretch each frame to full range (per-frame). "
+            "Works for 8/16 bit and float. Off = comparable brightness."
+        )
         controls_layout.addRow("", self.chk_grayscale)
         controls_layout.addRow("", self.chk_8bit)
         controls_layout.addRow("", self.chk_normalize)
 
         layout.addLayout(controls_layout)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setFrameShadow(QFrame.Shadow.Sunken)
+        layout.addWidget(sep)
 
         # Preview with Crop ROI
         layout.addWidget(QLabel("<b>Preview / Crop</b>"))
@@ -269,9 +277,12 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
         )
         preview_opts.addWidget(QLabel("Mode:"))
         preview_opts.addWidget(self.cmb_preview_mode)
-        self.chk_preview_norm = QCheckBox("Normalize")
+        self.chk_preview_norm = QCheckBox("Preview normalize")
         self.chk_preview_norm.setChecked(True)
-        self.chk_preview_norm.setToolTip("Min-max stretch for better visibility")
+        self.chk_preview_norm.setToolTip(
+            "Display only in this dialog — min-max stretch for visibility. "
+            "Does not change what is loaded."
+        )
         preview_opts.addWidget(self.chk_preview_norm)
         self.btn_roi_reset = QPushButton("Reset ROI")
         self.btn_roi_reset.setToolTip("Reset crop to full frame")
@@ -320,7 +331,6 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
         self.chk_grayscale.toggled.connect(self._update_estimates)
         self.chk_grayscale.toggled.connect(self._on_grayscale_changed)
         self.chk_8bit.toggled.connect(self._update_estimates)
-        self.chk_normalize.toggled.connect(self._on_preview_option_changed)
         self.cmb_preview_mode.currentTextChanged.connect(self._on_preview_option_changed)
         self.chk_preview_norm.toggled.connect(self._on_preview_option_changed)
 
@@ -354,7 +364,7 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
         n_frames = min(10, max(1, self.metadata.frame_count))
         # Index 0 = MAX (default), 1 = Single
         mode = "max" if self.cmb_preview_mode.currentIndex() == 0 else "single"
-        normalize = self.chk_preview_norm.isChecked() or self.chk_normalize.isChecked()
+        normalize = self.chk_preview_norm.isChecked()
         self.lbl_preview_status.setText("Loading preview...")
         self._preview_generation += 1
         generation = self._preview_generation
@@ -447,7 +457,7 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
 
     def _reset_roi(self) -> None:
         """Reset crop ROI to full frame and reset transforms."""
-        self.chk_flip_xy.setChecked(False)
+        self._reset_transform_checkboxes()
         if self._preview is not None and self._roi is not None:
             h, w = self._preview.shape[0], self._preview.shape[1]
             self._roi.setPos((0, 0))
@@ -542,7 +552,7 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
             "grayscale": self.chk_grayscale.isChecked(),
             "convert_to_8_bit": self.chk_8bit.isChecked(),
             "normalize": self.chk_normalize.isChecked(),
-            "flip_xy": self.chk_flip_xy.isChecked(),
+            **self._transform_params(),
         }
 
         mask, mask_rel = self._get_roi_source_mask()
@@ -643,7 +653,7 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
             self.chk_normalize.setChecked(initial_params.get("normalize", False))
             if self._is_folder and "subset_ratio" in initial_params:
                 self.spin_subset.setValue(initial_params["subset_ratio"])
-            self.chk_flip_xy.setChecked(initial_params.get("flip_xy", False))
+            self._apply_initial_transforms(initial_params)
         else:
             self.chk_grayscale.setChecked(is_gray)
             self.chk_8bit.setChecked(is_uint8)
@@ -703,13 +713,21 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
         self.chk_grayscale.setChecked(False)
         self.chk_8bit = QCheckBox("Convert to 8 bit")
         self.chk_8bit.setChecked(False)
-        self.chk_normalize = QCheckBox("Normalize")
+        self.chk_normalize = QCheckBox("Normalize each image")
         self.chk_normalize.setChecked(False)
-        self.chk_normalize.setToolTip("Stretch each image to full range (per-image). Works for 8/16 bit and float. Off = comparable brightness.")
+        self.chk_normalize.setToolTip(
+            "On load: stretch each image to full range (per-image). "
+            "Works for 8/16 bit and float. Off = comparable brightness."
+        )
         controls_layout.addRow("", self.chk_grayscale)
         controls_layout.addRow("", self.chk_8bit)
         controls_layout.addRow("", self.chk_normalize)
         layout.addLayout(controls_layout)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setFrameShadow(QFrame.Shadow.Sunken)
+        layout.addWidget(sep)
 
         layout.addWidget(QLabel("<b>Preview / Crop</b>"))
         preview_opts = QHBoxLayout()
@@ -721,9 +739,12 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
         )
         preview_opts.addWidget(QLabel("Mode:"))
         preview_opts.addWidget(self.cmb_preview_mode)
-        self.chk_preview_norm = QCheckBox("Normalize")
+        self.chk_preview_norm = QCheckBox("Preview normalize")
         self.chk_preview_norm.setChecked(True)
-        self.chk_preview_norm.setToolTip("Min-max stretch for better visibility")
+        self.chk_preview_norm.setToolTip(
+            "Display only in this dialog — min-max stretch for visibility. "
+            "Does not change what is loaded."
+        )
         preview_opts.addWidget(self.chk_preview_norm)
         self.btn_roi_reset = QPushButton("Reset ROI")
         self.btn_roi_reset.setToolTip("Reset crop to full frame")
@@ -766,7 +787,6 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
         self.chk_grayscale.toggled.connect(self._update_estimates)
         self.chk_grayscale.toggled.connect(self._on_grayscale_changed)
         self.chk_8bit.toggled.connect(self._update_estimates)
-        self.chk_normalize.toggled.connect(self._on_preview_option_changed)
         self.cmb_preview_mode.currentTextChanged.connect(self._on_preview_option_changed)
         self.chk_preview_norm.toggled.connect(self._on_preview_option_changed)
         if self._is_folder:
@@ -801,7 +821,7 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
         grayscale = self.chk_grayscale.isChecked()
         # Index 0 = MAX (default), 1 = Single
         mode = "max" if self.cmb_preview_mode.currentIndex() == 0 else "single"
-        normalize = self.chk_preview_norm.isChecked() or self.chk_normalize.isChecked()
+        normalize = self.chk_preview_norm.isChecked()
         self.lbl_preview_status.setText("Loading preview...")
         self._preview_generation += 1
         generation = self._preview_generation
@@ -915,7 +935,7 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
 
     def _reset_roi(self) -> None:
         """Reset crop ROI to full frame."""
-        self.chk_flip_xy.setChecked(False)
+        self._reset_transform_checkboxes()
         if self._preview is not None and self._roi is not None:
             h, w = self._preview.shape[0], self._preview.shape[1]
             self._roi.setPos((0, 0))
@@ -979,7 +999,7 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
             "grayscale": self.chk_grayscale.isChecked(),
             "convert_to_8_bit": self.chk_8bit.isChecked(),
             "normalize": self.chk_normalize.isChecked(),
-            "flip_xy": self.chk_flip_xy.isChecked(),
+            **self._transform_params(),
         }
         if self._is_folder:
             out["subset_ratio"] = self.spin_subset.value()
@@ -1047,7 +1067,7 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
             if self._is_folder and "subset_ratio" in initial_params:
                 self.spin_subset.setValue(initial_params["subset_ratio"])
             self.chk_row_number.blockSignals(False)
-            self.chk_flip_xy.setChecked(initial_params.get("flip_xy", False))
+            self._apply_initial_transforms(initial_params)
         else:
             self.chk_8bit.setChecked(
                 is_uint8_source or self.metadata.get("convert_to_8_bit_suggest", False)
@@ -1057,7 +1077,6 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
             self.chk_8bit.setToolTip("Source is already 8 bit")
         self.cmb_preview_mode.currentTextChanged.connect(self._refresh_preview)
         self.chk_preview_norm.toggled.connect(self._refresh_preview)
-        self.chk_normalize.toggled.connect(self._refresh_preview)
         self._update_estimates()
         self._refresh_preview()
 
@@ -1120,12 +1139,20 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
 
         self.chk_8bit = QCheckBox("Convert to 8 bit")
         self.chk_8bit.setChecked(False)
-        self.chk_normalize = QCheckBox("Normalize")
+        self.chk_normalize = QCheckBox("Normalize each image")
         self.chk_normalize.setChecked(False)
-        self.chk_normalize.setToolTip("Stretch each file to full range (per-file). If off: fixed scale 0-1 -> 0-255 (comparable brightness).")
+        self.chk_normalize.setToolTip(
+            "On load: stretch each file to full range (per-file). "
+            "If off: fixed scale 0-1 -> 0-255 (comparable brightness)."
+        )
         controls_layout.addRow("", self.chk_8bit)
         controls_layout.addRow("", self.chk_normalize)
         layout.addLayout(controls_layout)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setFrameShadow(QFrame.Shadow.Sunken)
+        layout.addWidget(sep)
 
         layout.addWidget(QLabel("<b>Preview / Crop</b>"))
         preview_opts = QHBoxLayout()
@@ -1134,8 +1161,12 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
         self.cmb_preview_mode.setCurrentIndex(0)  # MAX default
         preview_opts.addWidget(QLabel("Mode:"))
         preview_opts.addWidget(self.cmb_preview_mode)
-        self.chk_preview_norm = QCheckBox("Normalize")
+        self.chk_preview_norm = QCheckBox("Preview normalize")
         self.chk_preview_norm.setChecked(True)
+        self.chk_preview_norm.setToolTip(
+            "Display only in this dialog — min-max stretch for visibility. "
+            "Does not change what is loaded."
+        )
         preview_opts.addWidget(self.chk_preview_norm)
         self.btn_roi_reset = QPushButton("Reset ROI")
         self.btn_roi_reset.pressed.connect(self._reset_roi)
@@ -1210,7 +1241,7 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
 
         mode = "max" if self.cmb_preview_mode.currentIndex() == 0 else "single"
         size_ratio = self.spin_resize.value() / 100.0
-        normalize = self.chk_preview_norm.isChecked() or self.chk_normalize.isChecked()
+        normalize = self.chk_preview_norm.isChecked()
         est = estimate_ascii_datatype(self._path, delimiter, first_col)
         stats = est
         fmt = lambda x: f"{x:.4g}" if isinstance(x, (int, float)) and not (x != x) else str(x)
@@ -1281,7 +1312,7 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
         self._update_estimates()
 
     def _reset_roi(self) -> None:
-        self.chk_flip_xy.setChecked(False)
+        self._reset_transform_checkboxes()
         if self._preview is not None and self._roi is not None:
             cols, rows = self._preview.shape[1], self._preview.shape[0]
             self._roi.setPos((0, 0))
@@ -1335,7 +1366,7 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
             "normalize": self.chk_normalize.isChecked(),
             "delimiter": self._get_delimiter(),
             "first_col_is_row_number": self.chk_row_number.isChecked(),
-            "flip_xy": self.chk_flip_xy.isChecked(),
+            **self._transform_params(),
         }
         if self._is_folder:
             out["subset_ratio"] = self.spin_subset.value()

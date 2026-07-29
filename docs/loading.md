@@ -77,8 +77,10 @@ load_images(path)
 ### Preview-Optionen (Video / Image / ASCII)
 
 - **Mode**: Default **MAX** (ueber Frames/Samples); alternativ Single
-- **Normalize**: Preview- und/oder Load-Normalize (Min-Max Stretch)
+- **Normalize each image/frame** (Loading Options): wirkt auf den **Load** (pro Bild/Frame Stretch). Unabhaengig von der Preview.
+- **Preview normalize** (unter der HLine, nur Dialog): **nur Anzeige** in der Vorschau — aendert nicht, was geladen wird.
 - **8 bit / Grayscale**: wenn Quelle schon nativ → Checkbox checked, disabled, sichtbar ausgegraut (`set_checkbox_visibly_enabled`)
+- Nach erfolgreichem Load mit **T>1**: Timeline-Dock wird geoeffnet (`dock_t_line.show` / `raiseDock`); bei Einzelbild bleibt es versteckt.
 
 ---
 
@@ -106,7 +108,9 @@ load_images(path)
 
 - **Preview**: Default MAX ueber gesampelte Bilder; Mode Single waehlbar
 - **Crop-ROI** auf der Preview --> `mask`, `mask_rel`
-- **Optionen**: Resize, Grayscale, 8 bit, Normalize; bei Ordner zusaetzlich Subset-Ratio
+- **Transforms**: Flip X, Flip Y, Flip XY (Transpose) — Preview + nach dem Load (wie View-Tab)
+- **Optionen**: Resize, Grayscale, 8 bit, Normalize each image; bei Ordner zusaetzlich Subset-Ratio
+- **Preview normalize**: nur Anzeige (getrennt durch HLine)
 - **Wann zeigen?**: Erster Load in Session ODER Checkbox "Always show" ODER est_bytes > Schwellwert
 - **Session-Defaults**: `size_ratio`, `grayscale`, `mask_rel`, bei Ordner `subset_ratio`
 

@@ -325,6 +325,9 @@ class MainWindow(QMainWindow):
         self.ui.button_export_lut.pressed.connect(self.save_lut)
         self.ui.spin_lut_min.valueChanged.connect(self._on_lut_spin_changed)
         self.ui.spin_lut_max.valueChanged.connect(self._on_lut_spin_changed)
+        self.ui.combobox_colormap.currentTextChanged.connect(
+            self._on_colormap_combo_changed
+        )
         self._lut_sync_timer = QTimer(self)
         self._lut_sync_timer.timeout.connect(self._sync_lut_spinners)
         self._lut_sync_timer.start(80)
@@ -679,6 +682,14 @@ class MainWindow(QMainWindow):
         # Whole bottom dock (plot + Frame/Range panel): no noise for T<=1
         if needs_range:
             self.ui.dock_t_line.show()
+            try:
+                self.ui.dock_t_line.raiseDock()
+            except Exception:
+                pass
+            # After re-show (e.g. post load dialog), restore horizontal splitter sizes.
+            QTimer.singleShot(
+                0, getattr(self.ui, "_set_timeline_splitter_sizes", lambda: None)
+            )
         else:
             self.ui.dock_t_line.hide()
 
@@ -797,6 +808,7 @@ class MainWindow(QMainWindow):
             self.ui.image_viewer.ui.histogram.gradient.restoreState(
                 Gradients[name]  # type: ignore
             )
+            self._sync_colormap_combo(name)
         def lastColorMap():
             return self.ui.image_viewer.ui.histogram.gradient.lastCM
         self.ui.image_viewer.ui.histogram.gradient.lastColorMap = lastColorMap
@@ -806,6 +818,10 @@ class MainWindow(QMainWindow):
         )
         if settings.get("default/colormap") not in ("greyclip", "plasma", "bipolar"):
             self.ui.checkbox_auto_colormap.setChecked(False)
+        self._sync_colormap_combo(settings.get("default/colormap"))
+        self.ui.image_viewer.ui.histogram.gradient.sigGradientChangeFinished.connect(
+            self._on_gradient_finished_sync_combo
+        )
 
         settings.connect_sync(
             "default/colormap",
@@ -1770,16 +1786,20 @@ class MainWindow(QMainWindow):
         if not dlg.exec():
             return
         user_params = dlg.get_params()
-        skip_keys = {"mask_rel", "roi_state", "flip_xy"}
+        skip_keys = {"mask_rel", "roi_state", "flip_xy", "flip_x", "flip_y"}
         params = {k: v for k, v in user_params.items() if k not in skip_keys}
         flip_xy = user_params.get("flip_xy", False)
+        flip_x = user_params.get("flip_x", False)
+        flip_y = user_params.get("flip_y", False)
         self._ascii_session_defaults = {
             "size_ratio": user_params["size_ratio"],
             "convert_to_8_bit": user_params["convert_to_8_bit"],
             "normalize": user_params.get("normalize", False),
             "delimiter": user_params["delimiter"],
             "first_col_is_row_number": user_params["first_col_is_row_number"],
-            "flip_xy": user_params.get("flip_xy", False),
+            "flip_xy": flip_xy,
+            "flip_x": flip_x,
+            "flip_y": flip_y,
             "_data_size": ascii_data_size,
         }
         if "subset_ratio" in user_params:
@@ -1804,12 +1824,12 @@ class MainWindow(QMainWindow):
         log(f"Loaded in {lm.duration:.2f}s")
         self.ui.image_viewer.set_image(img)
 
-        if flip_xy:
-            self.ui.image_viewer.manipulate("transpose")
         self.last_file_dir = path.parent if path.is_file() else path
         self.last_file = path.name
         self.update_statusbar()
         self.reset_options()
+        self._apply_load_dialog_transforms(flip_x=flip_x, flip_y=flip_y, flip_xy=flip_xy)
+        self._update_selection_visibility()
 
     def _load_hikmicro(self, paths: list) -> None:
         """Convert radiometric JPEGs to °C stack and display."""
@@ -1850,6 +1870,7 @@ class MainWindow(QMainWindow):
         self.last_file = paths[0].name
         self.update_statusbar()
         self.reset_options()
+        self._update_selection_visibility()
 
     def browse_tof(self) -> None:
         path, _ = QFileDialog.getOpenFileName()
@@ -1929,6 +1950,42 @@ class MainWindow(QMainWindow):
         if mn > mx:
             mn, mx = mx, mn
         self.ui.image_viewer.ui.histogram.setLevels(min=mn, max=mx)
+
+    
+    
+    def _on_colormap_combo_changed(self, name: str) -> None:
+        """User picked a visible colormap → same path as gradient right-click preset."""
+        if not name or name not in Gradients:
+            return
+        grad = self.ui.image_viewer.ui.histogram.gradient
+        if getattr(grad, "lastCM", None) == name:
+            # Still turn Auto off if user re-selects current while Auto is on
+            if self.ui.checkbox_auto_colormap.isChecked():
+                grad.loadPreset(name)
+            return
+        grad.loadPreset(name)
+
+    def _sync_colormap_combo(self, name: Optional[str] = None) -> None:
+        """Keep combobox in sync with lastCM / preset name."""
+        if name is None:
+            name = getattr(
+                self.ui.image_viewer.ui.histogram.gradient, "lastCM", None
+            )
+        if not name:
+            return
+        combo = self.ui.combobox_colormap
+        idx = combo.findText(name)
+        if idx < 0:
+            return
+        if combo.currentIndex() == idx:
+            return
+        combo.blockSignals(True)
+        combo.setCurrentIndex(idx)
+        combo.blockSignals(False)
+
+    def _on_gradient_finished_sync_combo(self) -> None:
+        """After right-click preset or drag on gradient, refresh combo from lastCM."""
+        self._sync_colormap_combo()
 
     def _on_lut_log_changed(self) -> None:
         """Toggle logarithmic scale on histogram counts via data transform (no setLogMode)."""
@@ -2382,6 +2439,8 @@ class MainWindow(QMainWindow):
                             "convert_to_8_bit": user_params.get("convert_to_8_bit", False),
                             "normalize": user_params.get("normalize", False),
                             "flip_xy": user_params.get("flip_xy", False),
+                            "flip_x": user_params.get("flip_x", False),
+                            "flip_y": user_params.get("flip_y", False),
                             "_data_size": video_data_size,
                         }
                         if "roi_state" in user_params:
@@ -2429,6 +2488,8 @@ class MainWindow(QMainWindow):
                             "normalize", False,
                         )
                         params["flip_xy"] = self._video_session_defaults.get("flip_xy", False)
+                        params["flip_x"] = self._video_session_defaults.get("flip_x", False)
+                        params["flip_y"] = self._video_session_defaults.get("flip_y", False)
                         self.ui.spinbox_load_size.setValue(params["size_ratio"])
                         self.ui.spinbox_load_subset.setValue(params["subset_ratio"])
                         self.ui.checkbox_load_grayscale.setChecked(params["grayscale"])
@@ -2496,6 +2557,8 @@ class MainWindow(QMainWindow):
                                 "convert_to_8_bit": user_params.get("convert_to_8_bit", False),
                                 "normalize": user_params.get("normalize", False),
                                 "flip_xy": user_params.get("flip_xy", False),
+                                "flip_x": user_params.get("flip_x", False),
+                                "flip_y": user_params.get("flip_y", False),
                                 "_data_size": image_data_size,
                             }
                             if "roi_state" in user_params:
@@ -2543,6 +2606,8 @@ class MainWindow(QMainWindow):
                                 "normalize", False,
                             )
                             params["flip_xy"] = self._image_session_defaults.get("flip_xy", False)
+                            params["flip_x"] = self._image_session_defaults.get("flip_x", False)
+                            params["flip_y"] = self._image_session_defaults.get("flip_y", False)
                             self.ui.spinbox_load_size.setValue(params["size_ratio"])
                             self.ui.spinbox_load_subset.setValue(params["subset_ratio"])
                             self.ui.checkbox_load_grayscale.setChecked(params["grayscale"])
@@ -2569,6 +2634,8 @@ class MainWindow(QMainWindow):
         params.pop("mask_rel", None)
         target_roi_state = params.pop("roi_state", None)
         flip_xy = params.pop("flip_xy", False)
+        flip_x = params.pop("flip_x", False)
+        flip_y = params.pop("flip_y", False)
         if "step" in params:
             params["subset_ratio"] = 1.0 / params.pop("step")
         params.pop("frame_range", None)
@@ -2587,15 +2654,36 @@ class MainWindow(QMainWindow):
             )
         log(f"Loaded in {lm.duration:.2f}s")
 
-        # Apply transforms from load dialog (flip_xy)
-        if flip_xy:
-            self.ui.image_viewer.manipulate("transpose")
         # ROI (target_roi_state) determines mask at load time; no post-load crop.
         # Program ROI stays independent (init_roi default).
         self.last_file_dir = path.parent
         self.last_file = path.name
         self.update_statusbar()
         self.reset_options()
+        self._apply_load_dialog_transforms(flip_x=flip_x, flip_y=flip_y, flip_xy=flip_xy)
+        # After load dialog closes: ensure Timeline dock is open for multi-frame data.
+        self._update_selection_visibility()
+
+    def _apply_load_dialog_transforms(
+        self,
+        *,
+        flip_x: bool = False,
+        flip_y: bool = False,
+        flip_xy: bool = False,
+    ) -> None:
+        """Apply spatial transforms from load dialog (ImageData order: transpose → flip_x → flip_y)."""
+        if flip_xy:
+            self.ui.image_viewer.manipulate("transpose")
+        if flip_x:
+            self.ui.checkbox_flipx.blockSignals(True)
+            self.ui.checkbox_flipx.setChecked(True)
+            self.ui.checkbox_flipx.blockSignals(False)
+            self.ui.image_viewer.manipulate("flip_x")
+        if flip_y:
+            self.ui.checkbox_flipy.blockSignals(True)
+            self.ui.checkbox_flipy.setChecked(True)
+            self.ui.checkbox_flipy.blockSignals(False)
+            self.ui.image_viewer.manipulate("flip_y")
 
     def _is_sliding_mean_preview(self) -> bool:
         """True if Frame mode + pipeline has sliding mean (sub or div) with apply_full=False."""

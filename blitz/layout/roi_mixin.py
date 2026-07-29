@@ -10,8 +10,7 @@ from PyQt6.QtWidgets import (
 
 class ROIMixin:
     """
-    Mixin for Load Dialogs to provide ROI spinners (X, Y, W, H)
-    and Flip XY checkbox.
+    Mixin for Load Dialogs: Flip X / Flip Y / Flip XY (Transpose), ROI spinners.
 
     Requires the consuming class to have:
     - self._preview: np.ndarray (the raw loaded preview image)
@@ -23,10 +22,16 @@ class ROIMixin:
 
     def _setup_roi_controls(self, layout: QVBoxLayout) -> None:
         """Add ROI controls to the given layout."""
-        # Transform Checkboxes
+        # Transform Checkboxes (same idea as View tab Flip x/y + load-only Transpose)
         transform_layout = QHBoxLayout()
+        self.chk_flip_x = QCheckBox("Flip X")
+        self.chk_flip_x.setToolTip("Mirror left/right (applied after load)")
+        self.chk_flip_y = QCheckBox("Flip Y")
+        self.chk_flip_y.setToolTip("Mirror up/down (applied after load)")
         self.chk_flip_xy = QCheckBox("Flip XY (Transpose)")
-        self.chk_flip_xy.setToolTip("Transpose image (swap X/Y axes)")
+        self.chk_flip_xy.setToolTip("Swap X/Y axes (applied after load)")
+        transform_layout.addWidget(self.chk_flip_x)
+        transform_layout.addWidget(self.chk_flip_y)
         transform_layout.addWidget(self.chk_flip_xy)
         transform_layout.addStretch()
         layout.addLayout(transform_layout)
@@ -56,6 +61,8 @@ class ROIMixin:
         layout.addWidget(roi_group)
 
         # Connections
+        self.chk_flip_x.stateChanged.connect(self._on_transform_changed)
+        self.chk_flip_y.stateChanged.connect(self._on_transform_changed)
         self.chk_flip_xy.stateChanged.connect(self._on_transform_changed)
 
         for spin in (self.spin_roi_x, self.spin_roi_y, self.spin_roi_w, self.spin_roi_h):
@@ -86,8 +93,32 @@ class ROIMixin:
         self._roi.addScaleHandle([0, 0], [1, 1])
         self._roi.addScaleHandle([1, 0], [0, 1])
         self._roi.addScaleHandle([0, 1], [1, 0])
+        # Avoid duplicate connections when preview reloads recreate the ROI
+        try:
+            self._roi.sigRegionChanged.disconnect(self._on_roi_changed)
+        except TypeError:
+            pass
+        try:
+            self._roi.sigRegionChangeFinished.disconnect(self._on_roi_change_finished)
+        except TypeError:
+            pass
         self._roi.sigRegionChanged.connect(self._on_roi_changed)
+        self._roi.sigRegionChangeFinished.connect(self._on_roi_change_finished)
         self._on_roi_changed()
+
+    def _sync_roi_spinners(self, x: int, y: int, w: int, h: int, tw: int, th: int) -> None:
+        for s in (self.spin_roi_x, self.spin_roi_y, self.spin_roi_w, self.spin_roi_h):
+            s.blockSignals(True)
+        self.spin_roi_x.setMaximum(max(0, tw - 1))
+        self.spin_roi_y.setMaximum(max(0, th - 1))
+        self.spin_roi_w.setMaximum(tw)
+        self.spin_roi_h.setMaximum(th)
+        self.spin_roi_x.setValue(x)
+        self.spin_roi_y.setValue(y)
+        self.spin_roi_w.setValue(w)
+        self.spin_roi_h.setValue(h)
+        for s in (self.spin_roi_x, self.spin_roi_y, self.spin_roi_w, self.spin_roi_h):
+            s.blockSignals(False)
 
     def _on_transform_changed(self) -> None:
         """Update preview image based on checkboxes."""
@@ -122,13 +153,22 @@ class ROIMixin:
             self._update_estimates()
 
     def _apply_auto_transpose(self) -> None:
-        """Enable Flip XY when height > width so the longer side is horizontal."""
+        """Enable Flip XY once when height > width so the longer side is horizontal.
+
+        Only runs once per dialog lifetime. Re-applying on every preview reload
+        (e.g. Preview normalize toggle) would re-check Flip XY after the user
+        turned it off.
+        """
+        if getattr(self, "_auto_transpose_applied", False):
+            return
+        self._auto_transpose_applied = True
+
         img = getattr(self, "_preview", None)
         if img is None:
             return
         initial = getattr(self, "_initial_params", {}) or {}
         if "flip_xy" in initial:
-            return  # user/session explicitly set it
+            return  # user/session explicitly set it (already applied in __init__)
         h, w = img.shape[0], img.shape[1]
         if h > w:
             self.chk_flip_xy.blockSignals(True)
@@ -136,11 +176,41 @@ class ROIMixin:
             self.chk_flip_xy.blockSignals(False)
 
     def _get_transformed_preview(self) -> np.ndarray:
-        """Return the preview image with Flip XY applied."""
+        """Return preview with transforms matching ImageData order: transpose → flip_x → flip_y."""
         img = self._preview
         if self.chk_flip_xy.isChecked():
             img = np.transpose(img, (1, 0, 2)) if img.ndim == 3 else img.T
+        if self.chk_flip_x.isChecked():
+            img = np.flip(img, axis=1)
+        if self.chk_flip_y.isChecked():
+            img = np.flip(img, axis=0)
         return img
+
+    def _reset_transform_checkboxes(self) -> None:
+        """Clear Flip X/Y/XY without cascading multiple transform updates."""
+        for chk in (self.chk_flip_x, self.chk_flip_y, self.chk_flip_xy):
+            chk.blockSignals(True)
+            chk.setChecked(False)
+            chk.blockSignals(False)
+        self._on_transform_changed()
+
+    def _transform_params(self) -> dict:
+        return {
+            "flip_x": self.chk_flip_x.isChecked(),
+            "flip_y": self.chk_flip_y.isChecked(),
+            "flip_xy": self.chk_flip_xy.isChecked(),
+        }
+
+    def _apply_initial_transforms(self, initial: dict) -> None:
+        """Restore Flip X/Y/XY from session defaults (blocked → one refresh)."""
+        for key, chk in (
+            ("flip_x", self.chk_flip_x),
+            ("flip_y", self.chk_flip_y),
+            ("flip_xy", self.chk_flip_xy),
+        ):
+            chk.blockSignals(True)
+            chk.setChecked(bool(initial.get(key, False)))
+            chk.blockSignals(False)
 
     def _get_transformed_bounds(self) -> tuple[int, int]:
         """Return (width, height) of transformed preview. (0,0) if no preview."""
@@ -160,6 +230,10 @@ class ROIMixin:
             return
 
         self._roi.sigRegionChanged.disconnect(self._on_roi_changed)
+        try:
+            self._roi.sigRegionChangeFinished.disconnect(self._on_roi_change_finished)
+        except TypeError:
+            pass
 
         x = max(0, min(self.spin_roi_x.value(), tw - 1))
         y = max(0, min(self.spin_roi_y.value(), th - 1))
@@ -171,12 +245,17 @@ class ROIMixin:
         self._roi.setAngle(0)
 
         self._roi.sigRegionChanged.connect(self._on_roi_changed)
+        self._roi.sigRegionChangeFinished.connect(self._on_roi_change_finished)
 
         if hasattr(self, "_update_estimates"):
             self._update_estimates()
 
     def _on_roi_changed(self) -> None:
-        """Update spinners from ROI object. Clamp ROI to image bounds."""
+        """Update spinners from ROI while dragging — do not write back to ROI.
+
+        Writing int-clamped setPos/setSize during drag fights scale handles
+        (especially with invertY) and makes the whole ROI jump.
+        """
         if getattr(self, "_roi", None) is None:
             return
 
@@ -188,31 +267,48 @@ class ROIMixin:
         pos = state["pos"]
         size = state["size"]
 
-        x = max(0, min(int(pos.x()), tw - 1))
-        y = max(0, min(int(pos.y()), th - 1))
-        w = max(1, min(int(size.x()), tw - x))
-        h = max(1, min(int(size.y()), th - y))
+        x = max(0, min(int(round(pos.x())), tw - 1))
+        y = max(0, min(int(round(pos.y())), th - 1))
+        w = max(1, min(int(round(size.x())), tw - x))
+        h = max(1, min(int(round(size.y())), th - y))
 
-        if x != pos.x() or y != pos.y() or w != size.x() or h != size.y():
+        self._sync_roi_spinners(x, y, w, h, tw, th)
+
+        if hasattr(self, "_update_estimates"):
+            self._update_estimates()
+
+    def _on_roi_change_finished(self) -> None:
+        """Clamp ROI to image bounds after drag/resize finishes."""
+        if getattr(self, "_roi", None) is None:
+            return
+
+        tw, th = self._get_transformed_bounds()
+        if tw <= 0 or th <= 0:
+            return
+
+        state = self._roi.getState()
+        pos = state["pos"]
+        size = state["size"]
+
+        x = max(0, min(float(pos.x()), tw - 1))
+        y = max(0, min(float(pos.y()), th - 1))
+        w = max(1.0, min(float(size.x()), tw - x))
+        h = max(1.0, min(float(size.y()), th - y))
+
+        if (
+            abs(x - pos.x()) > 1e-6
+            or abs(y - pos.y()) > 1e-6
+            or abs(w - size.x()) > 1e-6
+            or abs(h - size.y()) > 1e-6
+        ):
             self._roi.blockSignals(True)
             self._roi.setPos((x, y))
             self._roi.setSize((w, h))
             self._roi.blockSignals(False)
 
-        for s in (self.spin_roi_x, self.spin_roi_y, self.spin_roi_w, self.spin_roi_h):
-            s.blockSignals(True)
-
-        self.spin_roi_x.setMaximum(max(0, tw - 1))
-        self.spin_roi_y.setMaximum(max(0, th - 1))
-        self.spin_roi_w.setMaximum(tw)
-        self.spin_roi_h.setMaximum(th)
-        self.spin_roi_x.setValue(x)
-        self.spin_roi_y.setValue(y)
-        self.spin_roi_w.setValue(w)
-        self.spin_roi_h.setValue(h)
-
-        for s in (self.spin_roi_x, self.spin_roi_y, self.spin_roi_w, self.spin_roi_h):
-            s.blockSignals(False)
+        self._sync_roi_spinners(
+            int(round(x)), int(round(y)), int(round(w)), int(round(h)), tw, th
+        )
 
         if hasattr(self, "_update_estimates"):
             self._update_estimates()
@@ -254,7 +350,11 @@ class ROIMixin:
             x, y = p.x(), p.y()
             x = max(0, min(x, W_t - 1e-6))
             y = max(0, min(y, H_t - 1e-6))
-            # Un-Flip XY (inverse of Transpose)
+            # Inverse of display order (transpose → flip_x → flip_y)
+            if self.chk_flip_y.isChecked():
+                y = (H_t - 1) - y
+            if self.chk_flip_x.isChecked():
+                x = (W_t - 1) - x
             if self.chk_flip_xy.isChecked():
                 x, y = y, x
             source_corners.append((x, y))

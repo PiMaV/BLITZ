@@ -16,6 +16,7 @@ Related: [`docs/missing_features.md`](docs/missing_features.md) (hidden UI / con
 - **Mixed HxW** in one folder: crop-to-common-min vs cancel (`MixedImageSizesDialog` + `mixed_size_policy`)
 - Load preview: **MAX default**; Single/MAX + Normalize; thread-safe preview workers (no QThread destroy on rapid toggle)
 - File tab / load dialogs: **8 bit & grayscale** visibly grayed when source is already native
+- Load dialog UX: **Normalize each image/frame** vs **Preview normalize** (display-only, HLine); Flip X/Y + Transpose; ROI handle drag fix; Timeline opens for T>1 after load
 - Status / Probe dock rename; MetaData block at bottom of File tab (EXIF still placeholder)
 - Dock layout restore: ignore incompatible saved state (e.g. after Probe rename); bottom band sizing fixed for large screens
 - Timeline dock **hidden for single-frame** data; Frame|Range side panel compact (side-by-side)
