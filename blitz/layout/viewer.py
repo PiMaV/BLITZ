@@ -77,6 +77,7 @@ class ImageViewer(pg.ImageView):
         self.setAcceptDrops(True)
         self._auto_colormap = True
         self._auto_fit = True
+        self._fit_levels_once = False
         self._lut_percentile = 0.0
         self._levels_cache: tuple[float, float] | None = None
         self._levels_cache_percentile: float | None = None
@@ -337,8 +338,10 @@ class ImageViewer(pg.ImageView):
                 r = max(abs(min_), max_)
                 min_, max_ = -r, r
                 self.ui.histogram.gradient.restoreState(Gradients['bipolar'])
+                self.ui.histogram.gradient.lastCM = 'bipolar'
             else:
                 self.ui.histogram.gradient.restoreState(Gradients['plasma'])
+                self.ui.histogram.gradient.lastCM = 'plasma'
         self.setLevels(min=min_, max=max_)
         self.ui.histogram.setHistogramRange(min_, max_)
 
@@ -352,8 +355,10 @@ class ImageViewer(pg.ImageView):
             r = max(abs(min_), max_)
             min_, max_ = -r, r
             self.ui.histogram.gradient.restoreState(Gradients['bipolar'])
+            self.ui.histogram.gradient.lastCM = 'bipolar'
         else:
             self.ui.histogram.gradient.restoreState(Gradients['plasma'])
+            self.ui.histogram.gradient.lastCM = 'plasma'
         self.setLevels(min=min_, max=max_)
         self.ui.histogram.setHistogramRange(min_, max_)
 
@@ -373,12 +378,19 @@ class ImageViewer(pg.ImageView):
             message_callback=message_callback,
             **load_kwargs,
         )
-        self.setImage(self.data.image, autoLevels=self._auto_fit)
+        self.setImage(self.data.image, autoLevels=False)
+        # Always fit once for a newly loaded dataset (uses Trim rule).
+        # Keep fitting then controls whether later frames/crops also refit.
+        # Note: load-dialog transpose/flip may run after this; those paths re-fit + autoRange.
+        self.autoLevels()
         self.autoRange()
         self.image_size_changed.emit()
 
     def set_image(self, img: ImageData, live_update: bool = False) -> None:
         self.data = img
+        # New dataset (non-live): always apply Trim-based fit once, even if Keep fitting is off.
+        if not live_update:
+            self._fit_levels_once = True
         # No throttle for full-dataset (multi-frame, non-live) to always show final buffer
         if not live_update and img.n_images > 1:
             self._last_set_image_time = time.perf_counter()
@@ -398,15 +410,33 @@ class ImageViewer(pg.ImageView):
             self.setImage(
                 img,
                 autoRange=False,
-                autoLevels=self._auto_fit,
+                autoLevels=False,
                 keep_timestep=keep_timestep,
             )
-            self._ensure_finite_levels(img)
+            # New buffer via set_image always fits once; Keep fitting also refits later.
+            if self._auto_fit or getattr(self, "_fit_levels_once", False):
+                self.autoLevels()
+                self._fit_levels_once = False
+            else:
+                self._ensure_finite_levels(img)
             self.autoRange()
         self.image_size_changed.emit()
 
     def _ensure_finite_levels(self, img: np.ndarray) -> None:
-        """Set finite min/max levels to avoid ViewBox overflow in cast (inf/nan)."""
+        """Keep current levels if finite; otherwise fall back to a safe Trim-based range."""
+        levels = None
+        try:
+            levels = self.getImageItem().getLevels()
+        except Exception:
+            levels = None
+        if (
+            levels is not None
+            and len(levels) == 2
+            and np.isfinite(levels[0])
+            and np.isfinite(levels[1])
+            and levels[1] > levels[0]
+        ):
+            return
         mn, mx = self._calculate_levels(img)
         if not np.isfinite(mn):
             mn = 0.0
@@ -531,13 +561,18 @@ class ImageViewer(pg.ImageView):
     def manipulate(self, operation: str) -> None:
         if operation in {'rotate_90', 'flip_x', 'flip_y', 'transpose'}:
             getattr(self.data, operation)()
+        # Never use pyqtgraph autoLevels here — it ignores Trim %.
         self.setImage(
             self.data.image,
             keep_timestep=True,
             autoRange=False,
-            autoLevels=self._auto_fit,
+            autoLevels=False,
         )
+        if self._auto_fit:
+            self.autoLevels()
+        # Geometry change: view must follow new aspect (transpose / rotate).
         if operation in ('rotate_90', 'transpose'):
+            self.autoRange()
             self.image_size_changed.emit()
 
     def apply_mask(self) -> None:

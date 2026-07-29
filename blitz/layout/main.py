@@ -309,15 +309,14 @@ class MainWindow(QMainWindow):
         )
 
         # lut connections
-        self.ui.button_autofit.clicked.connect(self.ui.image_viewer.autoLevels)
+        self.ui.button_autofit.clicked.connect(self._on_fit_now)
+        self.ui.combobox_lut_trim.currentIndexChanged.connect(
+            self._on_lut_trim_preset_changed
+        )
         self.ui.spinbox_lut_percentile.valueChanged.connect(
-            self.ui.image_viewer.set_lut_percentile
+            self._on_lut_trim_spin_changed
         )
-        self.ui.checkbox_auto_fit.stateChanged.connect(
-            lambda: self.ui.image_viewer.set_auto_fit(
-                self.ui.checkbox_auto_fit.isChecked()
-            )
-        )
+        self.ui.checkbox_auto_fit.stateChanged.connect(self._on_keep_fitting_changed)
         self.ui.checkbox_auto_colormap.stateChanged.connect(
             self.ui.image_viewer.toggle_auto_colormap
         )
@@ -332,7 +331,7 @@ class MainWindow(QMainWindow):
         self._lut_sync_timer.timeout.connect(self._sync_lut_spinners)
         self._lut_sync_timer.start(80)
         self.ui.image_viewer.image_changed.connect(
-            lambda: QTimer.singleShot(50, self._sync_lut_spinners)
+            lambda: QTimer.singleShot(50, self._on_image_changed_lut)
         )
         self.ui.image_viewer.histogram_ready.connect(self._apply_lut_log_state)
         self.ui.image_viewer.timeLine.sigPositionChanged.connect(
@@ -340,7 +339,9 @@ class MainWindow(QMainWindow):
         )
         self.ui.checkbox_lut_log.stateChanged.connect(self._on_lut_log_changed)
         self._histogram_log_disconnected = False
+        self._configure_lut_spinners_for_dtype()
         self._sync_lut_spinners()
+        self._update_lut_fit_status()
 
         # option connections
         self.ui.button_connect.pressed.connect(self.start_web_connection)
@@ -1951,8 +1952,116 @@ class MainWindow(QMainWindow):
             mn, mx = mx, mn
         self.ui.image_viewer.ui.histogram.setLevels(min=mn, max=mx)
 
-    
-    
+    def _on_fit_now(self) -> None:
+        self.ui.image_viewer.autoLevels()
+        self._update_lut_fit_status()
+
+    def _on_keep_fitting_changed(self) -> None:
+        self.ui.image_viewer.set_auto_fit(self.ui.checkbox_auto_fit.isChecked())
+        self._update_lut_fit_status()
+
+    def _lut_trim_percentile(self) -> int:
+        """Current trim % from preset combo or custom spin."""
+        data = self.ui.combobox_lut_trim.currentData()
+        if data is None or int(data) < 0:
+            return int(self.ui.spinbox_lut_percentile.value())
+        return int(data)
+
+    def _on_lut_trim_preset_changed(self, _index: int = 0) -> None:
+        data = self.ui.combobox_lut_trim.currentData()
+        custom = data is None or int(data) < 0
+        self.ui.spinbox_lut_percentile.setVisible(custom)
+        if not custom:
+            self.ui.spinbox_lut_percentile.blockSignals(True)
+            self.ui.spinbox_lut_percentile.setValue(int(data))
+            self.ui.spinbox_lut_percentile.blockSignals(False)
+            self.ui.image_viewer.set_lut_percentile(float(data))
+        else:
+            # Entering Custom: keep last spin value / apply it
+            self.ui.image_viewer.set_lut_percentile(
+                float(self.ui.spinbox_lut_percentile.value())
+            )
+        self._update_lut_fit_status()
+
+    def _on_lut_trim_spin_changed(self, value: int) -> None:
+        # If user edits spin while on a fixed preset, switch to Custom
+        data = self.ui.combobox_lut_trim.currentData()
+        if data is not None and int(data) >= 0 and int(value) != int(data):
+            custom_idx = self.ui.combobox_lut_trim.findData(-1)
+            if custom_idx >= 0:
+                self.ui.combobox_lut_trim.blockSignals(True)
+                self.ui.combobox_lut_trim.setCurrentIndex(custom_idx)
+                self.ui.combobox_lut_trim.blockSignals(False)
+                self.ui.spinbox_lut_percentile.setVisible(True)
+        self.ui.image_viewer.set_lut_percentile(float(value))
+        self._update_lut_fit_status()
+
+    def _update_lut_fit_status(self) -> None:
+        """Plain-language status under the contrast-fit row."""
+        pct = self._lut_trim_percentile()
+        if pct <= 0:
+            how = "0%"
+            trim_hint = "true Min/Max (no outlier clip)"
+        else:
+            how = f"{pct}%"
+            trim_hint = f"ignore darkest/brightest {pct}% (≈ {pct}–{100 - pct} percentile)"
+        if self.ui.checkbox_auto_fit.isChecked():
+            text = (
+                f"Trim {how}: {trim_hint}. "
+                f"Keep fitting on: also refits on load/crop/frame."
+            )
+        else:
+            text = (
+                f"Trim {how}: {trim_hint}. "
+                f"Locked after load (one fit) — Fit now to update."
+            )
+        self.ui.label_lut_fit_status.setText(text)
+
+    def _on_image_changed_lut(self) -> None:
+        """Reconfigure Min/Max for image dtype, then sync values."""
+        self._configure_lut_spinners_for_dtype()
+        self._sync_lut_spinners()
+        self._sync_colormap_combo()
+        self._update_lut_fit_status()
+
+    def _configure_lut_spinners_for_dtype(self) -> None:
+        """Int spinners for integer images; float otherwise (with spinner buttons)."""
+        from PyQt6.QtWidgets import QAbstractSpinBox
+
+        img_item = self.ui.image_viewer.getImageItem()
+        data = None if img_item is None else img_item.image
+        if data is None:
+            return
+
+        dtype = np.asarray(data).dtype
+        dtype_key = (dtype.kind, int(dtype.itemsize))
+        if dtype_key == getattr(self.ui, "_lut_levels_dtype_key", None):
+            return
+        self.ui._lut_levels_dtype_key = dtype_key
+        want_int = bool(np.issubdtype(dtype, np.integer))
+        self.ui._lut_levels_integer = want_int
+
+        spinners = (self.ui.spin_lut_min, self.ui.spin_lut_max)
+        for s in spinners:
+            s.blockSignals(True)
+        try:
+            for s in spinners:
+                s.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.UpDownArrows)
+            if want_int:
+                info = np.iinfo(dtype)
+                for s in spinners:
+                    s.setDecimals(0)
+                    s.setSingleStep(1)
+                    s.setRange(float(info.min), float(info.max))
+            else:
+                for s in spinners:
+                    s.setDecimals(2)
+                    s.setSingleStep(0.01)
+                    s.setRange(-1e15, 1e15)
+        finally:
+            for s in spinners:
+                s.blockSignals(False)
+
     def _on_colormap_combo_changed(self, name: str) -> None:
         """User picked a visible colormap → same path as gradient right-click preset."""
         if not name or name not in Gradients:
@@ -2073,17 +2182,26 @@ class MainWindow(QMainWindow):
         if levels is None or len(levels) != 2:
             return
         mn_f, mx_f = map(float, levels)
+        if getattr(self.ui, "_lut_levels_integer", False):
+            mn_f = float(round(mn_f))
+            mx_f = float(round(mx_f))
 
         # Skip if values already match (avoid redundant updates)
-        if (abs(self.ui.spin_lut_min.value() - mn_f) < 1e-12
-                and abs(self.ui.spin_lut_max.value() - mx_f) < 1e-12):
+        tol = 0.5 if getattr(self.ui, "_lut_levels_integer", False) else 1e-12
+        if (abs(self.ui.spin_lut_min.value() - mn_f) < tol
+                and abs(self.ui.spin_lut_max.value() - mx_f) < tol):
             return
 
         spinners = (self.ui.spin_lut_min, self.ui.spin_lut_max)
         for s in spinners:
             s.blockSignals(True)
         for s, val in zip(spinners, (mn_f, mx_f)):
-            s.setDecimals(2)
+            # Clamp into spinner range (dtype bounds for integer images)
+            lo, hi = s.minimum(), s.maximum()
+            if val < lo:
+                val = lo
+            elif val > hi:
+                val = hi
             s.setValue(val)
         for s in spinners:
             s.blockSignals(False)
@@ -2684,6 +2802,11 @@ class MainWindow(QMainWindow):
             self.ui.checkbox_flipy.setChecked(True)
             self.ui.checkbox_flipy.blockSignals(False)
             self.ui.image_viewer.manipulate("flip_y")
+        if flip_xy or flip_x or flip_y:
+            # Load fits before transforms; after geometry change always re-apply
+            # Trim-based levels + view range (even if Keep fitting is off).
+            self.ui.image_viewer.autoLevels()
+            self.ui.image_viewer.autoRange()
 
     def _is_sliding_mean_preview(self) -> bool:
         """True if Frame mode + pipeline has sliding mean (sub or div) with apply_full=False."""

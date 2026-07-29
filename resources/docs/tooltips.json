@@ -5,14 +5,15 @@
     "action_export": "Export the currently displayed images to the selected folder.",
     "action_reset_layout": "Clear saved dock arrangement and restart with default layout. Use when the window layout looks wrong after a previous session.",
     "action_restart": "Manually restart the application.",
-
-    "button_autofit": "Recompute and apply contrast range (Clip %). Use when Auto fit is off, or after manual LUT tweaks.",
-    "spinbox_lut_percentile": "Ignore top/bottom X% for contrast. 0 = Min/Max (classic, sensitive to outliers). 1-49 = percentile (stable when scrolling). Auto fit OFF = lock range across loads.",
-    "checkbox_auto_fit": "When on: recompute range on load/crop/mask and keep it stable when scrolling. When off: lock range for comparison across loads; click Fit to re-fit.",
-    "checkbox_auto_colormap": "If set, uses plasma for normal data and switches to bipolar (diverging) colormap when negative values appear (e.g. through normalization or fluctuation around zero).",
+    "button_autofit": "Set Min/Max once from the current image, using the Trim % rule. One-shot — does not stay on. Use when Keep fitting is off, or after you dragged Min/Max by hand.",
+    "combobox_lut_trim": "Trim % = outlier clipper for contrast fitting (display only — does not change your data).\n\nWhen Fit now, Keep fitting, or load set Min & Max, this many percent of the darkest and brightest pixels are ignored:\n• 0% — true Min/Max (darkest & brightest pixel). Classic, but hot pixels / sparks can wash out the image.\n• 1% — ignore outer 1% (≈ 1st–99th percentile). Mild robust fit.\n• 2% — ignore outer 2% (≈ 2nd–98th percentile). Stronger; often good for noisy data.\n• Custom… — any trim % (shows a spinner).\n\nApplies on load (also after transpose/flip from the load dialog), on Fit now, and while Keep fitting is on.",
+    "spinbox_lut_percentile": "Custom Trim %: ignore the darkest and brightest X% of pixels when fitting Min & Max. 0% = true Min/Max. Display only — does not change the data.",
+    "checkbox_auto_fit": "When ON: Min/Max are recalculated on load, crop, mask, and new frames, using Trim %.\nWhen OFF: still one Trim-based fit when you load a new image/series (including after load-dialog transpose/flip), then Min/Max stay locked. Press Fit now to update once.",
+    "label_lut_fit_status": "Explains the active Trim % rule and whether Keep fitting will refit after load.",
+    "checkbox_auto_colormap": "When on: plasma for normal data, bipolar when values straddle zero (e.g. normalization). Choosing a Colormap turns this off.",
+    "combobox_colormap": "Colormap preset. Choosing a map turns Auto off. Right-click the color bar for more advanced features.",
     "button_load_lut": "Loads a LUT from a .json file.",
     "button_export_lut": "Saves the current LUT to a .json file. If an .blitz project file is selected, this LUT gets loaded automatically the next time the application is opened.",
-
     "button_open_file": "Select a single file containing one or more images (.png, .npy, ...).",
     "button_open_folder": "Select a folder containing multiple (single-image) files.",
     "checkbox_load_8bit": "Load each image as 8bit.",
@@ -21,22 +22,17 @@
     "spinbox_load_subset": "Adjust the relative number of images loaded.",
     "spinbox_max_ram": "Set an upper bound for memory used by the application.",
     "checkbox_video_dialog_always": "When checked: load options dialog opens for every load. When unchecked: last used settings are applied without asking (e.g. for repeated drag-and-drop).",
-
     "button_connect": "Connect to the given server address. Keeps listening until manually disconnected.",
     "button_disconnect": "Disconnect from the server.",
     "button_simulated_live": "Generate synthetic live data stream (Lissajous, Lightning). No video file.",
-
     "checkbox_mask": "Shows a rectangular selection area. Resize and apply for masking all images.",
     "button_reset_mask": "Resets the mask and shows the original image.",
     "button_image_mask": "Select a binary image of the same size as the current data to mask all pixels where that image has value 1.",
-
     "spinbox_width_h": "Changes the area of the horizontal line. The upper plot shows the mean over all vertical pixels at one position.",
     "spinbox_width_v": "Changes the area of the vertical line. The left plot shows the mean over all horizontal pixels at one position.",
-
     "checkbox_roi": "Turn on the ROI that shows the mean of all pixels in its range over time.",
     "combobox_roi": "Choose a format for the ROI.",
     "checkbox_roi_drop": "Whether to update the ROI plot (lower window) upon dragging the ROI or only on drop (releasing the mouse button).",
-
     "button_crop": "Crop the image dataset to the above selected time interval.",
     "button_crop_undo": "Reloads the last saved dataset. If uncropped data was not saved in RAM, instead loads it from the last loaded path again.",
     "checkbox_crop_keep": "If checked, crop is reversible: full data stays in RAM, Undo restores all.",
@@ -45,21 +41,16 @@
     "spinbox_crop_range_start": "Index of the first image in the cropped dataset.",
     "spinbox_crop_range_end": "Index of the last image in the cropped dataset.",
     "checkbox_window_const": "Keep window length fixed when changing Start or End. Useful for scanning a fixed window along the timeline.",
-
     "checkbox_minmax_per_image": "Envelope: at each x (horizontal) or y (vertical), min and max over ALL values in the orthogonal direction.",
     "checkbox_envelope_per_crosshair": "Envelope for current frame: min/max per position across crosshair thickness.",
     "checkbox_envelope_per_dataset": "Envelope per position over all frames (uses same crosshair band as mean and per-frame envelope).",
     "spinbox_envelope_pct": "Envelope mode: 0 = Min/Max (hard), 1-49 = percentile (e.g. 5 gives 5th and 95th percentile). Applies to all three envelope types.",
-
     "label_reduce": "Temporal Dimensionality Reduction: Create summary images by aggregating pixel values (e.g. mean) across a time series of images.",
     "combobox_reduce": "Calculate a metric on the time axis, e.g. mean of all images loaded. None = frame-by-frame (Idx applies). Mean/Max/etc = single summary image over the range; Idx and the blue timeline cursor are hidden in that mode.",
-
     "checkbox_norm_show_range": "Show a blue box in the timeline to select a time interval.",
-
     "checkbox_norm_bg": "Select this to subtract or divide each image by a given background image.",
     "button_bg_input": "Select an image that is of same size as the currently loaded data.",
     "button_bg_divide": "Select an image that is of same size as the currently loaded data.",
-
     "checkbox_norm_lag": "Select this to subtract the mean of the next [lag] to [lag+window] images from the current time step. Might reduce the number of images shown.",
     "spinbox_norm_window": "The number of images to calculate the mean over.",
     "spinbox_norm_lag": "The number of images to skip before computing the sliding mean and subtracting this from the current time step.",
@@ -76,13 +67,11 @@
     "checkbox_agg_range": "When checked, aggregation uses only frames in the specified range (non-destructive).",
     "spinbox_agg_range_start": "First frame index for aggregation range.",
     "spinbox_agg_range_end": "Last frame index for aggregation range.",
-
     "checkbox_mm": "Convert all lengths into an arbitrary unit (au) instead of pixels based on a known scale.",
     "textbox_area": "Shows the area in the polygon.",
     "textbox_circ": "Shows the circumference of the polygon.",
     "textbox_bounding_rect": "Shows width and height of the bounding rectangle enclosing the measure tool.",
     "checkbox_show_bounding_rect": "Shows the bounding rectangle of the measure tool inside the plot.",
-
     "checkbox_rosee_local_extrema": "Use local instead of global extrema to calculate event interval.",
     "spinbox_rosee_smoothing": "Smoothen the fluctuation curve (red) before calculating indices",
     "checkbox_rosee_normalize": "Normalize values of all curves to the interval [0, 1].",
@@ -97,8 +86,10 @@
     "checkbox_rosee_show_lines": "Extend the event indices as lines in the image.",
     "checkbox_rosee_in_image_h": "Show all event boundaries in the image marked with green dots for horizontal orientation.",
     "checkbox_rosee_in_image_v": "Show all event boundaries in the image marked with purple dots for vertical orientation.",
-
     "checkbox_show_isocurve": "Show isocurves in the image and corresponding draggable levels in the color table.",
     "spinbox_isocurves": "Change the number of displayed isocurves. Their level will be equally distributed in [mean-std, mean+std].",
-    "spinbox_iso_smoothing": "Smoothen the isocurves by applying an Gaussian filter with given width to the current image."
+    "spinbox_iso_smoothing": "Smoothen the isocurves by applying an Gaussian filter with given width to the current image.",
+    "checkbox_lut_log": "Logarithmic scale on histogram counts (makes low-count bins visible).",
+    "spin_lut_min": "LUT minimum (display range lower bound). Integer for 8/16-bit images; float otherwise.",
+    "spin_lut_max": "LUT maximum (display range upper bound). Integer for 8/16-bit images; float otherwise."
 }

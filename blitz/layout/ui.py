@@ -301,67 +301,143 @@ class UI_MainWindow(QWidget):
         lut_left_vbox.setContentsMargins(0, 0, 0, 0)
         lut_left_vbox.setSpacing(2)
 
-        # LUT level spinners: min left, max right, no labels; values from LUT only
+        lut_heading = QLabel("LUT")
+        lut_heading.setStyleSheet(get_style("heading"))
+        lut_left_vbox.addWidget(lut_heading)
+        lut_sub = QLabel("Contrast & colormap")
+        lut_sub.setStyleSheet("color: #888; font-size: 10pt;")
+        lut_left_vbox.addWidget(lut_sub)
+
         def _make_lut_spinner() -> QDoubleSpinBox:
             s = QDoubleSpinBox()
             s.setRange(-1e15, 1e15)
             s.setDecimals(2)
-            s.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-            s.setMinimumWidth(48)
-            s.setMaximumWidth(72)
+            s.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.UpDownArrows)
+            s.setMinimumWidth(72)
+            s.setMaximumWidth(110)
+            s.setKeyboardTracking(False)
             return s
 
         self.spin_lut_min = _make_lut_spinner()
         self.spin_lut_min.setValue(0.0)
-        self.spin_lut_min.setToolTip("LUT lower bound.")
+        self.spin_lut_min.setToolTip("LUT minimum (display range lower bound).")
         self.spin_lut_max = _make_lut_spinner()
         self.spin_lut_max.setValue(1.0)
-        self.spin_lut_max.setToolTip("LUT upper bound.")
+        self.spin_lut_max.setToolTip("LUT maximum (display range upper bound).")
+        self._lut_levels_integer = False
 
-        # Spinners above LUT (not in button group), minimal row
         level_row = QHBoxLayout()
+        level_row.setSpacing(4)
+        lbl_min = QLabel("Min")
+        lbl_min.setStyleSheet("color: #aaa;")
+        lbl_max = QLabel("Max")
+        lbl_max.setStyleSheet("color: #aaa;")
+        level_row.addWidget(lbl_min, 0)
         level_row.addWidget(self.spin_lut_min, 0)
         level_row.addStretch(1)
+        level_row.addWidget(lbl_max, 0)
         level_row.addWidget(self.spin_lut_max, 0)
         lut_left_vbox.addLayout(level_row)
         lut_left_vbox.addWidget(new_hist, 2)
 
-        self.button_autofit = QPushButton("Fit")
+        self.button_autofit = QPushButton("Fit now")
+        self.combobox_lut_trim = QComboBox()
+        self.combobox_lut_trim.setMinimumWidth(72)
+        # userData = percentile; -1 = Custom (shows Trim spin)
+        self.combobox_lut_trim.addItem("0%", 0)
+        self.combobox_lut_trim.addItem("1%", 1)
+        self.combobox_lut_trim.addItem("2%", 2)
+        self.combobox_lut_trim.addItem("Custom…", -1)
         self.spinbox_lut_percentile = QSpinBox()
-        self.spinbox_lut_percentile.setPrefix("Clip: ")
+        self.spinbox_lut_percentile.setPrefix("Trim: ")
         self.spinbox_lut_percentile.setSuffix("%")
         self.spinbox_lut_percentile.setRange(0, 49)
         self.spinbox_lut_percentile.setValue(0)
         self.spinbox_lut_percentile.setSpecialValueText("Min/Max")
-        # Tooltip from tooltips.json (spinbox_lut_percentile)
-        self.checkbox_auto_fit = QCheckBox("Auto fit")
+        self.spinbox_lut_percentile.setVisible(False)
+        self.spinbox_lut_percentile.setMaximumWidth(100)
+        self.checkbox_auto_fit = QCheckBox("Keep fitting")
         self.checkbox_auto_fit.setChecked(True)
-        self.checkbox_auto_colormap = QCheckBox("Auto colormap")
+        self.checkbox_auto_colormap = QCheckBox("Auto")
         self.checkbox_auto_colormap.setChecked(True)
-        self.checkbox_lut_log = QCheckBox("Log counts")
+        self.checkbox_lut_log = QCheckBox("Log hist")
         self.checkbox_lut_log.setChecked(False)
-        self.checkbox_lut_log.setToolTip("Logarithmic scale on histogram counts (makes low-count bins visible).")
-        lut_button_container = QWidget(self)
+        self.checkbox_lut_log.setToolTip(
+            "Logarithmic scale on histogram counts (makes low-count bins visible)."
+        )
+        self.label_lut_fit_status = QLabel(
+            "After load: fit once with Trim. Keep fitting = also refit on crop/frame."
+        )
+        self.label_lut_fit_status.setStyleSheet("color: #888; font-size: 10pt;")
+        self.label_lut_fit_status.setWordWrap(True)
+
+        self.combobox_colormap = QComboBox()
+        self.combobox_colormap.setMinimumWidth(100)
+        self.combobox_colormap.setToolTip(
+            "Colormap preset. Right-click the color bar for more advanced features."
+        )
+        # Common presets first, then the rest from pyqtgraph Gradients
+        _cmap_preferred = (
+            "plasma", "bipolar", "greyclip", "grey", "viridis",
+            "inferno", "magma", "turbo", "thermal", "flame",
+        )
+        from pyqtgraph.graphicsItems.GradientEditorItem import Gradients as _Grads
+        seen: set[str] = set()
+        for name in _cmap_preferred:
+            if name in _Grads and name not in seen:
+                self.combobox_colormap.addItem(name)
+                seen.add(name)
+        for name in _Grads:
+            if name not in seen:
+                self.combobox_colormap.addItem(name)
+                seen.add(name)
+
         self.button_load_lut = QPushButton("Load")
         self.button_export_lut = QPushButton("Export")
         self.button_load_lut.setVisible(False)
         self.button_export_lut.setVisible(False)
+
+        lut_button_container = QWidget(self)
         lut_button_layout = QVBoxLayout()
+        lut_button_layout.setContentsMargins(0, 0, 0, 0)
+        lut_button_layout.setSpacing(2)
+
+        # Contrast fit: Fit now + Trim (clipper) + Keep fitting
         lut_fit_row = QHBoxLayout()
         lut_fit_row.addWidget(self.button_autofit)
+        trim_lbl = QLabel("Trim")
+        trim_lbl.setStyleSheet("color: #aaa;")
+        trim_lbl.setToolTip(
+            "Outlier clipper for contrast fitting — see status line and tooltip on the dropdown."
+        )
+        lut_fit_row.addWidget(trim_lbl)
+        lut_fit_row.addWidget(self.combobox_lut_trim)
         lut_fit_row.addWidget(self.spinbox_lut_percentile)
+        lut_fit_row.addWidget(self.checkbox_auto_fit)
+        lut_fit_row.addStretch(1)
         lut_button_layout.addLayout(lut_fit_row)
-        lut_auto_row = QHBoxLayout()
-        lut_auto_row.addWidget(self.checkbox_auto_fit)
-        lut_button_layout.addLayout(lut_auto_row)
+        lut_button_layout.addWidget(self.label_lut_fit_status)
+
+        # Colormap: combo + Auto
         lut_cmap_row = QHBoxLayout()
+        cmap_lbl = QLabel("Colormap")
+        cmap_lbl.setStyleSheet("color: #aaa;")
+        lut_cmap_row.addWidget(cmap_lbl)
+        lut_cmap_row.addWidget(self.combobox_colormap, 1)
         lut_cmap_row.addWidget(self.checkbox_auto_colormap)
-        lut_cmap_row.addWidget(self.checkbox_lut_log)
         lut_button_layout.addLayout(lut_cmap_row)
+
+        # Options: Log hist
+        lut_opts_row = QHBoxLayout()
+        lut_opts_row.addWidget(self.checkbox_lut_log)
+        lut_opts_row.addStretch(1)
+        lut_button_layout.addLayout(lut_opts_row)
+
         lut_button_layout.addWidget(self.button_load_lut)
         lut_button_layout.addWidget(self.button_export_lut)
         lut_button_container.setLayout(lut_button_layout)
-        lut_left_vbox.addWidget(lut_button_container, 1)
+        lut_left_vbox.addWidget(lut_button_container, 0)
+
         self.blocking_status = QLabel("IDLE")
         self.blocking_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.blocking_status.setMinimumWidth(64)

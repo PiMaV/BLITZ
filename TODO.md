@@ -29,6 +29,10 @@ Related: [`docs/missing_features.md`](docs/missing_features.md) (hidden UI / con
   - Width = band mean; Envelope ⊥ / frames; CSV; path in au; handle numbers on path axis
   - amber sync point on curve + value tips; compact axes + Stats in toolbar
   - optional docks only when relevant (T>1 / Show on); dock_layout_rev 5
+- **v2.0.9** LUT dock UX:
+  - heading + Min/Max labels; dtype-aware level spinners
+  - Fit now / Trim % (0/1/2/Custom) / Keep fitting + status line
+  - Colormap combo; fit-on-load (also after load-dialog transpose/flip)
 
 ---
 
