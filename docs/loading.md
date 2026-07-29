@@ -3,8 +3,37 @@
 ## Strategie-Entscheidung
 
 - **Load-Tab bleibt** in der GUI – zentrale Stelle fuer Defaults und schnellen Zugriff
-- **Load-Dialog** (Video: vorhanden; Bilder: geplant) als erweiterte Option mit Preview + Crop
+- **Load-Dialog** (Video / Bilder / ASCII) als erweiterte Option mit Preview + Crop
 - **Session-Defaults**: Letzte Dialog-Einstellungen werden bei Drag&Drop wiederverwendet
+- **Folder chooser**: Bei gemischten Ordnern (mehrere Suffixe / HIKMICRO-Offer / Naming-Cluster) fragt `FolderLoadChooserDialog` vor dem Load; siehe `blitz/data/folder_scan.py`
+- **Exotic formats**: bleiben ausserhalb des Core — `docs/exotic_formats.md`
+
+---
+
+## Folder chooser (Implementiert)
+
+Wenn `path` ein Ordner ist und `should_show_chooser(scan)` greift:
+
+```
+load_images(folder)
+  |
+  +-- scan_folder → LoadGroup[] (image / video / array / ascii / hikmicro_celsius / other)
+  |     optional: Naming-Cluster innerhalb gleicher Suffixe
+  |
+  +-- FolderLoadChooserDialog
+  |     |-- Gruppen + Dateiliste + ◀/▶ Preview
+  |     |-- OK → selected kind + file_list
+  |
+  +-- kind-spezifischer Pfad:
+        image/video → Image/VideoLoadOptionsDialog (file_list)
+        ascii → AsciiLoadOptionsDialog
+        hikmicro_celsius → load_hikmicro_stack → ImageData
+        array → .npy wie bisher
+```
+
+- **Einzige Gruppe**: Chooser kann entfallen (Shortcut), sonst immer waehlen.
+- **Mixed HxW** (Bilder): `MixedImageSizesDialog` → `mixed_size_policy="crop_min"` oder Abbruch.
+- Preview-Worker laufen in `QThread` mit Guard (kein Destroy-while-running bei schnellem Mode/Normalize-Toggle).
 
 ---
 
@@ -45,6 +74,12 @@ load_images(path)
 - **mask_rel**: Session-Defaults; beim naechsten Video (Dialog oder Drag&Drop) wieder angewendet
 - **mask**: DataLoader wendet Crop beim Laden pro Frame an
 
+### Preview-Optionen (Video / Image / ASCII)
+
+- **Mode**: Default **MAX** (ueber Frames/Samples); alternativ Single
+- **Normalize**: Preview- und/oder Load-Normalize (Min-Max Stretch)
+- **8 bit / Grayscale**: wenn Quelle schon nativ → Checkbox checked, disabled, sichtbar ausgegraut (`set_checkbox_visibly_enabled`)
+
 ---
 
 ## Bilder / Ordner (Implementiert)
@@ -54,7 +89,9 @@ load_images(path)
 ```
 load_images(path)
   |
-  +-- Bild oder Bild-Ordner? --> meta = get_image_metadata(path)
+  +-- (falls Ordner) optional Folder chooser → file_list + kind
+  |
+  +-- Bild oder Bild-Ordner? --> meta = get_image_metadata(path) bzw. aus file_list
   |     |
   |     +-- show_dialog? (Erster Load ODER Checkbox ODER est_bytes > Schwellwert)
   |           |
@@ -62,14 +99,14 @@ load_images(path)
   |           +-- NEIN: Session-Defaults anwenden
   |
   +-- params.pop("mask_rel")
-  +-- load_data(path, **params)
+  +-- load_data(path, file_list=..., mixed_size_policy=..., **params)
 ```
 
 ### ImageLoadOptionsDialog
 
-- **Preview**: Einzelbild oder (bei Ordner) MAX ueber gesampelte Bilder
+- **Preview**: Default MAX ueber gesampelte Bilder; Mode Single waehlbar
 - **Crop-ROI** auf der Preview --> `mask`, `mask_rel`
-- **Optionen**: Resize, Grayscale; bei Ordner zusaetzlich Subset-Ratio
+- **Optionen**: Resize, Grayscale, 8 bit, Normalize; bei Ordner zusaetzlich Subset-Ratio
 - **Wann zeigen?**: Erster Load in Session ODER Checkbox "Always show" ODER est_bytes > Schwellwert
 - **Session-Defaults**: `size_ratio`, `grayscale`, `mask_rel`, bei Ordner `subset_ratio`
 
@@ -77,6 +114,8 @@ load_images(path)
 
 ## DataLoader-Parameter
 
-- `size_ratio`, `subset_ratio`, `max_ram`, `convert_to_8_bit`, `grayscale`, `mask`, `crop`
+- `size_ratio`, `subset_ratio`, `max_ram`, `convert_to_8_bit`, `grayscale`, `normalize`, `mask`, `crop`
+- `file_list`: explizite Dateiliste vom Folder-Chooser (kein silent majority)
+- `mixed_size_policy`: `"crop_min"` nach Mixed-Sizes-Dialog
 - `frame_range`, `step`: nur fuer Video, via `load(path, frame_range=..., step=...)`
 - `mask` wird fuer Einzelbilder, Ordner und Video angewendet

@@ -40,9 +40,27 @@ def _safe_load_one(load_func, path: Path):
         return load_func(path)
     except Exception:
         return None
+
+
+def _stack_crop_min(matrices: list) -> np.ndarray:
+    """Crop each array on spatial dims to the common minimum size, then stack."""
+    if not matrices:
+        raise ValueError("empty")
+    # After _load_image, arrays are (W, H) or (W, H, C)
+    d0 = min(m.shape[0] for m in matrices)
+    d1 = min(m.shape[1] for m in matrices)
+    cropped = []
+    for m in matrices:
+        if m.ndim == 2:
+            cropped.append(m[:d0, :d1])
+        else:
+            cropped.append(m[:d0, :d1, ...])
+    return np.stack(cropped)
+
+
 from .image import ImageData, MetaData, VideoMetaData
 from .tools import (adjust_ratio_for_memory, resize_and_convert,
-                    resize_and_convert_to_8_bit)
+                    resize_and_convert_to_8_bit, _to_8bit_fixed_scale)
 
 
 def get_video_preview(
@@ -148,13 +166,25 @@ def get_image_preview(
             ratio = max(1.0 / h, 1.0 / w, size_ratio)
         return resize_and_convert(img, ratio, convert_to_8_bit=False)
 
+    def _to_preview_uint8(img: np.ndarray) -> np.ndarray:
+        arr = np.asarray(img)
+        if normalize and arr.size > 0:
+            f = arr.astype(np.float32)
+            p_lo, p_hi = np.percentile(f, (2, 98))
+            if p_hi > p_lo:
+                f = np.clip((f - p_lo) / (p_hi - p_lo) * 255.0, 0, 255)
+            else:
+                f = np.zeros_like(f)
+            return f.astype(np.uint8)
+        return _to_8bit_fixed_scale(arr)
+
     if path.is_file():
         if not DataLoader._is_image(path):
             return None
         img = _load_one(path)
         if img is None:
             return None
-        out = img.astype(np.uint8)
+        out = _to_preview_uint8(img)
     else:
         content = [f for f in path.iterdir() if not f.is_dir() and DataLoader._is_image(f)]
         content = natsorted(content)
@@ -164,7 +194,7 @@ def get_image_preview(
             img = _load_one(content[0])
             if img is None:
                 return None
-            out = img.astype(np.uint8)
+            out = _to_preview_uint8(img)
         else:
             indices = np.linspace(0, len(content) - 1, min(n_samples, len(content)), dtype=int)
             collected = []
@@ -176,13 +206,15 @@ def get_image_preview(
                 return None
             shapes = {a.shape for a in collected}
             if len(shapes) > 1:
-                # Mixed sizes: full load-dialog strategy is TODO; do not crash preview.
-                log(
-                    "Preview skipped: images in folder have different sizes. "
-                    "Mixed-size load options are planned (see TODO).",
-                    color="yellow",
+                # Mixed sizes: show collage instead of skipping
+                return get_paths_image_preview(
+                    content,
+                    size_ratio=size_ratio,
+                    n_samples=n_samples,
+                    mode=mode,
+                    normalize=normalize,
+                    grayscale=grayscale,
                 )
-                return None
             try:
                 stack = np.stack(collected)
             except ValueError:
@@ -191,14 +223,8 @@ def get_image_preview(
                     color="yellow",
                 )
                 return None
-            out = np.max(stack, axis=0).astype(np.uint8)
+            out = _to_preview_uint8(np.max(stack, axis=0))
 
-    if normalize and out.size > 0:
-        p_lo, p_hi = np.percentile(out, (2, 98))
-        if p_hi > p_lo:
-            out = np.clip(
-                (out.astype(np.float32) - p_lo) / (p_hi - p_lo) * 255, 0, 255
-            ).astype(np.uint8)
     return out
 
 
@@ -241,6 +267,16 @@ def get_sample_format(path: Path) -> tuple[bool, bool]:
                 return False, False
             is_gray = _is_effectively_grayscale(img)
             return is_gray, img.dtype == np.uint8
+        if DataLoader._is_array(path):
+            try:
+                arr = np.load(path, mmap_mode="r")
+                sample = arr[0] if arr.ndim >= 3 else arr
+                is_gray = sample.ndim == 2 or (
+                    sample.ndim == 3 and sample.shape[-1] == 1
+                )
+                return bool(is_gray), sample.dtype == np.uint8
+            except Exception:
+                return False, False
     else:
         content = [f for f in path.iterdir() if not f.is_dir() and DataLoader._is_image(f)]
         content = natsorted(content)
@@ -249,6 +285,107 @@ def get_sample_format(path: Path) -> tuple[bool, bool]:
         return get_sample_format(content[0])
     return False, False
 
+
+def probe_image_spatial_shapes(
+    paths: list[Path],
+    *,
+    max_probe: int = 40,
+) -> tuple[bool, set[tuple[int, int]]]:
+    """Return (all_same, set of (h,w) from OpenCV reads). Uses a sample of paths."""
+    if not paths:
+        return True, set()
+    sample = paths if len(paths) <= max_probe else [
+        paths[i] for i in np.linspace(0, len(paths) - 1, max_probe, dtype=int)
+    ]
+    shapes: set[tuple[int, int]] = set()
+    for p in sample:
+        img = cv2.imread(str(p), cv2.IMREAD_UNCHANGED)
+        if img is None:
+            continue
+        shapes.add((int(img.shape[0]), int(img.shape[1])))
+    return (len(shapes) <= 1), shapes
+
+
+def get_paths_image_preview(
+    paths: list[Path],
+    size_ratio: float = 0.25,
+    n_samples: int = 5,
+    mode: str = "max",
+    normalize: bool = True,
+    grayscale: bool = False,
+) -> np.ndarray | None:
+    """Preview from an explicit image path list (chooser selection)."""
+    if not paths:
+        return None
+    paths = natsorted(paths)
+
+    def _to_preview_uint8(img: np.ndarray) -> np.ndarray:
+        """Stretch (optional) then cast to uint8 — works for 8/16-bit and float."""
+        if normalize and img.size > 0:
+            arr = np.asarray(img, dtype=np.float32)
+            p_lo, p_hi = np.percentile(arr, (2, 98))
+            if p_hi > p_lo:
+                arr = np.clip((arr - p_lo) / (p_hi - p_lo) * 255.0, 0, 255)
+            else:
+                arr = np.zeros_like(arr)
+            return arr.astype(np.uint8)
+        # Match load path: fixed dtype scale, no per-image stretch
+        return _to_8bit_fixed_scale(np.asarray(img))
+
+    def _load_one(p: Path) -> np.ndarray | None:
+        img = cv2.imread(
+            str(p),
+            cv2.IMREAD_UNCHANGED if not grayscale else (
+                cv2.IMREAD_ANYDEPTH | cv2.IMREAD_GRAYSCALE
+            ),
+        )
+        if img is None:
+            return None
+        if img.ndim == 3:
+            if img.shape[2] == 3:
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            elif img.shape[2] == 4:
+                img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
+        h, w = img.shape[:2]
+        ratio = size_ratio
+        if h > 0 and w > 0 and (int(h * ratio) < 1 or int(w * ratio) < 1):
+            ratio = max(1.0 / h, 1.0 / w, size_ratio)
+        return resize_and_convert(img, ratio, convert_to_8_bit=False)
+
+    if mode == "single" or len(paths) == 1:
+        img = _load_one(paths[0])
+        return None if img is None else _to_preview_uint8(img)
+
+    indices = np.linspace(0, len(paths) - 1, min(n_samples, len(paths)), dtype=int)
+    collected = []
+    for i in indices:
+        img = _load_one(paths[int(i)])
+        if img is not None:
+            collected.append(img)
+    if not collected:
+        return None
+    shapes = {a.shape for a in collected}
+    if len(shapes) > 1:
+        target_h = min(a.shape[0] for a in collected)
+        strips = []
+        for a in collected[:3]:
+            h, w = a.shape[:2]
+            scale = target_h / max(h, 1)
+            nw = max(1, int(w * scale))
+            resized = cv2.resize(
+                a.astype(np.float32), (nw, target_h), interpolation=cv2.INTER_AREA
+            )
+            u8 = _to_preview_uint8(resized)
+            if u8.ndim == 2:
+                u8 = np.stack([u8] * 3, axis=-1)
+            strips.append(u8)
+        return np.concatenate(strips, axis=1)
+    try:
+        stack = np.stack(collected)
+        out = np.max(stack, axis=0)
+        return _to_preview_uint8(out)
+    except ValueError:
+        return _to_preview_uint8(collected[0])
 
 def get_sample_format_display(path: Path) -> str:
     """Quick sample to get human-readable format string. E.g. 'Grayscale, 8 bit' or 'RGB, 16 bit'."""
@@ -401,6 +538,8 @@ class DataLoader:
         path: Optional[Path] = None,
         progress_callback: Optional[Callable[[int], None]] = None,
         message_callback: Optional[Callable[[str], None]] = None,
+        file_list: Optional[list[Path]] = None,
+        mixed_size_policy: Optional[str] = None,
         **kwargs,
     ) -> ImageData:
         if path is None:
@@ -412,6 +551,8 @@ class DataLoader:
                 path,
                 progress_callback=progress_callback,
                 message_callback=message_callback,
+                file_list=file_list,
+                mixed_size_policy=mixed_size_policy,
             )
         else:
             if DataLoader._is_video(path):
@@ -464,24 +605,32 @@ class DataLoader:
         path: Path,
         progress_callback: Optional[Callable[[int], None]] = None,
         message_callback: Optional[Callable[[str], None]] = None,
+        file_list: Optional[list[Path]] = None,
+        mixed_size_policy: Optional[str] = None,
     ) -> ImageData:
         if progress_callback is not None:
             progress_callback(0)
-        content = [f for f in path.iterdir() if not f.is_dir()]
-        content = natsorted(content)
+        if file_list is not None:
+            content = natsorted([f for f in file_list if f.is_file()])
+        else:
+            content = [f for f in path.iterdir() if not f.is_dir()]
+            content = natsorted(content)
+            if not content:
+                log("Folder is empty or contains no files", color="red")
+                return DataLoader.from_text("Empty folder", color=(255, 0, 0))
+            suffixes = {s: len([f for f in content if f.suffix == s])
+                        for s in set(f.suffix for f in content)}
+            if not suffixes:
+                log("No file types found in folder", color="red")
+                return DataLoader.from_text("No files", color=(255, 0, 0))
+            most_frequent_suffix = max(suffixes, key=suffixes.get)  # type: ignore
+            if len(suffixes) > 1:
+                log("Warning: folder contains multiple file types; "
+                    f"Loading all {most_frequent_suffix!r} files")
+                content = [f for f in content if f.suffix == most_frequent_suffix]
         if not content:
             log("Folder is empty or contains no files", color="red")
             return DataLoader.from_text("Empty folder", color=(255, 0, 0))
-        suffixes = {s: len([f for f in content if f.suffix == s])
-                    for s in set(f.suffix for f in content)}
-        if not suffixes:
-            log("No file types found in folder", color="red")
-            return DataLoader.from_text("No files", color=(255, 0, 0))
-        most_frequent_suffix = max(suffixes, key=suffixes.get)  # type: ignore
-        if len(suffixes) > 1:
-            log("Warning: folder contains multiple file types; "
-                f"Loading all {most_frequent_suffix!r} files")
-            content = [f for f in content if f.suffix == most_frequent_suffix]
         if self.crop is not None:
             content = content[self.crop[0]:self.crop[1]+1]
 
@@ -597,14 +746,31 @@ class DataLoader:
         try:
             matrices = np.stack(matrices)
         except Exception:
-            log(
-                "Error loading files: shapes of images do not match",
-                color="red",
-            )
-            return DataLoader.from_text(
-                "Error loading files",
-                color=(255, 0, 0),
-            )
+            if mixed_size_policy == "crop_min":
+                try:
+                    matrices = _stack_crop_min(matrices)
+                    log(
+                        "Mixed image sizes: cropped to common minimum HxW",
+                        color="yellow",
+                    )
+                except Exception:
+                    log(
+                        "Error loading files: shapes of images do not match",
+                        color="red",
+                    )
+                    return DataLoader.from_text(
+                        "Error loading files",
+                        color=(255, 0, 0),
+                    )
+            else:
+                log(
+                    "Error loading files: shapes of images do not match",
+                    color="red",
+                )
+                return DataLoader.from_text(
+                    "Error loading files",
+                    color=(255, 0, 0),
+                )
         done = ImageData(matrices, metadata)
         self._log_arguments(done)
         return done

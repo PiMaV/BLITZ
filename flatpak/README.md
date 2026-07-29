@@ -28,6 +28,10 @@ flatpak run org.flatpak.Builder --user --install --force-clean \
 flatpak run engineering.mess.BLITZ
 ```
 
+**Do not commit build artifacts.** `build-dir/`, `.flatpak-builder/`, and `repo/`
+(local OSTree export from Builder / `flatpak build-export`) are gitignored — thousands
+of binary objects, hundreds of MB. Only the YAML manifests and this README belong in git.
+
 If Builder fails with `bwrap: Can't find source path .../ccache`, unset `CCACHE_DIR` (or `mkdir -p` that path) and retry with `CCACHE_DISABLE=1`.
 
 Validate AppStream metadata (from repo root):

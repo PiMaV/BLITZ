@@ -13,12 +13,22 @@ import pyqtgraph as pg
 from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 
 from .. import settings
-from ..theme import get_style
+from ..theme import get_style, set_checkbox_visibly_enabled
 from ..data import optimized
 from ..data.image import ImageData, MetaData, VideoMetaData
-from ..data.load import DataLoader, get_image_metadata, get_sample_format
+from ..data.load import (
+    DataLoader,
+    get_image_metadata,
+    get_sample_format,
+    probe_image_spatial_shapes,
+)
 from ..data.web import WebDataLoader
 from ..data.ops import ReduceOperation
+from ..data.folder_scan import (
+    loadable_groups,
+    scan_folder,
+    should_show_chooser,
+)
 from ..tools import (LoadingManager, format_pixel_value_fixed, format_size_mb,
                      get_available_ram, get_cpu_percent, get_disk_io_mbs,
                      get_used_ram, log)
@@ -61,9 +71,11 @@ def _set_numba_status(label, data) -> None:
     else:
         on = _numba_active(data)
         label.setText("Numba: on" if on else "Numba: off")
-from ..data.converters import get_ascii_metadata, load_ascii
+from ..data.converters import get_ascii_metadata, is_ascii_path, load_ascii
+from ..data.converters.hikmicro import load_hikmicro_stack
 from .dialogs import (AsciiLoadOptionsDialog, CropTimelineDialog,
-                     ImageLoadOptionsDialog, RealCameraDialog,
+                     FolderLoadChooserDialog, ImageLoadOptionsDialog,
+                     MixedImageSizesDialog, RealCameraDialog,
                      VideoLoadOptionsDialog)
 from .export_dialog import run_export
 from .isoline import IsolineAdapter
@@ -96,6 +108,7 @@ class MainWindow(QMainWindow):
         self._video_session_defaults: dict = {}
         self._image_session_defaults: dict = {}
         self._ascii_session_defaults: dict = {}
+        self._folder_chooser_last_id: str | None = None
         self._simulated_live: SimulatedLiveWidget | None = None
         self._real_camera_dialog: RealCameraDialog | None = None
         self._aggregate_first_open: bool = True
@@ -1696,11 +1709,51 @@ class MainWindow(QMainWindow):
         else:
             self.ui.label_bench_numba.setText("Numba: unavailable")
 
-    def _load_ascii(self, path: Path) -> None:
-        """Load ASCII (.asc, .dat) via options dialog. Path from Open File/Folder or drop."""
+    def _apply_native_format_checkboxes(
+        self,
+        *,
+        is_uint8: bool | None = None,
+        is_gray: bool | None = None,
+        force_8bit_off: bool = False,
+    ) -> None:
+        """Sync File-tab 8-bit / grayscale checkboxes; gray out when native."""
+        tip_8 = (
+            "Convert to 8 bit (fixed scale by dtype; no per-image brightness normalization)"
+        )
+        tip_gray = "Load as grayscale"
+        if force_8bit_off:
+            self.ui.checkbox_load_8bit.setChecked(False)
+            set_checkbox_visibly_enabled(self.ui.checkbox_load_8bit, True)
+            self.ui.checkbox_load_8bit.setToolTip(
+                tip_8 + " — left off for .npy / physical values"
+            )
+        elif is_uint8 is True:
+            self.ui.checkbox_load_8bit.setChecked(True)
+            set_checkbox_visibly_enabled(self.ui.checkbox_load_8bit, False)
+            self.ui.checkbox_load_8bit.setToolTip("Source is already 8 bit")
+        elif is_uint8 is False:
+            set_checkbox_visibly_enabled(self.ui.checkbox_load_8bit, True)
+            self.ui.checkbox_load_8bit.setToolTip(tip_8)
+
+        if is_gray is True:
+            self.ui.checkbox_load_grayscale.setChecked(True)
+            set_checkbox_visibly_enabled(self.ui.checkbox_load_grayscale, False)
+            self.ui.checkbox_load_grayscale.setToolTip(
+                "Source is grayscale; loading as RGB would waste RAM"
+            )
+        elif is_gray is False:
+            set_checkbox_visibly_enabled(self.ui.checkbox_load_grayscale, True)
+            self.ui.checkbox_load_grayscale.setToolTip(tip_gray)
+
+    def _load_ascii(
+        self,
+        path: Path,
+        file_list: list | None = None,
+    ) -> None:
+        """Load ASCII (.asc, .dat, .txt) via options dialog."""
         if path.exists():
             path = path.resolve()
-        meta = get_ascii_metadata(path)
+        meta = get_ascii_metadata(path, file_list=file_list)
         if meta is None:
             log("Cannot read ASCII metadata", color="red")
             return
@@ -1720,7 +1773,6 @@ class MainWindow(QMainWindow):
         skip_keys = {"mask_rel", "roi_state", "flip_xy"}
         params = {k: v for k, v in user_params.items() if k not in skip_keys}
         flip_xy = user_params.get("flip_xy", False)
-        target_roi_state = user_params.get("roi_state")
         self._ascii_session_defaults = {
             "size_ratio": user_params["size_ratio"],
             "convert_to_8_bit": user_params["convert_to_8_bit"],
@@ -1746,16 +1798,56 @@ class MainWindow(QMainWindow):
                 path,
                 progress_callback=lm.set_progress,
                 message_callback=lm.set_message,
+                file_list=file_list,
                 **params,
             )
         log(f"Loaded in {lm.duration:.2f}s")
         self.ui.image_viewer.set_image(img)
 
-        # Apply transforms from dialog
         if flip_xy:
             self.ui.image_viewer.manipulate("transpose")
-        self.last_file_dir = path.parent
+        self.last_file_dir = path.parent if path.is_file() else path
         self.last_file = path.name
+        self.update_statusbar()
+        self.reset_options()
+
+    def _load_hikmicro(self, paths: list) -> None:
+        """Convert radiometric JPEGs to °C stack and display."""
+        if not paths:
+            log("No HIKMICRO paths to load", color="red")
+            return
+        self._apply_native_format_checkboxes(force_8bit_off=True, is_gray=True)
+        with LoadingManager(
+            self, "Converting HIKMICRO → °C", blocking_label=self.ui.blocking_status
+        ) as lm:
+            try:
+                stack, names = load_hikmicro_stack(
+                    paths, progress_callback=lm.set_progress
+                )
+            except ValueError as e:
+                log(str(e), color="red")
+                return
+        # ImageData / MetaData already imported at module level
+        meta = [
+            MetaData(
+                file_name=names[i] if i < len(names) else f"frame_{i}",
+                file_size_MB=0.0,
+                size=(stack.shape[1], stack.shape[2]),
+                dtype=stack.dtype.type if hasattr(stack.dtype, "type") else stack.dtype,
+                bit_depth=8 * stack.dtype.itemsize,
+                color_model="grayscale",
+            )
+            for i in range(stack.shape[0])
+        ]
+        # stack from hikmicro is (N,H,W); swap to (N,W,H) to match viewer convention.
+        stack_wh = np.swapaxes(stack, 1, 2)
+        for m in meta:
+            m.size = (stack_wh.shape[1], stack_wh.shape[2])
+        img = ImageData(stack_wh, meta)
+        self.ui.image_viewer.set_image(img)
+        log(f"Loaded HIKMICRO °C stack {stack.shape} in {lm.duration:.2f}s")
+        self.last_file_dir = paths[0].parent
+        self.last_file = paths[0].name
         self.update_statusbar()
         self.reset_options()
 
@@ -2087,20 +2179,58 @@ class MainWindow(QMainWindow):
         try:
             if path.suffix == ".blitz":
                 self.load_project(path)
-            elif (
-                path.suffix.lower() in (".asc", ".dat")
-                or (path.is_dir() and any(
-                    f.suffix.lower() in (".asc", ".dat")
-                    for f in path.iterdir() if f.is_file()
-                ))
-            ):
+            elif path.is_file() and is_ascii_path(path):
                 self._load_ascii(path)
+            elif path.is_dir():
+                self._load_folder_with_chooser(path)
             else:
                 self.load_images(path)
         finally:
             if _scan_shown:
                 self.ui.blocking_status.setText("IDLE")
                 self.ui.blocking_status.setStyleSheet(get_style("idle"))
+
+    def _load_folder_with_chooser(self, path: Path) -> None:
+        """Scan folder, optionally show chooser, then dispatch to the right loader."""
+        groups = scan_folder(path)
+        loadable = loadable_groups(groups)
+        if not loadable:
+            log("No loadable files in folder", color="red")
+            return
+
+        group = None
+        if should_show_chooser(groups):
+            dlg = FolderLoadChooserDialog(
+                path,
+                groups,
+                parent=self,
+                initial_group_id=self._folder_chooser_last_id,
+            )
+            if not dlg.exec():
+                return
+            group = dlg.selected_group()
+            if group is None:
+                return
+            self._folder_chooser_last_id = group.id
+        else:
+            group = loadable[0]
+
+        if group.kind == "ascii":
+            self._load_ascii(path, file_list=group.paths)
+        elif group.kind == "hikmicro_celsius":
+            self._load_hikmicro(group.paths)
+        elif group.kind == "video":
+            # DataLoader loads one video file
+            vid = group.paths[0]
+            if len(group.paths) > 1:
+                log(
+                    f"Video group has {len(group.paths)} files; loading {vid.name}",
+                    color="yellow",
+                )
+            self.load_images(vid)
+        else:
+            # image or array
+            self.load_images(path, file_list=group.paths)
 
     def load_project(self, path: Path) -> None:
         log(f"Loading '{path.name}' configuration file...",
@@ -2143,20 +2273,32 @@ class MainWindow(QMainWindow):
                 color="red")
             settings.set("path", "")
 
-    def load_images(self, path: Path) -> None:
+    def load_images(
+        self,
+        path: Path,
+        file_list: list | None = None,
+    ) -> None:
         # npy / float stacks: never auto-enable 8-bit (0..1 scale destroys °C etc.)
+        sample_path = path
+        if file_list:
+            sample_path = file_list[0]
         is_npy_source = (
-            (path.is_file() and DataLoader._is_array(path))
+            (sample_path.is_file() and DataLoader._is_array(sample_path))
             or (
                 path.is_dir()
+                and file_list is None
                 and any(
                     f.is_file() and DataLoader._is_array(f)
                     for f in path.iterdir()
                 )
             )
+            or (
+                file_list is not None
+                and any(DataLoader._is_array(f) for f in file_list)
+            )
         )
         if is_npy_source:
-            self.ui.checkbox_load_8bit.setChecked(False)
+            self._apply_native_format_checkboxes(force_8bit_off=True)
             log(
                 "NPY source: 8-bit conversion left off so physical values "
                 "(e.g. temperature) stay intact.",
@@ -2164,17 +2306,28 @@ class MainWindow(QMainWindow):
             )
         # Bei 8-bit / Grayscale Quelle: Checkboxen direkt setzen
         elif (
-            DataLoader._is_video(path)
-            or (path.is_file() and DataLoader._is_image(path))
-            or (path.is_dir() and get_image_metadata(path) is not None)
+            DataLoader._is_video(sample_path)
+            or (sample_path.is_file() and DataLoader._is_image(sample_path))
+            or (
+                path.is_dir()
+                and file_list is None
+                and get_image_metadata(path) is not None
+            )
+            or (
+                file_list is not None
+                and file_list
+                and DataLoader._is_image(file_list[0])
+            )
         ):
-            is_gray, is_uint8 = get_sample_format(path)
-            if is_uint8:
-                self.ui.checkbox_load_8bit.setChecked(True)
-            if is_gray:
-                self.ui.checkbox_load_grayscale.setChecked(True)
+            probe = sample_path if sample_path.is_file() else path
+            if file_list and DataLoader._is_image(file_list[0]):
+                probe = file_list[0]
+            is_gray, is_uint8 = get_sample_format(probe)
+            self._apply_native_format_checkboxes(is_uint8=is_uint8, is_gray=is_gray)
+        else:
+            self._apply_native_format_checkboxes(is_uint8=False, is_gray=False)
 
-        params = {
+        params: dict = {
             "size_ratio": self.ui.spinbox_load_size.value(),
             "subset_ratio": self.ui.spinbox_load_subset.value(),
             "max_ram": self.ui.spinbox_max_ram.value(),
@@ -2183,7 +2336,25 @@ class MainWindow(QMainWindow):
             "grayscale": self.ui.checkbox_load_grayscale.isChecked(),
         }
 
-        if DataLoader._is_video(path):
+        mixed_size_policy = None
+        image_paths = None
+        if file_list is not None and file_list and DataLoader._is_image(file_list[0]):
+            image_paths = file_list
+        elif path.is_dir() and file_list is None:
+            # Will be filtered inside DataLoader; probe after we know content is hard —
+            # mixed-size check only when we have an explicit list from chooser.
+            pass
+
+        if image_paths is not None and len(image_paths) > 1:
+            same, shapes = probe_image_spatial_shapes(image_paths)
+            if not same and len(shapes) > 1:
+                dlg_m = MixedImageSizesDialog(shapes, len(image_paths), parent=self)
+                if not dlg_m.exec() or not dlg_m.policy:
+                    return
+                mixed_size_policy = dlg_m.policy
+
+        if DataLoader._is_video(path if path.is_file() else sample_path):
+            path = path if DataLoader._is_video(path) else sample_path
             try:
                 meta = DataLoader.get_video_metadata(path)
                 # Estimate RAM usage for full load at current settings
@@ -2281,10 +2452,25 @@ class MainWindow(QMainWindow):
 
         elif (
             (path.is_file() and DataLoader._is_image(path))
-            or (path.is_dir() and get_image_metadata(path) is not None)
+            or (file_list is not None and file_list and DataLoader._is_image(file_list[0]))
+            or (path.is_dir() and file_list is None and get_image_metadata(path) is not None)
         ):
             try:
-                meta = get_image_metadata(path)
+                if file_list is not None and file_list:
+                    import cv2 as _cv2
+                    first = file_list[0]
+                    img0 = _cv2.imread(str(first), _cv2.IMREAD_UNCHANGED)
+                    if img0 is None:
+                        meta = None
+                    else:
+                        h, w = img0.shape[:2]
+                        meta = {
+                            "file_name": path.name,
+                            "size": (h, w),
+                            "file_count": len(file_list),
+                        }
+                else:
+                    meta = get_image_metadata(path)
                 if meta is not None:
                     show_dialog = self.ui.checkbox_video_dialog_always.isChecked()
                     image_data_size = tuple(meta["size"])
@@ -2295,8 +2481,11 @@ class MainWindow(QMainWindow):
                     ) else None
                     if show_dialog:
                         dlg = ImageLoadOptionsDialog(
-                            path, meta, parent=self,
+                            path,
+                            meta,
+                            parent=self,
                             initial_params=image_initial,
+                            file_list=file_list,
                         )
                         if dlg.exec():
                             user_params = dlg.get_params()
@@ -2385,11 +2574,16 @@ class MainWindow(QMainWindow):
         params.pop("frame_range", None)
 
         with LoadingManager(self, f"Loading {path}", blocking_label=self.ui.blocking_status) as lm:
+            load_kwargs = dict(params)
+            if file_list is not None:
+                load_kwargs["file_list"] = file_list
+            if mixed_size_policy is not None:
+                load_kwargs["mixed_size_policy"] = mixed_size_policy
             self.ui.image_viewer.load_data(
                 path,
                 progress_callback=lm.set_progress,
                 message_callback=lm.set_message,
-                **params,
+                **load_kwargs,
             )
         log(f"Loaded in {lm.duration:.2f}s")
 

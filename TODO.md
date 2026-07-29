@@ -11,6 +11,11 @@ Related: [`docs/missing_features.md`](docs/missing_features.md) (hidden UI / con
 
 ## Recently done (this stretch)
 
+- **Folder load chooser**: mixed folders → pick group (images / video / npy / ASCII / HIKMICRO °C); naming-schema clusters; file list + preview
+- **HIKMICRO** radiometric JPEG → approx. °C in-core (numpy); ASCII/`.txt` grids via converter; exotic formats policy → `docs/exotic_formats.md`
+- **Mixed HxW** in one folder: crop-to-common-min vs cancel (`MixedImageSizesDialog` + `mixed_size_policy`)
+- Load preview: **MAX default**; Single/MAX + Normalize; thread-safe preview workers (no QThread destroy on rapid toggle)
+- File tab / load dialogs: **8 bit & grayscale** visibly grayed when source is already native
 - Status / Probe dock rename; MetaData block at bottom of File tab (EXIF still placeholder)
 - Dock layout restore: ignore incompatible saved state (e.g. after Probe rename); bottom band sizing fixed for large screens
 - Timeline dock **hidden for single-frame** data; Frame|Range side panel compact (side-by-side)
@@ -38,11 +43,6 @@ _(none open)_
 The little color patch at the cursor is filled from the **colorscale / LUT gradient**, not from the actual pixel RGB. Prefer a true-color swatch when the image is RGB.
 
 Relevant: `blitz/layout/main.py` (`_update_position_display`).
-
-### Mixed image sizes in one folder
-Preview/load fails or soft-errors when frames in a folder have different HxW. Planned: load dialog *before* stacking — (A) crop to smallest common HxW or (B) reference frame + align.
-
-Relevant: `blitz/data/load.py`, `blitz/layout/dialogs.py`.
 
 ### Envelopes on RGB — disable?
 H/V envelopes on RGB collapse over channels and are often noisy. Disable for RGB, or force grayscale first?

@@ -3,11 +3,12 @@ from typing import Any, Optional
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QDialog,
                              QDialogButtonBox, QDoubleSpinBox, QFormLayout, QFrame,
-                             QHBoxLayout, QLabel, QProgressBar, QPushButton,
+                             QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
+                             QProgressBar, QPushButton,
                              QRadioButton, QSlider, QSpinBox, QVBoxLayout, QWidget)
 
 from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
@@ -21,15 +22,90 @@ from ..data.converters.ascii import (
     parse_ascii_raw,
 )
 from ..data.load import (get_image_metadata, get_image_preview,
-                         get_sample_bytes_per_pixel, get_sample_format,
-                         get_sample_format_display, get_video_preview)
+                         get_paths_image_preview, get_sample_bytes_per_pixel,
+                         get_sample_format, get_sample_format_display,
+                         get_video_preview)
 from ..data.image import VideoMetaData
-from ..theme import get_dialog_preview_bg
+from ..theme import get_dialog_preview_bg, set_checkbox_visibly_enabled
 from ..tools import get_available_ram
 from .roi_mixin import ROIMixin
 
 RAW_PREVIEW_MAX_CHARS = 80
 RAW_PREVIEW_MAX_LINES = 5
+
+# Keep refs to preview workers that outlive a dialog (close while still running).
+_ORPHAN_PREVIEW_THREADS: list[QThread] = []
+
+
+class _PreviewThreadGuard:
+    """Keep QThread refs alive until QThread.finished — avoids destroy-while-running."""
+
+    def __init__(self) -> None:
+        self.current: Optional[QThread] = None
+        self._zombies: list[QThread] = []
+
+    def _reap(self, loader: QThread) -> None:
+        if getattr(loader, "_preview_reaped", False):
+            return
+        loader._preview_reaped = True  # type: ignore[attr-defined]
+        if loader in self._zombies:
+            self._zombies.remove(loader)
+        if loader in _ORPHAN_PREVIEW_THREADS:
+            _ORPHAN_PREVIEW_THREADS.remove(loader)
+        if self.current is loader:
+            self.current = None
+        try:
+            loader.finished.disconnect()
+        except TypeError:
+            pass
+        loader.deleteLater()
+
+    def stop(self, finished_slot=None, signal_name: str = "finished_preview") -> None:
+        loader = self.current
+        self.current = None
+        if loader is None:
+            return
+        if finished_slot is not None:
+            try:
+                getattr(loader, signal_name).disconnect(finished_slot)
+            except TypeError:
+                pass
+        # Always park in zombies until the real QThread.finished fires (or already done).
+        if loader not in self._zombies:
+            self._zombies.append(loader)
+        if not loader.isRunning():
+            self._reap(loader)
+        else:
+            # Brief yield so a nearly-done worker can finish without stacking forever.
+            loader.wait(50)
+            if not loader.isRunning():
+                self._reap(loader)
+
+    def adopt(self, loader: QThread) -> QThread:
+        self.current = loader
+        # Use QThread.finished (not a shadowed custom signal) for lifetime.
+        loader.finished.connect(lambda _l=loader: self._reap(_l))
+        return loader
+
+    def clear_current_if(self, loader: Optional[QThread]) -> None:
+        if loader is not None and self.current is loader:
+            self.current = None
+        # Keep ref in zombies until QThread.finished → _reap (set by adopt).
+        if loader is not None and loader not in self._zombies:
+            self._zombies.append(loader)
+
+    def stop_all(self, finished_slot=None, signal_name: str = "finished_preview") -> None:
+        self.stop(finished_slot=finished_slot, signal_name=signal_name)
+        for z in list(self._zombies):
+            if z.isRunning() and not z.wait(8000):
+                # Dialog is closing; keep a module-level ref so GC cannot destroy
+                # the wrapper while the C++ thread is still running.
+                if z not in _ORPHAN_PREVIEW_THREADS:
+                    _ORPHAN_PREVIEW_THREADS.append(z)
+                if z in self._zombies:
+                    self._zombies.remove(z)
+                continue
+            self._reap(z)
 
 
 def _plasma_lut() -> np.ndarray:
@@ -45,10 +121,11 @@ def _plasma_lut() -> np.ndarray:
 
 
 class _PreviewLoader(QThread):
-    finished = pyqtSignal(object)
+    finished_preview = pyqtSignal(object, int)  # img, generation
 
     def __init__(self, path: Path, size_ratio: float, grayscale: bool,
-                 n_frames: int = 10, mode: str = "max", normalize: bool = True):
+                 n_frames: int = 10, mode: str = "max", normalize: bool = True,
+                 generation: int = 0):
         super().__init__()
         self._path = path
         self._size_ratio = size_ratio
@@ -56,6 +133,7 @@ class _PreviewLoader(QThread):
         self._n_frames = n_frames
         self._mode = mode
         self._normalize = normalize
+        self._generation = generation
 
     def run(self):
         img = get_video_preview(
@@ -66,7 +144,7 @@ class _PreviewLoader(QThread):
             mode=self._mode,
             normalize=self._normalize,
         )
-        self.finished.emit(img)
+        self.finished_preview.emit(img, self._generation)
 
 
 class VideoLoadOptionsDialog(QDialog, ROIMixin):
@@ -85,7 +163,9 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
         self._preview: Optional[np.ndarray] = None
         self._roi: Optional[pg.RectROI] = None
         self._preview_loader: Optional[_PreviewLoader] = None
-        self._preview_options_changed = False
+        self._preview_threads = _PreviewThreadGuard()
+        self._preview_generation = 0
+        self._preview_debounce: Optional[QTimer] = None
         self._initial_params = initial_params or {}
         self._setup_ui()
         self._initial_mask_rel = self._initial_params.get("mask_rel")
@@ -104,9 +184,14 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
         else:
             self.chk_grayscale.setChecked(is_gray)
             self.chk_8bit.setChecked(is_uint8)
-        self.chk_8bit.setEnabled(not is_uint8)
+        set_checkbox_visibly_enabled(self.chk_8bit, not is_uint8)
         if is_uint8:
             self.chk_8bit.setToolTip("Source is already 8 bit")
+        set_checkbox_visibly_enabled(self.chk_grayscale, not is_gray)
+        if is_gray:
+            self.chk_grayscale.setToolTip(
+                "Source is grayscale; loading as RGB would waste RAM"
+            )
         self._sample_bytes = get_sample_bytes_per_pixel(self._path)
         self._update_estimates()
         self._start_preview_load()
@@ -178,7 +263,10 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
         preview_opts = QHBoxLayout()
         self.cmb_preview_mode = QComboBox()
         self.cmb_preview_mode.addItems(["MAX (across frames)", "Single frame (center)"])
-        self.cmb_preview_mode.setToolTip("MAX: maximum value per pixel across frames")
+        self.cmb_preview_mode.setCurrentIndex(0)  # MAX default
+        self.cmb_preview_mode.setToolTip(
+            "MAX: maximum value per pixel across frames. Single: one representative frame."
+        )
         preview_opts.addWidget(QLabel("Mode:"))
         preview_opts.addWidget(self.cmb_preview_mode)
         self.chk_preview_norm = QCheckBox("Normalize")
@@ -232,41 +320,64 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
         self.chk_grayscale.toggled.connect(self._update_estimates)
         self.chk_grayscale.toggled.connect(self._on_grayscale_changed)
         self.chk_8bit.toggled.connect(self._update_estimates)
+        self.chk_normalize.toggled.connect(self._on_preview_option_changed)
         self.cmb_preview_mode.currentTextChanged.connect(self._on_preview_option_changed)
         self.chk_preview_norm.toggled.connect(self._on_preview_option_changed)
 
     def _on_grayscale_changed(self):
-        if self._preview_loader is None:
-            self._start_preview_load()
+        self._on_preview_option_changed()
+
+    def _stop_preview_loader(self) -> None:
+        self._preview_threads.stop(
+            finished_slot=self._on_preview_loaded, signal_name="finished_preview"
+        )
+        self._preview_loader = None
 
     def _on_preview_option_changed(self):
-        if self._preview_loader is not None:
-            self._preview_options_changed = True
-            return
+        self._preview_generation += 1
+        self.lbl_preview_status.setText("Loading preview...")
+        # Drop the in-flight worker immediately; debounce only restarts.
+        self._stop_preview_loader()
+        if self._preview_debounce is None:
+            self._preview_debounce = QTimer(self)
+            self._preview_debounce.setSingleShot(True)
+            self._preview_debounce.timeout.connect(self._restart_preview_debounced)
+        self._preview_debounce.start(80)
+
+    def _restart_preview_debounced(self) -> None:
         self._start_preview_load()
 
     def _start_preview_load(self):
-        if self._preview_loader is not None:
-            return
+        self._stop_preview_loader()
         size_ratio = self.spin_resize.value() / 100.0
         grayscale = self.chk_grayscale.isChecked()
         n_frames = min(10, max(1, self.metadata.frame_count))
+        # Index 0 = MAX (default), 1 = Single
         mode = "max" if self.cmb_preview_mode.currentIndex() == 0 else "single"
-        normalize = self.chk_preview_norm.isChecked()
+        normalize = self.chk_preview_norm.isChecked() or self.chk_normalize.isChecked()
         self.lbl_preview_status.setText("Loading preview...")
-        self._preview_loader = _PreviewLoader(
+        self._preview_generation += 1
+        generation = self._preview_generation
+        loader = _PreviewLoader(
             self._path, size_ratio, grayscale,
-            n_frames=n_frames, mode=mode, normalize=normalize
+            n_frames=n_frames, mode=mode, normalize=normalize,
+            generation=generation,
         )
-        self._preview_loader.finished.connect(self._on_preview_loaded)
-        self._preview_loader.start()
+        self._preview_loader = self._preview_threads.adopt(loader)
+        loader.finished_preview.connect(self._on_preview_loaded)
+        loader.start()
 
-    def _on_preview_loaded(self, img: np.ndarray | None):
-        self._preview_loader = None
-        if getattr(self, "_preview_options_changed", False):
-            self._preview_options_changed = False
-            self._start_preview_load()
+    def _on_preview_loaded(self, img: np.ndarray | None, generation: int = 0):
+        sender = self.sender()
+        if generation != self._preview_generation:
+            if sender is not None and sender is self._preview_loader:
+                self._preview_threads.clear_current_if(self._preview_loader)
+                self._preview_loader = None
             return
+        if sender is not None and sender is not self._preview_loader:
+            return
+        self._preview_threads.clear_current_if(self._preview_loader)
+        self._preview_loader = None
         if img is None:
             self.lbl_preview_status.setText("Preview failed")
             return
@@ -396,6 +507,33 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
             f"Estimated RAM: <font color='{color}'><b>{gb:.2f} GB</b></font>"
         )
 
+    def closeEvent(self, event) -> None:
+        if self._preview_debounce is not None:
+            self._preview_debounce.stop()
+        self._stop_preview_loader()
+        self._preview_threads.stop_all(
+            finished_slot=self._on_preview_loaded, signal_name="finished_preview"
+        )
+        super().closeEvent(event)
+
+    def reject(self) -> None:
+        if self._preview_debounce is not None:
+            self._preview_debounce.stop()
+        self._stop_preview_loader()
+        self._preview_threads.stop_all(
+            finished_slot=self._on_preview_loaded, signal_name="finished_preview"
+        )
+        super().reject()
+
+    def accept(self) -> None:
+        if self._preview_debounce is not None:
+            self._preview_debounce.stop()
+        self._stop_preview_loader()
+        self._preview_threads.stop_all(
+            finished_slot=self._on_preview_loaded, signal_name="finished_preview"
+        )
+        super().accept()
+
     def get_params(self) -> dict[str, Any]:
         out: dict[str, Any] = {
             "frame_range": (self.spin_start.value(), self.spin_end.value()),
@@ -426,26 +564,46 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
 
 
 class _ImagePreviewLoader(QThread):
-    finished = pyqtSignal(object)
+    finished_preview = pyqtSignal(object, int)  # img, generation
 
-    def __init__(self, path: Path, size_ratio: float, grayscale: bool,
-                 mode: str = "max", normalize: bool = True):
+    def __init__(
+        self,
+        path: Path,
+        size_ratio: float,
+        grayscale: bool,
+        mode: str = "max",
+        normalize: bool = True,
+        file_list: Optional[list] = None,
+        generation: int = 0,
+    ):
         super().__init__()
         self._path = path
         self._size_ratio = size_ratio
         self._grayscale = grayscale
         self._mode = mode
         self._normalize = normalize
+        self._file_list = file_list
+        self._generation = generation
 
     def run(self):
-        img = get_image_preview(
-            self._path,
-            size_ratio=self._size_ratio,
-            grayscale=self._grayscale,
-            mode=self._mode,
-            normalize=self._normalize,
-        )
-        self.finished.emit(img)
+        if self._file_list:
+            img = get_paths_image_preview(
+                self._file_list,
+                size_ratio=self._size_ratio,
+                n_samples=10,
+                mode=self._mode,
+                normalize=self._normalize,
+                grayscale=self._grayscale,
+            )
+        else:
+            img = get_image_preview(
+                self._path,
+                size_ratio=self._size_ratio,
+                grayscale=self._grayscale,
+                mode=self._mode,
+                normalize=self._normalize,
+            )
+        self.finished_preview.emit(img, self._generation)
 
 
 class ImageLoadOptionsDialog(QDialog, ROIMixin):
@@ -455,22 +613,27 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
         metadata: dict,
         parent: Optional[QWidget] = None,
         initial_params: Optional[dict] = None,
+        file_list: Optional[list] = None,
     ):
         super().__init__(parent)
         self.setWindowIcon(QIcon(":/icon/blitz.ico"))
         self.setWindowTitle("Image Loading Options")
         self._path = path
+        self._file_list = file_list
         self.metadata = metadata
         self._is_folder = metadata["file_count"] > 1
         self._preview: Optional[np.ndarray] = None
         self._roi: Optional[pg.RectROI] = None
         self._preview_loader: Optional[_ImagePreviewLoader] = None
-        self._preview_options_changed = False
+        self._preview_threads = _PreviewThreadGuard()
+        self._preview_generation = 0
+        self._preview_debounce: Optional[QTimer] = None
         self._initial_params = initial_params or {}
         self._setup_ui()
         self._initial_mask_rel = self._initial_params.get("mask_rel")
         self._initial_roi_state = self._initial_params.get("roi_state")
-        is_gray, is_uint8 = get_sample_format(path)
+        probe = (file_list[0] if file_list else path)
+        is_gray, is_uint8 = get_sample_format(probe)
         if initial_params:
             self.spin_resize.setValue(
                 int(initial_params.get("size_ratio", 1.0) * 100),
@@ -484,10 +647,10 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
         else:
             self.chk_grayscale.setChecked(is_gray)
             self.chk_8bit.setChecked(is_uint8)
-        self.chk_grayscale.setEnabled(not is_gray)
+        set_checkbox_visibly_enabled(self.chk_grayscale, not is_gray)
         if is_gray:
             self.chk_grayscale.setToolTip("Source is grayscale; loading as RGB would waste RAM")
-        self.chk_8bit.setEnabled(not is_uint8)
+        set_checkbox_visibly_enabled(self.chk_8bit, not is_uint8)
         if is_uint8:
             self.chk_8bit.setToolTip("Source is already 8 bit")
         self._sample_bytes = get_sample_bytes_per_pixel(path)
@@ -552,7 +715,10 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
         preview_opts = QHBoxLayout()
         self.cmb_preview_mode = QComboBox()
         self.cmb_preview_mode.addItems(["MAX (across samples)", "Single image"])
-        self.cmb_preview_mode.setToolTip("MAX: max value per pixel across sampled images")
+        self.cmb_preview_mode.setCurrentIndex(0)  # MAX default
+        self.cmb_preview_mode.setToolTip(
+            "MAX: max value per pixel across samples. Single: one representative image."
+        )
         preview_opts.addWidget(QLabel("Mode:"))
         preview_opts.addWidget(self.cmb_preview_mode)
         self.chk_preview_norm = QCheckBox("Normalize")
@@ -600,41 +766,69 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
         self.chk_grayscale.toggled.connect(self._update_estimates)
         self.chk_grayscale.toggled.connect(self._on_grayscale_changed)
         self.chk_8bit.toggled.connect(self._update_estimates)
+        self.chk_normalize.toggled.connect(self._on_preview_option_changed)
         self.cmb_preview_mode.currentTextChanged.connect(self._on_preview_option_changed)
         self.chk_preview_norm.toggled.connect(self._on_preview_option_changed)
         if self._is_folder:
             self.spin_subset.valueChanged.connect(self._update_estimates)
 
     def _on_grayscale_changed(self):
-        if self._preview_loader is None:
-            self._start_preview_load()
+        self._on_preview_option_changed()
+
+    def _stop_preview_loader(self) -> None:
+        self._preview_threads.stop(
+            finished_slot=self._on_preview_loaded, signal_name="finished_preview"
+        )
+        self._preview_loader = None
 
     def _on_preview_option_changed(self):
-        if self._preview_loader is not None:
-            self._preview_options_changed = True
-            return
+        self._preview_generation += 1
+        self.lbl_preview_status.setText("Loading preview...")
+        # Drop the in-flight worker immediately; debounce only restarts.
+        self._stop_preview_loader()
+        if self._preview_debounce is None:
+            self._preview_debounce = QTimer(self)
+            self._preview_debounce.setSingleShot(True)
+            self._preview_debounce.timeout.connect(self._restart_preview_debounced)
+        self._preview_debounce.start(80)
+
+    def _restart_preview_debounced(self) -> None:
         self._start_preview_load()
 
     def _start_preview_load(self):
-        if self._preview_loader is not None:
-            return
+        self._stop_preview_loader()
         size_ratio = self.spin_resize.value() / 100.0
         grayscale = self.chk_grayscale.isChecked()
+        # Index 0 = MAX (default), 1 = Single
         mode = "max" if self.cmb_preview_mode.currentIndex() == 0 else "single"
-        normalize = self.chk_preview_norm.isChecked()
+        normalize = self.chk_preview_norm.isChecked() or self.chk_normalize.isChecked()
         self.lbl_preview_status.setText("Loading preview...")
-        self._preview_loader = _ImagePreviewLoader(
-            self._path, size_ratio, grayscale, mode=mode, normalize=normalize
+        self._preview_generation += 1
+        generation = self._preview_generation
+        loader = _ImagePreviewLoader(
+            self._path,
+            size_ratio,
+            grayscale,
+            mode=mode,
+            normalize=normalize,
+            file_list=self._file_list,
+            generation=generation,
         )
-        self._preview_loader.finished.connect(self._on_preview_loaded)
-        self._preview_loader.start()
+        self._preview_loader = self._preview_threads.adopt(loader)
+        loader.finished_preview.connect(self._on_preview_loaded)
+        loader.start()
 
-    def _on_preview_loaded(self, img: np.ndarray | None):
-        self._preview_loader = None
-        if getattr(self, "_preview_options_changed", False):
-            self._preview_options_changed = False
-            self._start_preview_load()
+    def _on_preview_loaded(self, img: np.ndarray | None, generation: int = 0):
+        sender = self.sender()
+        if generation != self._preview_generation:
+            if sender is not None and sender is self._preview_loader:
+                self._preview_threads.clear_current_if(self._preview_loader)
+                self._preview_loader = None
             return
+        if sender is not None and sender is not self._preview_loader:
+            return
+        self._preview_threads.clear_current_if(self._preview_loader)
+        self._preview_loader = None
         if img is None:
             self.lbl_preview_status.setText("Preview failed")
             return
@@ -691,6 +885,33 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
 
         self._connect_roi_signals()
         self._update_estimates()
+
+    def closeEvent(self, event) -> None:
+        if self._preview_debounce is not None:
+            self._preview_debounce.stop()
+        self._stop_preview_loader()
+        self._preview_threads.stop_all(
+            finished_slot=self._on_preview_loaded, signal_name="finished_preview"
+        )
+        super().closeEvent(event)
+
+    def reject(self) -> None:
+        if self._preview_debounce is not None:
+            self._preview_debounce.stop()
+        self._stop_preview_loader()
+        self._preview_threads.stop_all(
+            finished_slot=self._on_preview_loaded, signal_name="finished_preview"
+        )
+        super().reject()
+
+    def accept(self) -> None:
+        if self._preview_debounce is not None:
+            self._preview_debounce.stop()
+        self._stop_preview_loader()
+        self._preview_threads.stop_all(
+            finished_slot=self._on_preview_loaded, signal_name="finished_preview"
+        )
+        super().accept()
 
     def _reset_roi(self) -> None:
         """Reset crop ROI to full frame."""
@@ -831,11 +1052,12 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
             self.chk_8bit.setChecked(
                 is_uint8_source or self.metadata.get("convert_to_8_bit_suggest", False)
             )
-        self.chk_8bit.setEnabled(not is_uint8_source)
+        set_checkbox_visibly_enabled(self.chk_8bit, not is_uint8_source)
         if is_uint8_source:
             self.chk_8bit.setToolTip("Source is already 8 bit")
         self.cmb_preview_mode.currentTextChanged.connect(self._refresh_preview)
         self.chk_preview_norm.toggled.connect(self._refresh_preview)
+        self.chk_normalize.toggled.connect(self._refresh_preview)
         self._update_estimates()
         self._refresh_preview()
 
@@ -909,6 +1131,7 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
         preview_opts = QHBoxLayout()
         self.cmb_preview_mode = QComboBox()
         self.cmb_preview_mode.addItems(["MAX (across samples)", "Single file"])
+        self.cmb_preview_mode.setCurrentIndex(0)  # MAX default
         preview_opts.addWidget(QLabel("Mode:"))
         preview_opts.addWidget(self.cmb_preview_mode)
         self.chk_preview_norm = QCheckBox("Normalize")
@@ -987,7 +1210,7 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
 
         mode = "max" if self.cmb_preview_mode.currentIndex() == 0 else "single"
         size_ratio = self.spin_resize.value() / 100.0
-        normalize = self.chk_preview_norm.isChecked()
+        normalize = self.chk_preview_norm.isChecked() or self.chk_normalize.isChecked()
         est = estimate_ascii_datatype(self._path, delimiter, first_col)
         stats = est
         fmt = lambda x: f"{x:.4g}" if isinstance(x, (int, float)) and not (x != x) else str(x)
@@ -1575,3 +1798,418 @@ class RealCameraDialog(QDialog):
     def closeEvent(self, event) -> None:
         self._stop()
         super().closeEvent(event)
+
+
+class _FolderChooserPreviewLoader(QThread):
+    """Background preview for one file (or group fallback) in FolderLoadChooserDialog."""
+
+    finished_preview = pyqtSignal(object, str, int)  # img, badge, generation
+
+    def __init__(self, group, paths: list, generation: int, preview_index: int = 0):
+        super().__init__()
+        self._group = group
+        self._paths = list(paths)
+        self._generation = generation
+        self._preview_index = preview_index
+
+    def run(self):
+        img = None
+        badge = ""
+        g = self._group
+        paths = self._paths
+        if not paths:
+            self.finished_preview.emit(None, "", self._generation)
+            return
+        idx = max(0, min(self._preview_index, len(paths) - 1))
+        path = paths[idx]
+        try:
+            if g.kind == "hikmicro_celsius":
+                from ..data.converters.hikmicro import celsius_preview
+
+                img = celsius_preview(path, size_ratio=0.35)
+                badge = f"HIKMICRO °C — {path.name} ({idx + 1}/{len(paths)})"
+            elif g.kind == "ascii":
+                from ..data.converters.ascii import (
+                    first_col_looks_like_row_number,
+                    get_ascii_preview,
+                    parse_ascii_raw,
+                )
+
+                delim = "\t"
+                raw = parse_ascii_raw(path, delim)
+                if raw is None:
+                    for d in (",", " "):
+                        raw = parse_ascii_raw(path, d)
+                        if raw is not None:
+                            delim = d
+                            break
+                first_col = False
+                if raw is not None and raw.shape[1] > 1:
+                    first_col = first_col_looks_like_row_number(raw)
+                img = get_ascii_preview(
+                    path,
+                    delimiter=delim,
+                    first_col_is_row_number=first_col,
+                    size_ratio=0.5,
+                    mode="single",
+                    normalize=True,
+                )
+                if raw is not None:
+                    badge = f"{path.name} — ASCII {raw.shape[0]}x{raw.shape[1]} ({idx + 1}/{len(paths)})"
+                else:
+                    badge = f"{path.name} ({idx + 1}/{len(paths)})"
+            elif g.kind == "array":
+                arr = np.load(path, mmap_mode="r")
+                badge = f"{path.name} — shape={arr.shape} dtype={arr.dtype} ({idx + 1}/{len(paths)})"
+                sample = arr[0] if arr.ndim >= 3 else arr
+                sample = np.asarray(sample, dtype=np.float32)
+                if sample.ndim == 2:
+                    lo, hi = float(np.nanmin(sample)), float(np.nanmax(sample))
+                    if hi > lo:
+                        img = ((sample - lo) / (hi - lo) * 255).clip(0, 255).astype(np.uint8)
+                elif sample.ndim == 3 and sample.shape[-1] in (3, 4):
+                    img = sample[..., :3]
+                    lo, hi = float(np.nanmin(img)), float(np.nanmax(img))
+                    if hi > lo:
+                        img = ((img - lo) / (hi - lo) * 255).clip(0, 255).astype(np.uint8)
+                    else:
+                        img = np.clip(img, 0, 255).astype(np.uint8)
+            elif g.kind == "video":
+                img = get_video_preview(
+                    path, n_frames=6, size_ratio=0.25, mode="single", normalize=True
+                )
+                badge = f"{path.name} ({idx + 1}/{len(paths)})"
+            elif g.kind == "image":
+                img = get_paths_image_preview(
+                    [path], size_ratio=0.3, n_samples=1, mode="single", normalize=True
+                )
+                badge = f"{path.name} ({idx + 1}/{len(paths)})"
+        except Exception as exc:
+            badge = f"Preview failed ({path.name}): {exc}"
+            img = None
+        self.finished_preview.emit(img, badge, self._generation)
+
+
+class FolderLoadChooserDialog(QDialog):
+    """Pick which file group to load from a mixed folder (with file list + preview)."""
+
+    def __init__(
+        self,
+        folder: Path,
+        groups: list,
+        parent: Optional[QWidget] = None,
+        initial_group_id: Optional[str] = None,
+    ):
+        super().__init__(parent)
+        self.setWindowIcon(QIcon(":/icon/blitz.ico"))
+        self.setWindowTitle("Choose what to load")
+        self._folder = folder
+        self._groups = list(groups)
+        self._selected: Any = None
+        self._preview_loader: Optional[_FolderChooserPreviewLoader] = None
+        self._preview_threads = _PreviewThreadGuard()
+        self._preview_generation = 0
+        self._preview_debounce: Optional[QTimer] = None
+        self._current_paths: list = []
+        self._setup_ui()
+        start_row = 0
+        if initial_group_id:
+            for i, g in enumerate(self._groups):
+                if g.id == initial_group_id:
+                    start_row = i
+                    break
+        else:
+            for i, g in enumerate(self._groups):
+                if g.kind != "other":
+                    start_row = i
+                    break
+        self.list.setCurrentRow(start_row)
+        self._on_group_changed()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel(f"<b>{self._folder.name}</b> — select a group, browse files:"))
+        body = QHBoxLayout()
+
+        left = QVBoxLayout()
+        left.addWidget(QLabel("Groups"))
+        self.list = QListWidget()
+        self.list.setMinimumWidth(220)
+        for g in self._groups:
+            item = QListWidgetItem(g.label)
+            item.setData(Qt.ItemDataRole.UserRole, g.id)
+            if g.kind == "other":
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+            self.list.addItem(item)
+        self.list.currentRowChanged.connect(lambda _r: self._on_group_changed())
+        left.addWidget(self.list, stretch=1)
+        body.addLayout(left)
+
+        mid = QVBoxLayout()
+        mid.addWidget(QLabel("Files in group"))
+        self.file_list = QListWidget()
+        self.file_list.setMinimumWidth(240)
+        self.file_list.currentRowChanged.connect(lambda _r: self._on_file_changed())
+        mid.addWidget(self.file_list, stretch=1)
+        nav = QHBoxLayout()
+        self.btn_prev = QPushButton("◀")
+        self.btn_prev.setFixedWidth(36)
+        self.btn_prev.setToolTip("Previous file")
+        self.btn_next = QPushButton("▶")
+        self.btn_next.setFixedWidth(36)
+        self.btn_next.setToolTip("Next file")
+        self.lbl_file_pos = QLabel("")
+        self.btn_prev.clicked.connect(self._prev_file)
+        self.btn_next.clicked.connect(self._next_file)
+        nav.addWidget(self.btn_prev)
+        nav.addWidget(self.lbl_file_pos, stretch=1)
+        nav.addWidget(self.btn_next)
+        mid.addLayout(nav)
+        body.addLayout(mid)
+
+        preview_col = QVBoxLayout()
+        self.lbl_info = QLabel("")
+        self.lbl_info.setWordWrap(True)
+        preview_col.addWidget(self.lbl_info)
+        self._plot_widget = pg.PlotWidget(background=get_dialog_preview_bg())
+        self._plot_widget.setMinimumSize(320, 240)
+        self._plot_widget.hideAxis("left")
+        self._plot_widget.hideAxis("bottom")
+        self._plot_widget.setAspectLocked(lock=True, ratio=1.0)
+        self._img_item = pg.ImageItem()
+        self._plot_widget.addItem(self._img_item)
+        preview_col.addWidget(self._plot_widget, stretch=1)
+        self.lbl_badge = QLabel("")
+        self.lbl_badge.setStyleSheet("color: gray;")
+        self.lbl_badge.setWordWrap(True)
+        preview_col.addWidget(self.lbl_badge)
+        body.addLayout(preview_col, stretch=1)
+        layout.addLayout(body)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        self._ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        layout.addWidget(buttons)
+        self.resize(960, 480)
+
+    def _current_group(self):
+        row = self.list.currentRow()
+        if row < 0 or row >= len(self._groups):
+            return None
+        g = self._groups[row]
+        if g.kind == "other":
+            return None
+        return g
+
+    def _clear_preview(self) -> None:
+        self._img_item.clear()
+        self.lbl_badge.setText("")
+
+    def _stop_preview_loader(self) -> None:
+        self._preview_threads.stop(
+            finished_slot=self._on_preview, signal_name="finished_preview"
+        )
+        self._preview_loader = None
+
+    def _on_group_changed(self) -> None:
+        g = self._current_group()
+        self._ok_btn.setEnabled(g is not None)
+        self.file_list.blockSignals(True)
+        self.file_list.clear()
+        self._current_paths = []
+        if g is None:
+            self.file_list.blockSignals(False)
+            self.lbl_info.setText("Select a loadable group.")
+            self.lbl_file_pos.setText("")
+            self._clear_preview()
+            self._preview_generation += 1
+            self._stop_preview_loader()
+            return
+        extra = ""
+        if g.kind == "hikmicro_celsius":
+            extra = " Approximate °C from radiometric JPEG."
+        elif g.naming_cluster:
+            extra = f" Naming cluster: {g.naming_cluster}."
+        self.lbl_info.setText(
+            f"<b>{g.label}</b><br/>{g.count} file(s), kind={g.kind}.{extra}"
+        )
+        self._current_paths = list(g.paths)
+        for p in self._current_paths:
+            self.file_list.addItem(p.name)
+        self.file_list.blockSignals(False)
+        if self._current_paths:
+            self.file_list.setCurrentRow(0)
+        else:
+            self.lbl_file_pos.setText("")
+            self._clear_preview()
+
+    def _on_file_changed(self) -> None:
+        self._update_file_pos_label()
+        g = self._current_group()
+        if g is None or not self._current_paths:
+            return
+        self._preview_generation += 1
+        self.lbl_badge.setText("Loading preview...")
+        self._stop_preview_loader()
+        if self._preview_debounce is None:
+            self._preview_debounce = QTimer(self)
+            self._preview_debounce.setSingleShot(True)
+            self._preview_debounce.timeout.connect(self._restart_preview_debounced)
+        self._preview_debounce.start(60)
+
+    def _restart_preview_debounced(self) -> None:
+        g = self._current_group()
+        if g is None:
+            return
+        self._start_preview(g, self.file_list.currentRow())
+
+    def _update_file_pos_label(self) -> None:
+        n = len(self._current_paths)
+        i = self.file_list.currentRow()
+        if n <= 0 or i < 0:
+            self.lbl_file_pos.setText("")
+            self.btn_prev.setEnabled(False)
+            self.btn_next.setEnabled(False)
+            return
+        self.lbl_file_pos.setText(f"{i + 1} / {n}")
+        self.btn_prev.setEnabled(i > 0)
+        self.btn_next.setEnabled(i < n - 1)
+
+    def _prev_file(self) -> None:
+        row = self.file_list.currentRow()
+        if row > 0:
+            self.file_list.setCurrentRow(row - 1)
+
+    def _next_file(self) -> None:
+        row = self.file_list.currentRow()
+        if 0 <= row < self.file_list.count() - 1:
+            self.file_list.setCurrentRow(row + 1)
+
+    def _start_preview(self, g, file_index: int = 0) -> None:
+        self._stop_preview_loader()
+        self._preview_generation += 1
+        generation = self._preview_generation
+        self.lbl_badge.setText("Loading preview...")
+        loader = _FolderChooserPreviewLoader(
+            g, self._current_paths, generation, preview_index=file_index
+        )
+        self._preview_loader = self._preview_threads.adopt(loader)
+        loader.finished_preview.connect(self._on_preview)
+        loader.start()
+
+    def _on_preview(self, img, badge: str, generation: int) -> None:
+        sender = self.sender()
+        if generation != self._preview_generation:
+            if sender is not None and sender is self._preview_loader:
+                self._preview_threads.clear_current_if(self._preview_loader)
+                self._preview_loader = None
+            return
+        if sender is not None and sender is not self._preview_loader:
+            return
+        self._preview_threads.clear_current_if(self._preview_loader)
+        self._preview_loader = None
+        self.lbl_badge.setText(badge)
+        if img is None:
+            self._img_item.clear()
+            return
+        if img.ndim == 2:
+            display = img.T
+            self._img_item.setLookupTable(_plasma_lut())
+            self._img_item.setLevels([0, 255])
+        else:
+            display = np.transpose(img, (1, 0, 2))
+            self._img_item.setLookupTable(None)
+        self._img_item.setImage(display)
+        h, w = display.shape[0], display.shape[1]
+        self._img_item.setRect(pg.QtCore.QRectF(0, 0, w, h))
+        vb = self._plot_widget.getViewBox()
+        vb.invertY(True)
+        pad = 1.05
+        mx = w * (pad - 1) / 2
+        my = h * (pad - 1) / 2
+        self._plot_widget.setRange(
+            xRange=(-mx, w + mx),
+            yRange=(-my, h + my),
+            padding=0,
+        )
+
+    def selected_group(self):
+        return self._current_group()
+
+    def accept(self) -> None:
+        self._selected = self._current_group()
+        if self._selected is None:
+            return
+        if self._preview_debounce is not None:
+            self._preview_debounce.stop()
+        self._stop_preview_loader()
+        self._preview_threads.stop_all(
+            finished_slot=self._on_preview, signal_name="finished_preview"
+        )
+        super().accept()
+
+    def reject(self) -> None:
+        if self._preview_debounce is not None:
+            self._preview_debounce.stop()
+        self._stop_preview_loader()
+        self._preview_threads.stop_all(
+            finished_slot=self._on_preview, signal_name="finished_preview"
+        )
+        super().reject()
+
+    def closeEvent(self, event) -> None:
+        if self._preview_debounce is not None:
+            self._preview_debounce.stop()
+        self._stop_preview_loader()
+        self._preview_threads.stop_all(
+            finished_slot=self._on_preview, signal_name="finished_preview"
+        )
+        super().closeEvent(event)
+
+
+class MixedImageSizesDialog(QDialog):
+    """Ask how to handle unequal HxW in a folder load."""
+
+    def __init__(
+        self,
+        shapes: set,
+        n_files: int,
+        parent: Optional[QWidget] = None,
+    ):
+        super().__init__(parent)
+        self.setWindowIcon(QIcon(":/icon/blitz.ico"))
+        self.setWindowTitle("Mixed image sizes")
+        self.policy: Optional[str] = None
+        layout = QVBoxLayout(self)
+        shape_txt = ", ".join(f"{h}x{w}" for h, w in sorted(shapes)[:8])
+        if len(shapes) > 8:
+            shape_txt += ", ..."
+        layout.addWidget(
+            QLabel(
+                f"Images in this set have different sizes ({n_files} files).\n"
+                f"Detected: {shape_txt}\n\n"
+                "How should BLITZ proceed?"
+            )
+        )
+        self.radio_crop = QRadioButton("Crop all to common minimum size (lossy edges)")
+        self.radio_abort = QRadioButton("Cancel load")
+        self.radio_crop.setChecked(True)
+        layout.addWidget(self.radio_crop)
+        layout.addWidget(self.radio_abort)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self._on_ok)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _on_ok(self) -> None:
+        if self.radio_abort.isChecked():
+            self.policy = None
+            self.reject()
+            return
+        self.policy = "crop_min"
+        self.accept()

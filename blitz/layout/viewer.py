@@ -364,7 +364,7 @@ class ImageViewer(pg.ImageView):
         message_callback: Optional[Callable[[str], None]] = None,
         **kwargs,
     ) -> None:
-        load_keys = {"frame_range", "step"}
+        load_keys = {"frame_range", "step", "file_list", "mixed_size_policy"}
         load_kwargs = {k: kwargs.pop(k) for k in list(kwargs) if k in load_keys}
 
         self.data = DataLoader(**kwargs).load(

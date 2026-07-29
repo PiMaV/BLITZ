@@ -2,12 +2,36 @@
 Tokyo Night inspired colors for BLITZ GUI.
 Supports dark (default) and light theme. Matches boot_bench splash.
 """
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 _current_theme = "dark"
+
+if TYPE_CHECKING:
+    from PyQt6.QtWidgets import QCheckBox
 
 
 def set_theme(theme: str) -> None:
     global _current_theme
     _current_theme = "light" if theme == "light" else "dark"
+
+
+def set_checkbox_visibly_enabled(cb: "QCheckBox", enabled: bool) -> None:
+    """Enable/disable a checkbox and make the disabled state clearly grayed out.
+
+    Qt's default disabled look is too subtle with our custom check icons;
+    opacity + muted label color make locked native options obvious.
+    """
+    from PyQt6.QtWidgets import QGraphicsOpacityEffect
+
+    cb.setEnabled(enabled)
+    if enabled:
+        cb.setGraphicsEffect(None)
+    else:
+        effect = QGraphicsOpacityEffect(cb)
+        effect.setOpacity(0.38)
+        cb.setGraphicsEffect(effect)
 
 
 def get_stylesheet() -> str:
@@ -412,6 +436,7 @@ QComboBox QAbstractItemView {
 }
 
 QCheckBox, QRadioButton { spacing: 6px; color: #a9b1d6; }
+QCheckBox:disabled, QRadioButton:disabled { color: #565f89; }
 QCheckBox::indicator {
     width: 18px;
     height: 18px;
@@ -583,6 +608,7 @@ QComboBox QAbstractItemView {
 }
 
 QCheckBox, QRadioButton { spacing: 6px; color: #565f89; }
+QCheckBox:disabled, QRadioButton:disabled { color: #9aa5ce; }
 QCheckBox::indicator { width: 18px; height: 18px; image: url(:/icon/check_off.svg); }
 QCheckBox::indicator:checked { image: url(:/icon/check_on.svg); }
 QRadioButton::indicator {

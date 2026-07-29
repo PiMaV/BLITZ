@@ -21,9 +21,10 @@ boot_bench_results/
 profile_stats.txt
 *.prof
 
-# Flatpak local builds
+# Flatpak local builds (OSTree export, builder cache — never commit)
 flatpak/build-dir/
 flatpak/.flatpak-builder/
+flatpak/repo/
 
 # Generated test data (regenerate bei Bedarf: _aux/benchmarks/benchmark_multicore_load.py --generate N)
 /_af/

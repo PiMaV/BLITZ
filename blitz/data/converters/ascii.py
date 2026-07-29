@@ -1,4 +1,4 @@
-"""ASCII Loader: tab/space/comma-separated numeric data (.asc, .dat) -> ImageData."""
+"""ASCII Loader: tab/space/comma-separated numeric data (.asc, .dat, .txt) -> ImageData."""
 
 import io
 from multiprocessing import Pool
@@ -15,20 +15,64 @@ from ... import settings
 from ..image import ImageData, MetaData
 from ...tools import log
 
-ASCII_EXTENSIONS = (".asc", ".dat")
+ASCII_EXTENSIONS = (".asc", ".dat", ".txt")
+ASCII_NATIVE_EXTENSIONS = (".asc", ".dat")  # always treated as ASCII
 DELIMITERS = {"Tab": "\t", "Space": " ", "Comma": ","}
 RAW_PREVIEW_MAX_CHARS = 80
 RAW_PREVIEW_MAX_LINES = 5
 
 
-def get_ascii_files(path: Path) -> list[Path]:
-    """List ASCII files in folder, natsorted. If path is file, return [path]."""
+def _txt_looks_like_matrix(path: Path) -> bool:
+    """True if .txt parses as a rectangular numeric matrix with a common delimiter."""
+    for delim in ("\t", ",", " "):
+        arr = _parse_ascii(path, delim, first_col_is_row_number=False)
+        if arr is None or arr.ndim != 2:
+            continue
+        if arr.shape[0] < 2 or arr.shape[1] < 2:
+            continue
+        flat = np.asarray(arr).ravel()
+        if flat.size and float(np.isfinite(flat).sum()) / float(flat.size) >= 0.5:
+            return True
+    return False
+
+
+def is_ascii_path(path: Path) -> bool:
+    """Whether *path* should be handled by the ASCII loader."""
+    suf = path.suffix.lower()
+    if suf in ASCII_NATIVE_EXTENSIONS:
+        return path.is_file()
+    if suf == ".txt" and path.is_file():
+        return _txt_looks_like_matrix(path)
+    return False
+
+
+def get_ascii_files(
+    path: Path,
+    file_list: Optional[list[Path]] = None,
+) -> list[Path]:
+    """List ASCII files in folder, natsorted. If path is file, return [path].
+
+    If *file_list* is given, use those paths (already filtered by chooser).
+    """
+    if file_list is not None:
+        return natsorted([p for p in file_list if p.is_file()])
     if path.is_file():
-        return [path] if path.suffix.lower() in ASCII_EXTENSIONS else []
-    content = [f for f in path.iterdir() if f.is_file() and f.suffix.lower() in ASCII_EXTENSIONS]
+        return [path] if is_ascii_path(path) else []
+    content = [
+        f for f in path.iterdir()
+        if f.is_file() and f.suffix.lower() in ASCII_EXTENSIONS
+    ]
+    # .txt only if probe passes
+    content = [
+        f for f in content
+        if f.suffix.lower() in ASCII_NATIVE_EXTENSIONS or _txt_looks_like_matrix(f)
+    ]
     if not content:
         return []
-    suffixes = {s: len([f for f in content if f.suffix.lower() == s]) for s in ASCII_EXTENSIONS}
+    suffixes = {
+        s: len([f for f in content if f.suffix.lower() == s])
+        for s in {f.suffix.lower() for f in content}
+    }
     most_frequent = max(suffixes, key=suffixes.get)  # type: ignore
     content = [f for f in content if f.suffix.lower() == most_frequent]
     return natsorted(content)
@@ -38,10 +82,11 @@ def estimate_ascii_datatype(
     path: Path,
     delimiter: str,
     first_col_is_row_number: bool,
+    file_list: Optional[list[Path]] = None,
 ) -> dict:
     """Estimate value type and stats from first file. Returns dict with dtype, min, max, median, mean."""
     empty = {"dtype": "float", "min": 0.0, "max": 0.0, "median": 0.0, "mean": 0.0}
-    files = get_ascii_files(path)
+    files = get_ascii_files(path, file_list=file_list)
     if not files:
         return empty
     arr = _parse_ascii(files[0], delimiter, first_col_is_row_number)
@@ -65,9 +110,13 @@ def estimate_ascii_datatype(
     return {"dtype": dtype, "min": float(mn), "max": float(mx), "median": float(med), "mean": float(mean)}
 
 
-def get_ascii_metadata(path: Path, delimiter: str = "\t") -> dict | None:
+def get_ascii_metadata(
+    path: Path,
+    delimiter: str = "\t",
+    file_list: Optional[list[Path]] = None,
+) -> dict | None:
     """Get metadata for ASCII file or folder. Returns dict with file_name, size (h,w), file_count, format_display."""
-    files = get_ascii_files(path)
+    files = get_ascii_files(path, file_list=file_list)
     if not files:
         return None
     raw = _parse_ascii(files[0], delimiter, first_col_is_row_number=False)
@@ -77,7 +126,7 @@ def get_ascii_metadata(path: Path, delimiter: str = "\t") -> dict | None:
     arr = raw[:, 1:] if (first_col and raw.shape[1] > 1) else raw
     h, w = arr.shape[0], arr.shape[1]
     delim_name = next((k for k, v in DELIMITERS.items() if v == delimiter), "Tab")
-    est = estimate_ascii_datatype(path, delimiter, first_col)
+    est = estimate_ascii_datatype(path, delimiter, first_col, file_list=file_list)
     # Nur vorschlagen wenn Daten in 8-bit passen (0–255); uint16 mit größerem max → Präzision behalten
     convert_8bit_suggest = est["dtype"] == "uint16" and est["max"] <= 255
     return {
@@ -249,11 +298,12 @@ def load_ascii(
     delimiter: str = "\t",
     first_col_is_row_number: bool = True,
     *,
+    file_list: Optional[list[Path]] = None,
     progress_callback: Optional[Callable[[int], None]] = None,
     message_callback: Optional[Callable[[str], None]] = None,
 ) -> ImageData:
     """Load ASCII file(s) and return ImageData. Uses multicore for many files."""
-    files = get_ascii_files(path)
+    files = get_ascii_files(path, file_list=file_list)
     if not files:
         return ImageData(
             np.zeros((1, 1, 1, 1), dtype=np.uint8),
