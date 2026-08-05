@@ -8,6 +8,7 @@ Overview of all documentation files in this repository.
 |------|---------|
 | [`README.md`](../README.md) | Main project overview, installation, and quick links. |
 | [`docs/walkthrough.md`](walkthrough.md) | Quick Start Guide with screenshots. |
+| [`docs/features.md`](features.md) | **Hero Features:** Top capabilities (SVD/PCA, hillshade, polyline, Numba, …). |
 | [`docs/tabs_explained.md`](tabs_explained.md) | **Features & Tabs:** Comprehensive user guide for all UI elements. |
 | [`docs/missing_features.md`](missing_features.md) | **Missing/Hidden:** Overview of features not present in this build (e.g. crop widget, OMERO). |
 

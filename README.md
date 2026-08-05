@@ -1,17 +1,19 @@
-# BLITZ V2.0
-
-![BLITZ Interface](/docs/images/BLITZ_overview_V2.png)
-
-**BLITZ treats images as structured data.**
-
-A high-performance, matrix-based image viewer designed for efficiently exploring both **massive image datasets** and **single-image analysis workflows**.
-
----
+# BLITZ – Scientific Image Viewer
 
 [![Release](https://img.shields.io/github/v/release/PiMaV/BLITZ)](https://github.com/PiMaV/BLITZ/releases/latest)
 [![License](https://img.shields.io/github/license/PiMaV/BLITZ)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.x-blue)]()
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)]()
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-lightgrey)]()
+
+> **Images aren't just pixels—they are structured data.**  
+> BLITZ bridges the gap between lightweight desktop viewing and scientific array inspection.
+
+[![Quick Feature Overview](resources/public/blitz_demo.gif)](resources/public/blitz_demo.gif)
+*(Click animation to open full size)*
+
+---
+
+A high-performance, matrix-based image viewer designed for efficiently exploring both **massive image datasets** and **single-image analysis workflows**.
 
 ---
 
@@ -25,13 +27,13 @@ No installation required — simply download and run the executable.
 
 ## What is BLITZ
 
-BLITZ (**Bulk Loading and Interactive Time series Zonal analysis**) is a high-performance, matrix-based image exploration and analysis tool designed for efficiently managing both massive datasets and single-image analysis.
+BLITZ (**Bulk Loading and Interactive Time series Zonal analysis**) is a high-performance, matrix-based image exploration and analysis tool designed for efficiently managing both massive datasets and single-image analysis (e.g. high-speed camera footage, optical plasma diagnostics, and fast-framing scientific imaging).
 
-It was originally developed and initially implemented by Philipp Mattern during his time at [INP Greifswald](https://www.inp-greifswald.de).
+It was originally developed and initially implemented by Philipp Mattern during his time at [INP Greifswald](https://www.inp-greifswald.de) (Leibniz Institute for Plasma Science and Technology) to analyze complex low-temperature plasma discharge dynamics.
 
 It is actively maintained and further developed as part of his independent engineering work at [M.E.S.S. – Mattern Engineering & Software Solutions](https://mess.engineering).
 
-Version 2.0 introduces a fully refactored architecture with improved performance, stability, and maintainability.
+Starting with Version 2.0 a fully refactored architecture with improved performance, stability, and maintainability was introduced.
 
 ---
 
@@ -46,24 +48,21 @@ DPG Symposium presentation (architecture and BLITZ–WOLKE integration):
 
 ---
 
-## Hero Features
+## Key Features
 
-- **SVD / PCA Pattern Extraction** — Exact full SVD or memory-efficient randomized SVD (Halko) on entire frame stacks; reconstruct from principal components, inspect eigenimages, and read explained-variance curves.
-- **Hillshade Relief Visualization** — Lambertian shading from height fields (`∇z`, azimuth / elevation / Z-factor); view-only overlay so analysis always stays on the original intensity.
-- **Polyline Profile & Path Statistics** — Dense sampling along an open polyline with perpendicular band averaging, min/max envelopes (perp + over frames), path length in pixels or calibrated AU, and CSV export.
-- **Numba-Fused Matrix Pipeline** — Parallel JIT kernels for fused subtract÷divide, sliding-window mean, and axis-0 reduce (mean / max / min / std) on `(T, H, W, C)` volumes.
-- **Drag-and-Drop Matrix Handling** — Drop images, video, or `.npy` stacks straight into the viewer; optional load dialogs for 8-bit, normalize, grayscale, size/subset ratio, and RAM caps.
-- **Temporal Ops & Zonal Timeline** — Background subtraction / flat-field division from aggregate range, file, or sliding window; ROI mean/median curves with envelope bands over the full time series.
-- **Crosshair Profilschnitte** — Linked H/V extraction plots with line-width averaging, dataset envelopes, and RoSEE event bounds on cumulative fluctuation signals.
-- **Bulk Load → Live Stream** — Folder/video pipelines at multi-GB scale, plus synthetic Lissajous/Lightning streams, USB webcam, and network `.npy` ingest.
+- **High-Performance Data Handling:** Efficiently processes very large datasets (e.g. loading, scaling, and converting ~21,000 RGB images (~2.5 GB raw data) into ~6.2 GB of grayscale matrix data in ~30 s on a standard gaming laptop).
+- **Easy Data Handling:** Drag-and-drop support for image, video, and NumPy matrix (*.npy) formats.
+- **Easy to Use:** Automatic resource management for small and large datasets.
+- **User-Friendly Interface:** Intuitive GUI with mouse-based navigation and shortcuts.
+- **Advanced Image Processing:** Matrix-based processing with fast, Numba-accelerated statistics.
+- **Live View:** Support for real USB cameras and simulated data streams.
+- **Built on Python:** Using Qt and PyQtGraph for high performance and flexibility.
 
 ---
 
 # Interface Preview
 
-*(Click if animation is not playing)*
-
-![Quick Feature Overview](resources/public/blitz_demo.gif)
+![BLITZ Interface](/docs/images/BLITZ_overview_V2.png)
 
 ---
 
@@ -92,7 +91,7 @@ To compile and develop locally:
 1. Clone the repository:
 
    ```
-    $ git clone https://github.com/pimav/BLITZ.git
+    $ git clone https://github.com/PiMaV/BLITZ.git
     $ cd BLITZ
    ```
 
@@ -108,10 +107,12 @@ To compile and develop locally:
 
 Early development of BLITZ was supported by Richard Krieg (student assistant) until v1.3.0 / January 2025, including refactoring, bug fixing, and feature development during the INP-funded project phase.
 
-## Additional Resources
+## Additional Resources & Datasets
 
-* Example Dataset: [KinPen Science Example Set](https://www.inptdat.de/dataset/fast-framing-images-kinpen-science-example-set-images-testing-blitz-image-viewer)
-* Explore more datasets or contribute your own on [INPTDAT](https://www.inptdat.de).
+- **Example Dataset:** [KinPen Science Example Set](https://www.inptdat.de/dataset/fast-framing-images-kinpen-science-example-set-images-testing-blitz-image-viewer)  
+  *High-speed camera recordings of a cold atmospheric pressure plasma jet (kINPen), ideal for testing BLITZ's fast matrix loading and time-series analysis capabilities.*
+- **Plasma Data Repository:** [INPTDAT](https://www.inptdat.de)  
+  *Explore disciplinary datasets for low-temperature plasma physics or contribute your own.*
 
 ## License
 

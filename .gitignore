@@ -20,6 +20,7 @@ boot_bench_results/
 .bench_config.json
 profile_stats.txt
 *.prof
+distro_strategy.md
 
 # Flatpak local builds (OSTree export, builder cache — never commit)
 flatpak/build-dir/

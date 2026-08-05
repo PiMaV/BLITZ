@@ -76,6 +76,7 @@ class PolylineProfileController(QWidget):
         # Relative handle positions in [0, 1] of image W/H (survives size changes).
         self._roi_fracs: np.ndarray | None = None
         self._roi_user_shaped = False
+        self._applying_roi = False  # ignore finished signals during programmatic setPoints
 
         # --- ROI (open) ---
         # Placeholder only; first Show / reshape replaces with a full-frame diagonal.
@@ -441,36 +442,50 @@ class PolylineProfileController(QWidget):
         return np.array([[0.08, 0.08], [0.92, 0.92]], dtype=np.float64)
 
     def _apply_roi_fracs(self, w: int, h: int, fracs: np.ndarray) -> None:
-        self._roi.setPos((0, 0))
         pts = [
             [float(np.clip(f[0], 0.0, 1.0) * w), float(np.clip(f[1], 0.0, 1.0) * h)]
             for f in fracs
         ]
+        self._applying_roi = True
         self._roi.blockSignals(True)
         try:
+            self._roi.setPos((0, 0))
             self._roi.setPoints(pts)
         finally:
             self._roi.blockSignals(False)
+            # Queued RegionChangeFinished must not treat this as a user edit.
+            QTimer.singleShot(0, self._end_applying_roi)
 
-    def _capture_roi_fracs(self) -> None:
+    def _end_applying_roi(self) -> None:
+        self._applying_roi = False
+
+    def _capture_roi_fracs(self) -> bool:
+        """Store relative handles. Returns False if path looks like the ctor stub."""
         img = self._viewer.image
         if img is None:
-            return
+            return False
         w, h = int(img.shape[1]), int(img.shape[2])
         if w < 1 or h < 1:
-            return
+            return False
         pts = roi_points_xy(self._roi)
         if len(pts) < 2:
-            return
+            return False
+        span = float(np.hypot(*(pts[-1] - pts[0])))
+        # Ignore constructor [[0,0],[20,0],[20,20]] and other tiny stubs.
+        if span < 0.15 * max(w, h):
+            return False
         self._roi_fracs = np.column_stack(
             (pts[:, 0] / float(w), pts[:, 1] / float(h))
         )
+        return True
 
     def _on_roi_finished(self) -> None:
-        if self._active:
+        if self._applying_roi:
+            return
+        if self._active and self._capture_roi_fracs():
             self._roi_user_shaped = True
-            self._capture_roi_fracs()
-        self.refresh()
+        if self._active:
+            self.refresh()
 
     def _reshape_roi(self) -> None:
         """Place ROI from relative fractions (default: full-frame diagonal)."""
@@ -481,10 +496,11 @@ class PolylineProfileController(QWidget):
         if w < 2 or h < 2:
             return
 
-        if self._roi_fracs is None:
+        if not self._roi_user_shaped or self._roi_fracs is None:
+            # Every Show without a real user path → clean diagonal (not 20×20 stub).
             self._roi_fracs = self._default_diagonal_fracs()
             self._roi_user_shaped = False
-        elif self._roi_user_shaped:
+        else:
             # User path collapsed or far outside after a size change → reset
             pts = roi_points_xy(self._roi)
             span = 0.0

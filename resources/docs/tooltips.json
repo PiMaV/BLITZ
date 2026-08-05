@@ -91,5 +91,14 @@
     "spinbox_iso_smoothing": "Smoothen the isocurves by applying an Gaussian filter with given width to the current image.",
     "checkbox_lut_log": "Logarithmic scale on histogram counts (makes low-count bins visible).",
     "spin_lut_min": "LUT minimum (display range lower bound). Integer for 8/16-bit images; float otherwise.",
-    "spin_lut_max": "LUT maximum (display range upper bound). Integer for 8/16-bit images; float otherwise."
+    "spin_lut_max": "LUT maximum (display range upper bound). Integer for 8/16-bit images; float otherwise.",
+
+    "checkbox_shade_preview": "Hillshade (relief shading) as a view-only overlay. Crosshair, Polyline, ROI and Probe still read the original height data — never the shade image. Artificial sun only (no real solar geometry).",
+    "spinbox_shade_azimuth": "Light direction in degrees. 0° = from top of image, clockwise (90° = from the right). Artificial sun.",
+    "slider_shade_azimuth": "Light direction (azimuth) 0–360°. Same as the Azimuth spinner.",
+    "spinbox_shade_elevation": "Light height above the horizon. 0° = grazing light, 90° = overhead. Artificial sun.",
+    "slider_shade_elevation": "Light elevation 0–90°. Same as the Elevation spinner.",
+    "spinbox_shade_z": "Vertical exaggeration before shading. Higher values deepen slopes (more dramatic relief). Step 0.5.",
+    "slider_shade_z": "Vertical exaggeration (Z factor). Same as the Z factor spinner.",
+    "label_shade_status": "Reminds that Preview is view chrome only; analysis always uses height."
 }

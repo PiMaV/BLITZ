@@ -328,6 +328,8 @@ class ExtractionLine(pg.InfiniteLine):
             movable=True,
         )
         self._viewer = viewer
+        # Above view-only layers (e.g. Shade overlay at z≈0.1).
+        self.setZValue(1_000)
         self._viewer.view.addItem(self)
         self._upper = pg.InfiniteLine(
             angle=90 if self._vertical else 0,
@@ -343,6 +345,7 @@ class ExtractionLine(pg.InfiniteLine):
                 width=3,
             ),
         )
+        self._upper.setZValue(1_000)
         self._lower = pg.InfiniteLine(
             angle=90 if self._vertical else 0,
             pen=pg.mkPen(
@@ -357,6 +360,7 @@ class ExtractionLine(pg.InfiniteLine):
                 width=3,
             ),
         )
+        self._lower.setZValue(1_000)
         self._width: int = 0
         self.sigPositionChanged.connect(self._move_bounds)
         self._coupled: None | ExtractionLine = None

@@ -35,6 +35,8 @@ Related: [`docs/missing_features.md`](docs/missing_features.md) (hidden UI / con
   - Colormap combo; fit-on-load (also after load-dialog transpose/flip)
 - **v2.0.10** Polyline Show: relative diagonal default across the image; dock
   re-placed under the viewer so it is not hidden by the Timeline
+- **Shade tab** (hillshade): view-only overlay after RoSEE; Azimuth / Elevation /
+  Z factor; Crosshair & Polyline keep sampling height (not shade)
 
 ---
 
@@ -74,7 +76,7 @@ Relevant: `blitz/layout/rosee.py`, `blitz/layout/isoline.py`.
 
 ### Image smoothing
 
-General Ops/display spatial blur (today only RoSEE/isolines/TOF). Gaussian/box/temporal — see `docs/numba_candidates.md`.
+General Ops/display spatial blur (today only RoSEE/isolines/TOF). Gaussian/box/temporal — see `docs/numba_candidates.md`. **Not a Shade-tab control** — belongs in Ops/View when implemented; Shade stays lighting-only.
 
 ---
 
@@ -140,9 +142,10 @@ Checkbox / volume view — unscoped.
 
 Likely BUSY/UI overhead; profile.
 
-### Schummerung / Geodata input
+### Shade follow-ups
 
-live tab for geodata and schummerung (sonnenstand höhe richtung) und Z überhöhung
+Blend (color relief × hillshade); Apply → replace stack; real sun / GeoTIFF north.
+Core invariant stays: analysis reads height unless user explicitly Applies.
 
 ---
 

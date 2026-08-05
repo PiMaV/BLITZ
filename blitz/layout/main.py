@@ -80,6 +80,7 @@ from .dialogs import (AsciiLoadOptionsDialog, CropTimelineDialog,
 from .export_dialog import run_export
 from .isoline import IsolineAdapter
 from .rosee import ROSEEAdapter
+from .shade import ShadeAdapter
 from .simulated_live import SimulatedLiveWidget
 from .tof import TOFAdapter
 from .pca import PCAAdapter
@@ -125,6 +126,10 @@ class MainWindow(QMainWindow):
              self.ui.textbox_rosee_slope_v),
         )
         self.isoline_adapter = IsolineAdapter(self.ui.image_viewer)
+        self.shade_adapter = ShadeAdapter(
+            self.ui.image_viewer,
+            status_label=self.ui.label_shade_status,
+        )
         self._linked_cursor = LinkedCursorController(
             self.ui.image_viewer,
             self.ui.h_plot,
@@ -525,6 +530,21 @@ class MainWindow(QMainWindow):
             self._update_envelope_options
         )
         self.ui.checkbox_rosee_active.stateChanged.connect(self.toggle_rosee)
+        self.ui.checkbox_shade_preview.stateChanged.connect(self._on_shade_preview)
+        self.ui.spinbox_shade_azimuth.valueChanged.connect(
+            self._on_shade_azimuth_spin
+        )
+        self.ui.slider_shade_azimuth.valueChanged.connect(
+            self._on_shade_azimuth_slider
+        )
+        self.ui.spinbox_shade_elevation.valueChanged.connect(
+            self._on_shade_elevation_spin
+        )
+        self.ui.slider_shade_elevation.valueChanged.connect(
+            self._on_shade_elevation_slider
+        )
+        self.ui.spinbox_shade_z.valueChanged.connect(self._on_shade_z_spin)
+        self.ui.slider_shade_z.valueChanged.connect(self._on_shade_z_slider)
         self.ui.checkbox_rosee_h.stateChanged.connect(self.toggle_rosee)
         self.ui.checkbox_rosee_v.stateChanged.connect(self.toggle_rosee)
         self.ui.checkbox_rosee_local_extrema.stateChanged.connect(
@@ -1024,6 +1044,16 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_polyline_profile.blockSignals(False)
         self.ui.polyline_profile.set_active(False)
         self.ui.dock_polyline.hide()
+        self.ui.checkbox_shade_preview.blockSignals(True)
+        self.ui.checkbox_shade_preview.setChecked(False)
+        self.ui.checkbox_shade_preview.blockSignals(False)
+        self.shade_adapter.set_preview(False)
+        self.ui.spinbox_shade_azimuth.setValue(315.0)
+        self.ui.slider_shade_azimuth.setValue(315)
+        self.ui.spinbox_shade_elevation.setValue(45.0)
+        self.ui.slider_shade_elevation.setValue(45)
+        self.ui.spinbox_shade_z.setValue(1.0)
+        self.ui.slider_shade_z.setValue(10)
         self.ui.spinbox_crop_range_start.setValue(0)
         self.ui.spinbox_crop_range_start.setMaximum(
             self.ui.image_viewer.data.n_images - 1
@@ -3088,6 +3118,47 @@ class MainWindow(QMainWindow):
             self._ensure_polyline_dock_visible()
         else:
             self.ui.dock_polyline.hide()
+
+    def _on_shade_preview(self) -> None:
+        self.shade_adapter.set_preview(self.ui.checkbox_shade_preview.isChecked())
+
+    def _on_shade_azimuth_spin(self, value: float) -> None:
+        self.ui.slider_shade_azimuth.blockSignals(True)
+        self.ui.slider_shade_azimuth.setValue(int(round(value)))
+        self.ui.slider_shade_azimuth.blockSignals(False)
+        self.shade_adapter.set_params(azimuth=value)
+
+    def _on_shade_azimuth_slider(self, value: int) -> None:
+        self.ui.spinbox_shade_azimuth.blockSignals(True)
+        self.ui.spinbox_shade_azimuth.setValue(float(value))
+        self.ui.spinbox_shade_azimuth.blockSignals(False)
+        self.shade_adapter.set_params(azimuth=float(value))
+
+    def _on_shade_elevation_spin(self, value: float) -> None:
+        self.ui.slider_shade_elevation.blockSignals(True)
+        self.ui.slider_shade_elevation.setValue(int(round(value)))
+        self.ui.slider_shade_elevation.blockSignals(False)
+        self.shade_adapter.set_params(elevation=value)
+
+    def _on_shade_elevation_slider(self, value: int) -> None:
+        self.ui.spinbox_shade_elevation.blockSignals(True)
+        self.ui.spinbox_shade_elevation.setValue(float(value))
+        self.ui.spinbox_shade_elevation.blockSignals(False)
+        self.shade_adapter.set_params(elevation=float(value))
+
+    def _on_shade_z_spin(self, value: float) -> None:
+        # Slider stores tenths (1 → 0.1 … 200 → 20.0)
+        self.ui.slider_shade_z.blockSignals(True)
+        self.ui.slider_shade_z.setValue(int(round(value * 10.0)))
+        self.ui.slider_shade_z.blockSignals(False)
+        self.shade_adapter.set_params(z_factor=value)
+
+    def _on_shade_z_slider(self, value: int) -> None:
+        z = float(value) / 10.0
+        self.ui.spinbox_shade_z.blockSignals(True)
+        self.ui.spinbox_shade_z.setValue(z)
+        self.ui.spinbox_shade_z.blockSignals(False)
+        self.shade_adapter.set_params(z_factor=z)
 
     def _raise_polyline_dock(self) -> None:
         if not self.ui.checkbox_polyline_profile.isChecked():
