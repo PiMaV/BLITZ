@@ -46,15 +46,16 @@ DPG Symposium presentation (architecture and BLITZ–WOLKE integration):
 
 ---
 
-## Key Features
+## Hero Features
 
-- **High-Performance Data Handling:** Efficiently processes very large datasets (e.g. loading, scaling, and converting ~21,000 RGB images (~2.5 GB raw data) into ~6.2 GB of grayscale matrix data in ~30 s on a standard gaming laptop).
-- **Easy Data Handling:** Drag-and-drop support for image, video, and NumPy matrix (*.npy) formats.
-- **Easy to Use:** Automatic resource management for small and large datasets.
-- **User-Friendly Interface:** Intuitive GUI with mouse-based navigation and shortcuts.
-- **Advanced Image Processing:** Matrix-based processing with fast, Numba-accelerated statistics.
-- **Live View:** Support for real USB cameras and simulated data streams.
-- **Built on Python:** Using Qt and PyQtGraph for high performance and flexibility.
+- **SVD / PCA Pattern Extraction** — Exact full SVD or memory-efficient randomized SVD (Halko) on entire frame stacks; reconstruct from principal components, inspect eigenimages, and read explained-variance curves.
+- **Hillshade Relief Visualization** — Lambertian shading from height fields (`∇z`, azimuth / elevation / Z-factor); view-only overlay so analysis always stays on the original intensity.
+- **Polyline Profile & Path Statistics** — Dense sampling along an open polyline with perpendicular band averaging, min/max envelopes (perp + over frames), path length in pixels or calibrated AU, and CSV export.
+- **Numba-Fused Matrix Pipeline** — Parallel JIT kernels for fused subtract÷divide, sliding-window mean, and axis-0 reduce (mean / max / min / std) on `(T, H, W, C)` volumes.
+- **Drag-and-Drop Matrix Handling** — Drop images, video, or `.npy` stacks straight into the viewer; optional load dialogs for 8-bit, normalize, grayscale, size/subset ratio, and RAM caps.
+- **Temporal Ops & Zonal Timeline** — Background subtraction / flat-field division from aggregate range, file, or sliding window; ROI mean/median curves with envelope bands over the full time series.
+- **Crosshair Profilschnitte** — Linked H/V extraction plots with line-width averaging, dataset envelopes, and RoSEE event bounds on cumulative fluctuation signals.
+- **Bulk Load → Live Stream** — Folder/video pipelines at multi-GB scale, plus synthetic Lissajous/Lightning streams, USB webcam, and network `.npy` ingest.
 
 ---
 
