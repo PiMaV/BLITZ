@@ -22,6 +22,9 @@ profile_stats.txt
 *.prof
 distro_strategy.md
 
+# Local screen recordings / demos (not for the repo)
+resources/public/*.webm
+
 # Flatpak local builds (OSTree export, builder cache — never commit)
 flatpak/build-dir/
 flatpak/.flatpak-builder/

@@ -35,8 +35,9 @@ Related: [`docs/missing_features.md`](docs/missing_features.md) (hidden UI / con
   - Colormap combo; fit-on-load (also after load-dialog transpose/flip)
 - **v2.0.10** Polyline Show: relative diagonal default across the image; dock
   re-placed under the viewer so it is not hidden by the Timeline
-- **Shade tab** (hillshade): view-only overlay after RoSEE; Azimuth / Elevation /
-  Z factor; Crosshair & Polyline keep sampling height (not shade)
+- **v2.0.11** Shade tab (hillshade): view-only overlay after RoSEE; Azimuth /
+  Elevation / Z factor; Crosshair & Polyline keep sampling height (not shade)
+- **v2.0.11** Docs: `docs/features.md` hero list + refreshed `tabs_explained.md`
 
 ---
 
