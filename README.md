@@ -1,17 +1,19 @@
-# BLITZ V2.0
-
-![BLITZ Interface](/docs/images/BLITZ_overview_V2.png)
-
-**BLITZ treats images as structured data.**
-
-A high-performance, matrix-based image viewer designed for efficiently exploring both **massive image datasets** and **single-image analysis workflows**.
-
----
+# BLITZ – Scientific Image Viewer
 
 [![Release](https://img.shields.io/github/v/release/PiMaV/BLITZ)](https://github.com/PiMaV/BLITZ/releases/latest)
 [![License](https://img.shields.io/github/license/PiMaV/BLITZ)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.x-blue)]()
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)]()
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-lightgrey)]()
+
+> **Images aren't just pixels—they are structured data.**  
+> BLITZ bridges the gap between lightweight desktop viewing and scientific array inspection.
+
+[![Quick Feature Overview](resources/public/blitz_demo.gif)](resources/public/blitz_demo.gif)
+*(Click animation to open full size)*
+
+---
+
+A high-performance, matrix-based image viewer designed for efficiently exploring both **massive image datasets** and **single-image analysis workflows**.
 
 ---
 
@@ -25,13 +27,13 @@ No installation required — simply download and run the executable.
 
 ## What is BLITZ
 
-BLITZ (**Bulk Loading and Interactive Time series Zonal analysis**) is a high-performance, matrix-based image exploration and analysis tool designed for efficiently managing both massive datasets and single-image analysis.
+BLITZ (**Bulk Loading and Interactive Time series Zonal analysis**) is a high-performance, matrix-based image exploration and analysis tool designed for efficiently managing both massive datasets and single-image analysis (e.g. high-speed camera footage, optical plasma diagnostics, and fast-framing scientific imaging).
 
-It was originally developed and initially implemented by Philipp Mattern during his time at [INP Greifswald](https://www.inp-greifswald.de).
+It was originally developed and initially implemented by Philipp Mattern during his time at [INP Greifswald](https://www.inp-greifswald.de) (Leibniz Institute for Plasma Science and Technology) to analyze complex low-temperature plasma discharge dynamics.
 
 It is actively maintained and further developed as part of his independent engineering work at [M.E.S.S. – Mattern Engineering & Software Solutions](https://mess.engineering).
 
-Version 2.0 introduces a fully refactored architecture with improved performance, stability, and maintainability.
+Starting with Version 2.0 a fully refactored architecture with improved performance, stability, and maintainability was introduced.
 
 ---
 
@@ -60,9 +62,7 @@ DPG Symposium presentation (architecture and BLITZ–WOLKE integration):
 
 # Interface Preview
 
-*(Click if animation is not playing)*
-
-![Quick Feature Overview](resources/public/blitz_demo.gif)
+![BLITZ Interface](/docs/images/BLITZ_overview_V2.png)
 
 ---
 
@@ -91,7 +91,7 @@ To compile and develop locally:
 1. Clone the repository:
 
    ```
-    $ git clone https://github.com/pimav/BLITZ.git
+    $ git clone https://github.com/PiMaV/BLITZ.git
     $ cd BLITZ
    ```
 
@@ -107,10 +107,12 @@ To compile and develop locally:
 
 Early development of BLITZ was supported by Richard Krieg (student assistant) until v1.3.0 / January 2025, including refactoring, bug fixing, and feature development during the INP-funded project phase.
 
-## Additional Resources
+## Additional Resources & Datasets
 
-* Example Dataset: [KinPen Science Example Set](https://www.inptdat.de/dataset/fast-framing-images-kinpen-science-example-set-images-testing-blitz-image-viewer)
-* Explore more datasets or contribute your own on [INPTDAT](https://www.inptdat.de).
+- **Example Dataset:** [KinPen Science Example Set](https://www.inptdat.de/dataset/fast-framing-images-kinpen-science-example-set-images-testing-blitz-image-viewer)  
+  *High-speed camera recordings of a cold atmospheric pressure plasma jet (kINPen), ideal for testing BLITZ's fast matrix loading and time-series analysis capabilities.*
+- **Plasma Data Repository:** [INPTDAT](https://www.inptdat.de)  
+  *Explore disciplinary datasets for low-temperature plasma physics or contribute your own.*
 
 ## License
 
