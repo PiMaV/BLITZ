@@ -73,8 +73,12 @@ class PolylineProfileController(QWidget):
         self._active = False
         self._last: PolylineProfileResult | None = None
         self._s_display: np.ndarray | None = None  # after mm scale
+        # Relative handle positions in [0, 1] of image W/H (survives size changes).
+        self._roi_fracs: np.ndarray | None = None
+        self._roi_user_shaped = False
 
         # --- ROI (open) ---
+        # Placeholder only; first Show / reshape replaces with a full-frame diagonal.
         self._roi = pg.PolyLineROI(
             [[0, 0], [20, 0], [20, 20]],
             closed=False,
@@ -224,7 +228,7 @@ class PolylineProfileController(QWidget):
         self.btn_csv.clicked.connect(self.export_csv)
 
         self._roi.sigRegionChanged.connect(self._schedule_refresh)
-        self._roi.sigRegionChangeFinished.connect(self.refresh)
+        self._roi.sigRegionChangeFinished.connect(self._on_roi_finished)
         viewer.timeLine.sigPositionChanged.connect(self._on_frame)
         viewer.image_changed.connect(self._on_image_changed)
 
@@ -431,22 +435,69 @@ class PolylineProfileController(QWidget):
             self._reshape_roi()
             self.refresh()
 
-    def _reshape_roi(self) -> None:
+    @staticmethod
+    def _default_diagonal_fracs() -> np.ndarray:
+        """Top-left → bottom-right, inset so handles stay on-image."""
+        return np.array([[0.08, 0.08], [0.92, 0.92]], dtype=np.float64)
+
+    def _apply_roi_fracs(self, w: int, h: int, fracs: np.ndarray) -> None:
+        self._roi.setPos((0, 0))
+        pts = [
+            [float(np.clip(f[0], 0.0, 1.0) * w), float(np.clip(f[1], 0.0, 1.0) * h)]
+            for f in fracs
+        ]
+        self._roi.blockSignals(True)
+        try:
+            self._roi.setPoints(pts)
+        finally:
+            self._roi.blockSignals(False)
+
+    def _capture_roi_fracs(self) -> None:
         img = self._viewer.image
         if img is None:
             return
         w, h = int(img.shape[1]), int(img.shape[2])
-        self._roi.setPos((0, 0))
-        # Keep relative shape if already edited; only init when tiny/default
+        if w < 1 or h < 1:
+            return
         pts = roi_points_xy(self._roi)
-        span = 0.0
-        if len(pts) >= 2:
-            span = float(np.hypot(*(pts[-1] - pts[0])))
-        if span < 2 or pts.max() > max(w, h) * 1.5:
-            x0, y0 = w * 0.2, h * 0.5
-            x1, y1 = w * 0.8, h * 0.5
-            xm, ym = w * 0.5, h * 0.35
-            self._roi.setPoints([[x0, y0], [xm, ym], [x1, y1]])
+        if len(pts) < 2:
+            return
+        self._roi_fracs = np.column_stack(
+            (pts[:, 0] / float(w), pts[:, 1] / float(h))
+        )
+
+    def _on_roi_finished(self) -> None:
+        if self._active:
+            self._roi_user_shaped = True
+            self._capture_roi_fracs()
+        self.refresh()
+
+    def _reshape_roi(self) -> None:
+        """Place ROI from relative fractions (default: full-frame diagonal)."""
+        img = self._viewer.image
+        if img is None:
+            return
+        w, h = int(img.shape[1]), int(img.shape[2])
+        if w < 2 or h < 2:
+            return
+
+        if self._roi_fracs is None:
+            self._roi_fracs = self._default_diagonal_fracs()
+            self._roi_user_shaped = False
+        elif self._roi_user_shaped:
+            # User path collapsed or far outside after a size change → reset
+            pts = roi_points_xy(self._roi)
+            span = 0.0
+            if len(pts) >= 2:
+                span = float(np.hypot(*(pts[-1] - pts[0])))
+            if (
+                span < 0.15 * max(w, h)
+                or float(np.nanmax(np.abs(pts))) > max(w, h) * 1.5
+            ):
+                self._roi_fracs = self._default_diagonal_fracs()
+                self._roi_user_shaped = False
+
+        self._apply_roi_fracs(w, h, self._roi_fracs)
 
     def _schedule_refresh(self) -> None:
         if self._active and not self._draw_timer.isActive():

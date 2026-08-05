@@ -1032,7 +1032,9 @@ class UI_MainWindow(QWidget):
         tools_layout.addWidget(poly_label)
         self.checkbox_polyline_profile = QCheckBox("Show")
         self.checkbox_polyline_profile.setToolTip(
-            "Open polyline intensity profile (path length vs intensity)"
+            "Open polyline intensity profile (path length vs intensity). "
+            "Draws a diagonal path on the image; the Polyline dock opens "
+            "under the image (above the Timeline)."
         )
         tools_layout.addWidget(self.checkbox_polyline_profile)
 

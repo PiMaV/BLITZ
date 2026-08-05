@@ -222,7 +222,7 @@ class MainWindow(QMainWindow):
         try:
             self._update_selection_visibility()
             if self.ui.checkbox_polyline_profile.isChecked():
-                self.ui.dock_polyline.show()
+                self._ensure_polyline_dock_visible()
             else:
                 self.ui.dock_polyline.hide()
                 if self.ui.polyline_profile.is_active():
@@ -3085,13 +3085,44 @@ class MainWindow(QMainWindow):
         on = self.ui.checkbox_polyline_profile.isChecked()
         self.ui.polyline_profile.set_active(on)
         if on:
-            self.ui.dock_polyline.show()
-            try:
-                self.ui.dock_polyline.raiseDock()
-            except Exception:
-                pass
+            self._ensure_polyline_dock_visible()
         else:
             self.ui.dock_polyline.hide()
+
+    def _raise_polyline_dock(self) -> None:
+        if not self.ui.checkbox_polyline_profile.isChecked():
+            return
+        dock = self.ui.dock_polyline
+        dock.show()
+        try:
+            dock.raiseDock()
+        except Exception:
+            pass
+
+    def _ensure_polyline_dock_visible(self) -> None:
+        """Place Polyline under the image (above timeline) and bring it to front.
+
+        Saved dock layouts can leave it collapsed/tabbed away; first-time users
+        must see the plot when Tools → Show is checked.
+        """
+        dock = self.ui.dock_polyline
+        viewer = self.ui.dock_viewer
+        try:
+            # Prefer re-slot under image so it is not buried next to Timeline.
+            self.ui.dock_area.moveDock(dock, "bottom", viewer)
+        except Exception:
+            try:
+                self.ui.dock_area.addDock(dock, "bottom", viewer)
+            except Exception:
+                pass
+        try:
+            dock.setMinimumHeight(180)
+        except Exception:
+            pass
+        self._raise_polyline_dock()
+        # Timeline raise on T>1 can win the stack; re-raise after layout settles.
+        QTimer.singleShot(0, self._raise_polyline_dock)
+        QTimer.singleShot(80, self._raise_polyline_dock)
 
     def save_settings(self):
         try:
