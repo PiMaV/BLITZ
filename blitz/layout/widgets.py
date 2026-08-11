@@ -1260,3 +1260,260 @@ class LinkedCursorController:
         self._main_h_line.show()
         self._main_v_line.hide()
         self._probe(x, y)
+
+
+_PROBE_LIVE_PEN = pg.mkPen((0, 220, 180), width=2)
+# Distinct pin marker / curve colors (P1–P4)
+_PROBE_PIN_COLORS = (
+    (0, 220, 180),    # teal
+    (224, 175, 104),  # orange
+    (247, 118, 142),  # pink
+    (158, 206, 106),  # green
+)
+_PROBE_MAX_PINS_HARD = 4
+
+
+def _make_probe_pixel(pen) -> pg.ROI:
+    pixel = pg.ROI(
+        pos=[0, 0],
+        size=[1, 1],
+        pen=pen,
+        movable=False,
+        rotatable=False,
+        resizable=False,
+    )
+    pixel.setZValue(10_001)
+    pixel.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+    while pixel.handles:
+        pixel.removeHandle(0)
+    pixel.hide()
+    return pixel
+
+
+class TimelineProbeController:
+    """Live Probe for timeline sampling (View → Timeline Plot → Live Probe).
+
+    Hover drives a live ghost outline (no tip — Linked Cursor keeps top-right
+    value). Left-click adds a pin (up to max_pins); click a pin to remove it.
+    With pins, timeline shows solid pin curves plus a dashed live preview.
+    """
+
+    def __init__(self, viewer: ImageViewer, on_changed=None) -> None:
+        self._viewer = viewer
+        self._on_changed = on_changed  # callable() -> None
+        self._enabled = False
+        self._max_pins = 2
+        self._pins: list[tuple[int, int]] = []
+        self._live_xy: tuple[int, int] | None = None
+
+        self._live_pixel = _make_probe_pixel(_PROBE_LIVE_PEN)
+        viewer.view.addItem(self._live_pixel)
+
+        self._pin_pixels: list[pg.ROI] = []
+        self._pin_tips: list[pg.TextItem] = []
+        for i, rgb in enumerate(_PROBE_PIN_COLORS):
+            pix = _make_probe_pixel(pg.mkPen(rgb, width=2))
+            tip = pg.TextItem("", color=rgb, anchor=(0.0, 0.0))
+            tip.setZValue(10_003)
+            tip.hide()
+            viewer.view.addItem(pix)
+            viewer.view.addItem(tip)
+            self._pin_pixels.append(pix)
+            self._pin_tips.append(tip)
+
+        self._proxy_move = None
+        self._proxy_click = None
+
+    @property
+    def pinned(self) -> bool:
+        return bool(self._pins)
+
+    @property
+    def max_pins(self) -> int:
+        return self._max_pins
+
+    @property
+    def xy(self) -> tuple[int, int] | None:
+        """Primary sample pixel (first pin, else live) — backward compatible."""
+        if self._pins:
+            return self._pins[0]
+        return self._live_xy
+
+    @property
+    def pins(self) -> list[tuple[int, int]]:
+        return list(self._pins)
+
+    def set_max_pins(self, n: int) -> None:
+        """Cap pin count (1–4). Excess pins are dropped from the end."""
+        n = max(1, min(_PROBE_MAX_PINS_HARD, int(n)))
+        changed = n != self._max_pins or len(self._pins) > n
+        self._max_pins = n
+        if len(self._pins) > n:
+            self._pins = self._pins[:n]
+        if changed and self._enabled:
+            self._update_visual()
+            self._emit_changed()
+
+    def timeline_samples(self) -> list[tuple[int, int, tuple, str]]:
+        """Pixels that drive the timeline: (x, y, color, style).
+
+        style is ``solid`` (pins / lone live) or ``dash`` (live preview while
+        pins are set). Top-right value tip is left to Linked Cursor.
+        """
+        if self._pins:
+            out: list[tuple[int, int, tuple, str]] = [
+                (x, y, _PROBE_PIN_COLORS[i], "solid")
+                for i, (x, y) in enumerate(self._pins)
+            ]
+            if self._live_xy is not None and self._live_xy not in self._pins:
+                out.append(
+                    (self._live_xy[0], self._live_xy[1], (160, 160, 160), "dash")
+                )
+            return out
+        if self._live_xy is not None:
+            return [
+                (self._live_xy[0], self._live_xy[1], _PROBE_PIN_COLORS[0], "solid")
+            ]
+        return []
+
+    def set_enabled(self, enabled: bool) -> None:
+        self._enabled = bool(enabled)
+        if not self._enabled:
+            self._live_pixel.hide()
+            for pix, tip in zip(self._pin_pixels, self._pin_tips):
+                pix.hide()
+                tip.hide()
+            return
+        self._connect()
+        if self._live_xy is None and not self._pins:
+            self.reset_to_center(clear_pins=True)
+        else:
+            self._update_visual()
+            self._emit_changed()
+
+    def _connect(self) -> None:
+        if self._proxy_move is None:
+            self._proxy_move = pg.SignalProxy(
+                self._viewer.scene.sigMouseMoved,
+                rateLimit=40,
+                slot=self._on_moved,
+            )
+        if self._proxy_click is None:
+            self._proxy_click = pg.SignalProxy(
+                self._viewer.scene.sigMouseClicked,
+                rateLimit=30,
+                slot=self._on_clicked,
+            )
+
+    def _image_shape_ok(self) -> tuple[int, int] | None:
+        img = self._viewer.image
+        if img is None:
+            return None
+        return int(img.shape[1]), int(img.shape[2])
+
+    def _map_scene_to_pixel(self, scene_pos) -> tuple[int, int] | None:
+        shape = self._image_shape_ok()
+        if shape is None:
+            return None
+        w, h = shape
+        pt = self._viewer.view.vb.mapSceneToView(scene_pos)
+        x, y = int(pt.x()), int(pt.y())
+        if not (0 <= x < w and 0 <= y < h):
+            return None
+        return x, y
+
+    def _on_moved(self, args) -> None:
+        if not self._enabled:
+            return
+        pos = args[0] if isinstance(args, (tuple, list)) else args
+        xy = self._map_scene_to_pixel(pos)
+        if xy is None:
+            return
+        self._live_xy = (xy[0], xy[1])
+        self._update_visual()
+        # Always refresh: solid live, or dashed preview alongside pins.
+        self._emit_changed()
+
+    def _on_clicked(self, args) -> None:
+        if not self._enabled:
+            return
+        event = args[0] if isinstance(args, (tuple, list)) else args
+        try:
+            if event.button() != Qt.MouseButton.LeftButton:
+                return
+            if getattr(event, "double", lambda: False)():
+                return
+            scene_pos = event.scenePos()
+        except Exception:
+            return
+        xy = self._map_scene_to_pixel(scene_pos)
+        if xy is None:
+            return
+        x, y = xy
+        if (x, y) in self._pins:
+            self._pins = [p for p in self._pins if p != (x, y)]
+        elif len(self._pins) < self._max_pins:
+            self._pins.append((x, y))
+        else:
+            self._pins.pop(0)
+            self._pins.append((x, y))
+        self._live_xy = (x, y)
+        self._update_visual()
+        self._emit_changed()
+
+    def _emit_changed(self) -> None:
+        if self._on_changed is not None:
+            self._on_changed()
+
+    def _update_visual(self) -> None:
+        if not self._enabled:
+            self._live_pixel.hide()
+            for pix, tip in zip(self._pin_pixels, self._pin_tips):
+                pix.hide()
+                tip.hide()
+            return
+
+        n = len(self._pins)
+        for i, (pix, tip) in enumerate(zip(self._pin_pixels, self._pin_tips)):
+            if i < n:
+                x, y = self._pins[i]
+                pix.setPos([x, y])
+                pix.setSize([1, 1])
+                pix.show()
+                # Bottom-right only — top-right reserved for Linked Cursor value.
+                tip.setText(f"P{i + 1}")
+                tip.setAnchor((0.0, 0.0))
+                tip.setPos(x + 1.2, y + 1.0)
+                tip.show()
+            else:
+                pix.hide()
+                tip.hide()
+
+        # Live ghost outline only (no tip — avoids overlay with pixel value).
+        if self._live_xy is not None and self._live_xy not in self._pins:
+            lx, ly = self._live_xy
+            self._live_pixel.setPos([lx, ly])
+            self._live_pixel.setSize([1, 1])
+            self._live_pixel.show()
+        else:
+            self._live_pixel.hide()
+
+    def unpin(self) -> bool:
+        """Clear all pins. Returns True if any pin was removed."""
+        if not self._pins:
+            return False
+        self._pins.clear()
+        self._update_visual()
+        self._emit_changed()
+        return True
+
+    def reset_to_center(self, *, clear_pins: bool = True) -> None:
+        shape = self._image_shape_ok()
+        if shape is None:
+            return
+        w, h = shape
+        if clear_pins:
+            self._pins.clear()
+        self._live_xy = (w // 2, h // 2)
+        self._update_visual()
+        self._emit_changed()

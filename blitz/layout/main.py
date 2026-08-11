@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from PyQt6.QtCore import QByteArray, QCoreApplication, Qt, QTimer, QUrl
-from PyQt6.QtGui import QDesktopServices, QKeySequence, QShortcut
+from PyQt6.QtGui import QDesktopServices, QKeyEvent, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (QApplication, QDialog, QFileDialog, QMainWindow,
                              QTableWidgetItem)
 import pyqtgraph as pg
@@ -85,7 +85,7 @@ from .simulated_live import SimulatedLiveWidget
 from .tof import TOFAdapter
 from .pca import PCAAdapter
 from .ui import UI_MainWindow
-from .widgets import LinkedCursorController
+from .widgets import LinkedCursorController, TimelineProbeController
 
 URL_GITHUB = QUrl("https://github.com/PiMaV/BLITZ")
 URL_INP = QUrl("https://www.inp-greifswald.de/")
@@ -136,6 +136,12 @@ class MainWindow(QMainWindow):
             self.ui.v_plot,
             on_probe=self._probe_at_image_xy,
         )
+        self._timeline_probe = TimelineProbeController(
+            self.ui.image_viewer,
+            on_changed=self.ui.image_viewer.on_probe_samples_changed,
+        )
+        self.ui.image_viewer.set_probe_controller(self._timeline_probe)
+        self._timeline_probe.set_max_pins(self.ui.spinbox_probe_max_pins.value())
         pp = self.ui.polyline_profile
         pp._on_probe = self._probe_at_image_xy
         pp._get_envelope_pct = (
@@ -154,6 +160,7 @@ class MainWindow(QMainWindow):
 
         self.ui.checkbox_roi.setChecked(False)
         self.ui.checkbox_roi.setChecked(True)
+        self._update_timeline_sample_ui()
         self._apply_optional_dock_visibility()
         log("Welcome to BLITZ", color=(122, 162, 247))
 
@@ -391,11 +398,14 @@ class MainWindow(QMainWindow):
             self.ui.v_plot.change_width
         )
         self.ui.checkbox_roi.stateChanged.connect(
-            self.ui.image_viewer.roiClicked
+            self._on_roi_checkbox_changed
         )
         self.ui.combobox_roi.currentIndexChanged.connect(self.change_roi)
         self.ui.button_reset_roi.clicked.connect(
             self.ui.image_viewer.reset_roi
+        )
+        self.ui.spinbox_probe_max_pins.valueChanged.connect(
+            self._on_probe_max_pins_changed
         )
         self.ui.checkbox_tof.stateChanged.connect(
             self.tof_adapter.toggle_plot
@@ -1434,8 +1444,54 @@ class MainWindow(QMainWindow):
 
     def change_roi(self) -> None:
         with LoadingManager(self, "Change ROI...", blocking_label=self.ui.blocking_status, blocking_delay_ms=0):
-            self.ui.checkbox_roi_drop.setChecked(False)
-            self.ui.image_viewer.change_roi()
+            mode = self.ui.combobox_roi.currentData()
+            if mode is None:
+                idx = self.ui.combobox_roi.currentIndex()
+                mode = ("rect", "poly", "probe")[min(max(idx, 0), 2)]
+            if mode != "probe":
+                self.ui.checkbox_roi_drop.setChecked(False)
+            self.ui.image_viewer.set_timeline_sample_mode(str(mode))
+            self._update_timeline_sample_ui()
+
+    def _on_roi_checkbox_changed(self) -> None:
+        self.ui.image_viewer.roiClicked()
+        self._update_timeline_sample_ui()
+
+    def _update_timeline_sample_ui(self) -> None:
+        """Enable/disable ROI vs Live Probe controls."""
+        mode = self.ui.combobox_roi.currentData()
+        if mode is None:
+            idx = self.ui.combobox_roi.currentIndex()
+            mode = ("rect", "poly", "probe")[min(max(idx, 0), 2)]
+        is_probe = mode == "probe"
+        self.ui.checkbox_roi_drop.setEnabled(not is_probe)
+        self.ui.combobox_timeline_aggregation.setEnabled(not is_probe)
+        self.ui.checkbox_timeline_bands.setEnabled(not is_probe)
+        self.ui.label_probe_max_pins.setVisible(False)
+        self.ui.spinbox_probe_max_pins.setVisible(is_probe)
+        self.ui.spinbox_probe_max_pins.setEnabled(is_probe)
+        if is_probe:
+            self.ui.button_reset_roi.setText(self.ui._reset_roi_probe_text)
+            self.ui.button_reset_roi.setToolTip(
+                "Clear all Live Probe pins and move marker to image center. "
+                "Esc clears pins only."
+            )
+        else:
+            self.ui.button_reset_roi.setText(self.ui._reset_roi_default_text)
+            self.ui.button_reset_roi.setToolTip(
+                "Reset ROI to centered default (10% size). "
+                "In Live Probe: clear pins and move marker to image center."
+            )
+
+    def _on_probe_max_pins_changed(self, n: int) -> None:
+        self._timeline_probe.set_max_pins(int(n))
+
+    def keyPressEvent(self, event) -> None:
+        if isinstance(event, QKeyEvent) and event.key() == Qt.Key.Key_Escape:
+            if self.ui.image_viewer.unpin_probe():
+                event.accept()
+                return
+        super().keyPressEvent(event)
 
     def image_mask(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(

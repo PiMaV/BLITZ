@@ -94,9 +94,10 @@ There is no separate toolbar; actions live in the menu bar, Options tabs, and do
 | **Envelope per crosshair** | Temporal min/max along crosshair line | Over time at fixed geometry |
 | **Envelope per position (dataset)** | Dataset extrema at cursor position | Full-stack envelope |
 | **Envelope %** | Percentile band (0 = strict min/max) | `0–49%` |
-| **Timeline ROI** | Rect or Polygon ROI on timeline curve | Mean/median zonal series |
-| **Update on drop** | Recompute ROI plot on mouse release | Auto for large ROIs (`ROI_on_drop_threshold`) |
-| **Reset ROI** | Centered default (~10% size) | — |
+| **Timeline ROI** | Rect / Polygon / Live Probe | Zonal mean/median, or pixel series + max-pins |
+| **Update on drop** | Recompute ROI plot on mouse release | Auto for large ROIs; off in Live Probe |
+| **Reset ROI** | Centered default (~10% size) | Live Probe: Clear pins + center |
+| **Max pins** | Live Probe only (1–4, default 2) | Caps comparison pins |
 | **TOF** | Overlay time-of-flight on timeline | Enabled after File → Load TOF; optional sync / invert / smooth |
 | **Isolines Show / Count** | Intensity contours | `pg.IsocurveItem`; levels from mean ± std linspace |
 | **Isoline Smoothing / Downsample** | Pre-filter before isocurves | OpenCV Gaussian + spatial downsample |
@@ -277,8 +278,8 @@ Bottom dock + Frame \| Range side panel.
 | Control | Role |
 |---------|------|
 | **Idx** | Current frame |
-| **Curve** | ROI aggregation: Mean / Median |
-| **Bands** | Upper/lower envelope on timeline |
+| **Curve** | ROI aggregation: Mean / Median (disabled in Live Probe) |
+| **Bands** | Upper/lower envelope on timeline (ROI modes) |
 
 ### Aggregate (Range) mode
 
@@ -370,7 +371,7 @@ Status visible in **Bench → Numba**.
 | Flip / rotate / mask | View | Axis transforms, binary mask | Binary mask image |
 | Crosshair Profilschnitte | View + H/V docks | Line average, envelopes | — |
 | Isolines | View | Isocurves + Gaussian / downsample | — |
-| ROI timeline | View + Timeline | Zonal mean/median ± bands | — |
+| ROI timeline | View + Timeline | Zonal mean/median ± bands, or Live Probe pixel series | — |
 | TOF overlay | File menu + View | Interp / invert / box smooth | json, csv |
 | Subtract / Divide | Ops | Arithmetic + reduce refs | Reference image |
 | Sliding window | Ops | Temporal Mean/Max/Min/Std/Median | — |

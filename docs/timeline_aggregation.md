@@ -12,8 +12,8 @@ Two tabs control the mode:
 ### Frame Tab
 
 - **Idx Spinner:** Current frame index (always active when data is loaded).
-- **Upper/lower band:** Checkbox. Shows the Min/Max curve (green band) in the timeline plot.
-- **Curve:** Dropdown Mean/Median. Aggregation within the ROI per frame for the timeline curve.
+- **Bands:** Checkbox. Shows the Min/Max curve (green band) in the timeline plot (ROI modes only).
+- **Curve:** Dropdown Mean/Median. Aggregation within the ROI per frame for the timeline curve (disabled in Live Probe).
 
 ### Aggregate Tab
 
@@ -23,20 +23,41 @@ Two tabs control the mode:
 - **Full Range:** Resets range to 0..max (full length).
 - **Update on drag:** Checkbox. If enabled, aggregation updates live while dragging the range slider (resource intensive); otherwise, only on release.
 
+### Timeline sampling (View → Timeline Plot)
+
+Combo: **Rectangular | Polygon | Live Probe**.
+
+```mermaid
+flowchart LR
+  Combo["combobox_roi: Rect Poly Probe"] --> Mode{mode}
+  Mode -->|Rect_Poly| ROI["ROI box + getArrayRegion + mean/median"]
+  Mode -->|Probe| Cursor["1x1 marker + pixel slice"]
+  Cursor -->|unpinned| Hover["sigMouseMoved rateLimit"]
+  Cursor -->|pins| Pins["up to 4 fixed x,y"]
+  ROI --> Curve["roiCurves on Timeline"]
+  Hover --> Curve
+  Pins --> Curve
+```
+
+- **Rectangular / Polygon:** Zonal ROI on the image; timeline shows mean/median (optional min/max bands) over the region for every frame.
+- **Live Probe:** ROI box hidden; teal live ghost (outline only — Linked Cursor keeps the top-right intensity tip). Up to **N pins** via **Max pins** (1–4, default 2). Timeline: solid pin curves + dashed live preview while pins are set. Click adds/removes pins; at cap, new click replaces oldest. Esc clears pins; **Clear pins** also recenters.
+- Independent of the Probe dock (current-frame value under cursor) and of Linked cursor.
+
 ---
 
 ## Technical Design: Timeline in Aggregate Mode
 
 **Problem:** In Aggregate mode (e.g., switching to Mean), the timeline would effectively become invisible (reduced to a single point because the image is collapsed to 2D).
 
-**Solution:** The timeline **always** shows the full time series (ROI curve over all frames), even in Aggregate mode.
+**Solution:** The timeline **always** shows the full time series (ROI or probe curve over all frames), even in Aggregate mode.
 
 ### Data Flow
 
 | Component | Frame Mode | Aggregate Mode |
 |-----------|------------|----------------|
 | **Image** | Current Frame | Reduced Result (e.g., Mean over Range) |
-| **Timeline Curve** | ROI-Mean/Median per frame | Same: ROI-Mean/Median per frame over **all** frames |
+| **Timeline Curve (ROI)** | ROI-Mean/Median per frame | Same over **all** frames |
+| **Timeline Curve (Live Probe)** | Pixel series `[:, x, y]` | Same over **all** frames from `image_timeline` |
 | **Timeline Source** | `getProcessedImage()` | `data.image_timeline` |
 | **Range (crop_range)** | Hidden | Visible, highlights the aggregated range |
 
@@ -51,10 +72,13 @@ Property in `blitz/data/image.py`:
 
 ### Implementation (`blitz/layout/viewer.py`)
 
+- Sample mode: `_timeline_sample_mode` ∈ `{rect, poly, probe}`; UI via `combobox_roi`.
+- Probe overlay: `TimelineProbeController` in `widgets.py` (hover + click pin).
 - `roiChanged` checks `in_agg` (`data._redop` set and `image_timeline` present).
-- If `in_agg`: ROI data is pulled from `data.image_timeline`, X-values = `np.arange(n_frames)`.
-- X-Range and timeline bounds are set to `0..n-1`.
-- Auto-Zoom: `roiPlot.plotItem.vb.autoRange()` called after every `roiChanged`.
+- If `in_agg`: data from `data.image_timeline`, X-values = `np.arange(n_frames)`.
+- Probe path: pixel slice instead of `getArrayRegion` + spatial agg.
+- X-Range and timeline bounds are set to `0..n-1` in Aggregate.
+- Auto-Zoom: `roiPlot.plotItem.vb.autoRange()` called after every `roiChanged` (Frame mode).
 
 ---
 

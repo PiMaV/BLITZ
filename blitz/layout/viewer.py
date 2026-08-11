@@ -40,11 +40,15 @@ class ImageViewer(pg.ImageView):
         self.square_roi.handleSize = 9
         self.square_roi.addScaleHandle([1, 1], [0, 0])
         self.square_roi.addRotateHandle([0, 0], [0.5, 0.5])
+        # Must exist before super().__init__ (parent calls roiClicked).
+        self._timeline_sample_mode = "rect"  # "rect" | "poly" | "probe"
+        self._probe_xy: tuple[int, int] | None = None
+        self._probe_controller = None  # set by MainWindow (TimelineProbeController)
+        self._timeline_aggregation = "mean"
+        self._timeline_show_bands = False
         super().__init__(view=view, roi=self.square_roi)
         self.poly_roi_state = self.poly_roi.getState()
         self.square_roi_state = self.square_roi.getState()
-        self._timeline_aggregation = "mean"
-        self._timeline_show_bands = False
         self.ui.graphicsView.setBackground(pg.mkBrush(*get_viewer_bg()))
 
         self.ui.roiBtn.setChecked(True)
@@ -111,24 +115,179 @@ class ImageViewer(pg.ImageView):
         roi.sigRegionChanged.connect(self.roiChanged)
         self.roi = roi
 
+    def set_probe_controller(self, controller) -> None:
+        """Attach TimelineProbeController created by MainWindow."""
+        self._probe_controller = controller
+
+    def on_probe_samples_changed(self) -> None:
+        """Refresh timeline when Live Probe hover/pins change."""
+        if self._timeline_sample_mode == "probe" and self.ui.roiBtn.isChecked():
+            self.roiChanged()
+
+    def set_probe_xy(self, x: int, y: int) -> None:
+        """Legacy single-pixel update (tests / callers). Prefer controller."""
+        self._probe_xy = (int(x), int(y))
+        if self._timeline_sample_mode == "probe" and self.ui.roiBtn.isChecked():
+            self.roiChanged()
+
+    def unpin_probe(self) -> bool:
+        """Clear all Live Probe pins. Returns True if state changed."""
+        ctrl = self._probe_controller
+        if ctrl is None or not getattr(ctrl, "pinned", False):
+            return False
+        ctrl.unpin()
+        return True
+
+    def set_timeline_sample_mode(self, mode: str) -> None:
+        """Switch timeline sampling: rect | poly | probe."""
+        if mode not in ("rect", "poly", "probe"):
+            mode = "rect"
+        prev = self._timeline_sample_mode
+
+        if prev == "probe" and mode != "probe":
+            if self._probe_controller is not None:
+                self._probe_controller.set_enabled(False)
+
+        if mode in ("rect", "poly"):
+            target = self.square_roi if mode == "rect" else self.poly_roi
+            if self.roi is not target:
+                if self.roi is self.square_roi:
+                    self.square_roi_state = self.square_roi.state
+                else:
+                    self.poly_roi_state = self.poly_roi.getState()
+                self.set_roi(target)
+                if target is self.poly_roi:
+                    self.roi.sigRegionChanged.disconnect(self.roiChanged)
+                    self.poly_roi.setState(self.poly_roi_state)
+                    self.roi.sigRegionChanged.connect(self.roiChanged)
+                else:
+                    self.square_roi.setState(self.square_roi_state)
+
+        self._timeline_sample_mode = mode
+        self._sync_probe_visibility()
+        if self.ui.roiBtn.isChecked():
+            self.roiChanged()
+            self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
+
     def change_roi(self) -> None:
+        """Legacy toggle rect ↔ poly (prefer set_timeline_sample_mode)."""
+        if self._timeline_sample_mode == "probe":
+            self.set_timeline_sample_mode("rect")
+            return
         if self.roi is self.square_roi:
-            self.square_roi_state = self.square_roi.state
-            self.set_roi(self.poly_roi)
-            self.roi.sigRegionChanged.disconnect(self.roiChanged)
-            self.poly_roi.setState(self.poly_roi_state)
-            self.roi.sigRegionChanged.connect(self.roiChanged)
+            self.set_timeline_sample_mode("poly")
         else:
-            self.poly_roi_state = self.poly_roi.getState()
-            self.square_roi.setState(self.square_roi_state)
-            self.set_roi(self.square_roi)
-        self.roiChanged()
-        self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
+            self.set_timeline_sample_mode("rect")
+
+    def _sync_probe_visibility(self) -> None:
+        show = (
+            self._timeline_sample_mode == "probe"
+            and self.ui.roiBtn.isChecked()
+        )
+        if show:
+            self.roi.hide()
+        elif self.ui.roiBtn.isChecked():
+            self.roi.show()
+        if self._probe_controller is not None:
+            self._probe_controller.set_enabled(show)
+
+    def roiClicked(self) -> None:
+        """Show/hide timeline sampling overlay + plot (ROI box or Live Probe)."""
+        show_roi_plot = False
+        if self.ui.roiBtn.isChecked():
+            show_roi_plot = True
+            self._sync_probe_visibility()
+            self.ui.roiPlot.setMouseEnabled(True, True)
+            self.ui.splitter.setSizes(
+                [int(self.height() * 0.6), int(self.height() * 0.4)]
+            )
+            self.ui.splitter.handle(1).setEnabled(True)
+            self.roiChanged()
+            for c in self.roiCurves:
+                c.show()
+            self.ui.roiPlot.showAxis("left")
+        else:
+            self.roi.hide()
+            if self._probe_controller is not None:
+                self._probe_controller.set_enabled(False)
+            self.ui.roiPlot.setMouseEnabled(False, False)
+            for c in self.roiCurves:
+                c.hide()
+            self.ui.roiPlot.hideAxis("left")
+
+        if self.hasTimeAxis():
+            show_roi_plot = True
+            mn = self.tVals.min()
+            mx = self.tVals.max()
+            self.ui.roiPlot.setXRange(mn, mx, padding=0.01)
+            self.timeLine.show()
+            self.timeLine.setBounds([mn, mx])
+            if not self.ui.roiBtn.isChecked():
+                self.ui.splitter.setSizes([self.height() - 35, 35])
+                self.ui.splitter.handle(1).setEnabled(False)
+        else:
+            self.timeLine.hide()
+
+        self.ui.roiPlot.setVisible(show_roi_plot)
 
     def set_timeline_options(self, aggregation: str, show_bands: bool) -> None:
         self._timeline_aggregation = aggregation
         self._timeline_show_bands = show_bands
         self.roiChanged()
+
+    def _probe_series_at(self, image: np.ndarray, x: int, y: int) -> np.ndarray | None:
+        """Return 1D time series at (x, y); multi-channel → nanmean over channels."""
+        if image.ndim == 2:
+            if not (0 <= x < image.shape[0] and 0 <= y < image.shape[1]):
+                return None
+            return np.asarray(image[x, y], dtype=float).reshape(1)
+        if image.ndim == 3:
+            if self.axes.get("t") is None:
+                if not (0 <= x < image.shape[0] and 0 <= y < image.shape[1]):
+                    return None
+                pv = np.asarray(image[x, y], dtype=float)
+                return np.array([float(np.nanmean(pv))])
+            if not (0 <= x < image.shape[1] and 0 <= y < image.shape[2]):
+                return None
+            return np.asarray(image[:, x, y], dtype=float)
+        if image.ndim == 4:
+            if not (0 <= x < image.shape[1] and 0 <= y < image.shape[2]):
+                return None
+            return np.nanmean(np.asarray(image[:, x, y, :], dtype=float), axis=-1)
+        return None
+
+    def _probe_timeline_data(self, image: np.ndarray) -> np.ndarray | None:
+        """Return time series at primary probe pixel: shape (T,) or (T, C).
+
+        Prefer controller samples; fall back to `_probe_xy`. Multi-channel kept
+        only for the single-sample path in `roiChanged`.
+        """
+        ctrl = self._probe_controller
+        if ctrl is not None:
+            samples = ctrl.timeline_samples()
+            if samples:
+                x, y = int(samples[0][0]), int(samples[0][1])
+                self._probe_xy = (x, y)
+        if self._probe_xy is None:
+            return None
+        x, y = self._probe_xy
+        if image.ndim == 2:
+            if not (0 <= x < image.shape[0] and 0 <= y < image.shape[1]):
+                return None
+            return np.asarray(image[x, y]).reshape(1)
+        if image.ndim == 3:
+            if self.axes.get("t") is None:
+                if not (0 <= x < image.shape[0] and 0 <= y < image.shape[1]):
+                    return None
+                return np.asarray(image[x, y]).reshape(1)
+            if not (0 <= x < image.shape[1] and 0 <= y < image.shape[2]):
+                return None
+            return np.asarray(image[:, x, y])
+        if image.ndim == 4:
+            if not (0 <= x < image.shape[1] and 0 <= y < image.shape[2]):
+                return None
+            return np.asarray(image[:, x, y, :])
+        return None
 
     def roiChanged(self) -> None:
         if self.image is None:
@@ -143,6 +302,87 @@ class ImageViewer(pg.ImageView):
             image = data_obj.image_timeline
         else:
             image = self.getProcessedImage()
+
+        if self._timeline_sample_mode == "probe":
+            img = image.view(np.ndarray)
+            ctrl = self._probe_controller
+            samples = ctrl.timeline_samples() if ctrl is not None else []
+            if not samples and self._probe_xy is not None:
+                samples = [
+                    (
+                        self._probe_xy[0],
+                        self._probe_xy[1],
+                        get_timeline_curve_color(),
+                        "solid",
+                    )
+                ]
+            # Normalize (x, y, color[, style])
+            norm_samples: list[tuple] = []
+            for s in samples:
+                if len(s) >= 4:
+                    norm_samples.append((s[0], s[1], s[2], s[3]))
+                else:
+                    norm_samples.append((s[0], s[1], s[2], "solid"))
+            samples = norm_samples
+            if not samples:
+                return
+            if self.axes["t"] is None and not in_agg:
+                xvals = np.array([0.0])
+            else:
+                xvals = (
+                    np.arange(img.shape[0]) if in_agg else self.tVals
+                )
+            plots: list = []
+            n_solid = sum(1 for s in samples if s[3] == "solid")
+            # Multi-channel RGB only for a single solid sample (no pin compare).
+            for sx, sy, color, style in samples:
+                pen = pg.mkPen(
+                    color,
+                    width=1,
+                    style=(
+                        Qt.PenStyle.DashLine
+                        if style == "dash"
+                        else Qt.PenStyle.SolidLine
+                    ),
+                )
+                if n_solid == 1 and style == "solid" and img.ndim == 4:
+                    series = self._probe_timeline_data(img)
+                    if series is None:
+                        continue
+                    if series.ndim == 2 and series.shape[1] > 1:
+                        colors = get_timeline_curve_colors_rgbw()
+                        for i in range(series.shape[1]):
+                            c = colors[i] if i < len(colors) else color
+                            plots.append(
+                                (xvals, series[:, i], pg.mkPen(c, width=1))
+                            )
+                        continue
+                    plots.append((xvals, np.asarray(series).squeeze(), pen))
+                    continue
+                series = self._probe_series_at(img, sx, sy)
+                if series is None:
+                    continue
+                plots.append((xvals, np.asarray(series).squeeze(), pen))
+            if not plots:
+                return
+            while len(plots) < len(self.roiCurves):
+                c = self.roiCurves.pop()
+                c.scene().removeItem(c)
+            while len(plots) > len(self.roiCurves):
+                self.roiCurves.append(self.ui.roiPlot.plot())
+            for i in range(len(plots)):
+                x, y, p = plots[i]
+                self.roiCurves[i].setData(x, y, pen=p)
+            if in_agg and len(xvals) > 0:
+                xmin = 0.0
+                xmax = float(np.asarray(xvals).max())
+                self.timeLine.setBounds([xmin, xmax])
+                self.ui.roiPlot.setXRange(0.0, xmax, padding=0)
+            else:
+                self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
+            self._update_reference_timeline_curve()
+            return
+
         colmaj = self.imageItem.axisOrder == 'col-major'
         if colmaj:
             axes = (self.axes['x'], self.axes['y'])
@@ -459,6 +699,14 @@ class ImageViewer(pg.ImageView):
     def init_roi(self) -> None:
         height = self.image.shape[2]
         width = self.image.shape[1]
+        if self._timeline_sample_mode == "probe":
+            if self._probe_controller is not None:
+                self._probe_controller.reset_to_center(clear_pins=True)
+            else:
+                self._probe_xy = (width // 2, height // 2)
+            if self.ui.roiBtn.isChecked():
+                self.roiChanged()
+            return
         if self.roi is self.square_roi:
             self.square_roi.setAngle(0)
             self.square_roi.setSize((.1*width, .1*height))
@@ -492,9 +740,8 @@ class ImageViewer(pg.ImageView):
         self.toggle_roi_update_frequency(on_drop_roi_update)
 
     def reset_roi(self) -> None:
-        """Reset ROI to centered default. Call manually when user wants to recenter."""
+        """Reset ROI to centered default, or unpin/recenter Live Probe."""
         self.init_roi()
-
     def crop(self, left: int, right: int, keep: bool = False) -> None:
         self.data.crop(left, right, keep=keep)
         self.setImage(
@@ -618,6 +865,8 @@ class ImageViewer(pg.ImageView):
         self,
         on_drop: Optional[bool] = None,
     ) -> None:
+        if self._timeline_sample_mode == "probe":
+            return
         if self.roi.receivers(self.roi.sigRegionChanged) > 1 and (
             (on_drop is not None and on_drop) or (on_drop is None)
         ):

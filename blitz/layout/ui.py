@@ -683,17 +683,39 @@ class UI_MainWindow(QWidget):
         # roiClicked shows the plot again
         self.checkbox_roi.setChecked(True)
         self.combobox_roi = QComboBox()
-        self.combobox_roi.addItem("Rectangular")
-        self.combobox_roi.addItem("Polygon")
+        self.combobox_roi.addItem("Rectangular", "rect")
+        self.combobox_roi.addItem("Polygon", "poly")
+        self.combobox_roi.addItem("Live Probe", "probe")
         self.combobox_roi.setCurrentIndex(0)
+        self.combobox_roi.setToolTip(
+            "Timeline sampling: zonal ROI (rect/poly) or Live Probe "
+            "(hover live; click pins; click pin again to remove; "
+            "Esc/Clear pins; Max pins limits how many)."
+        )
         self.checkbox_tof = QCheckBox("TOF")
         self.checkbox_tof.setEnabled(False)
         self.checkbox_roi_drop = QCheckBox("Update on drop")
         self.button_reset_roi = QPushButton("Reset ROI")
-        self.button_reset_roi.setToolTip("Reset ROI to centered default (10% size). Use when you want to recenter.")
+        self.button_reset_roi.setToolTip(
+            "Reset ROI to centered default (10% size). "
+            "In Live Probe: clear pins and move marker to image center."
+        )
+        self._reset_roi_default_text = "Reset ROI"
+        self._reset_roi_probe_text = "Clear pins"
+        self.label_probe_max_pins = QLabel("Max pins")
+        self.spinbox_probe_max_pins = QSpinBox()
+        self.spinbox_probe_max_pins.setRange(1, 4)
+        self.spinbox_probe_max_pins.setValue(2)
+        self.spinbox_probe_max_pins.setPrefix("Max pins: ")
+        self.spinbox_probe_max_pins.setToolTip(
+            "Maximum Live Probe pins (1–4). Extra pins are dropped when lowered."
+        )
+        self.label_probe_max_pins.setVisible(False)
+        self.spinbox_probe_max_pins.setVisible(False)
         roi_layout = QGridLayout()
         roi_layout.addWidget(self.checkbox_roi, 0, 0, 1, 1)
-        roi_layout.addWidget(self.combobox_roi, 0, 1, 1, 2)
+        roi_layout.addWidget(self.combobox_roi, 0, 1, 1, 1)
+        roi_layout.addWidget(self.spinbox_probe_max_pins, 0, 2, 1, 1)
         roi_layout.addWidget(self.checkbox_roi_drop, 2, 1, 1, 1)
         roi_layout.addWidget(self.button_reset_roi, 2, 2, 1, 1)
         roi_layout.addWidget(self.checkbox_tof, 3, 0, 1, 1)
