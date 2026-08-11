@@ -19,6 +19,7 @@ from .. import settings
 from ..theme import get_plot_bg, get_timeline_line_color, get_agg_band_bg, get_agg_separator_stylesheet
 
 AGG_RANGE_BAND_HEIGHT = 32
+PROBE_DELTA_BAND_HEIGHT = 28
 _AGG_RANGE_BRUSH = pg.mkBrush(100, 220, 130, 140)
 _AGG_RANGE_PEN = pg.mkPen((100, 220, 130), width=6)
 
@@ -47,6 +48,56 @@ class AggregateRangeBand(pg.PlotWidget):
         self.crop_range.setZValue(0)
         self.addItem(self.crop_range)
         self.crop_range.hide()
+
+
+class ProbeDeltaBand(pg.PlotWidget):
+    """Opaque signed-Δ color strip under the timeline (X-linked).
+
+    Lives outside the main plot so the timeline grid cannot show through.
+    """
+
+    def __init__(self, parent: QWidget, main_viewbox, **kargs) -> None:
+        super().__init__(parent, background="#12131a", **kargs)
+        for ax in ("left", "bottom", "top", "right"):
+            self.plotItem.hideAxis(ax)  # type: ignore
+        self.setMaximumHeight(PROBE_DELTA_BAND_HEIGHT)
+        self.setMinimumHeight(PROBE_DELTA_BAND_HEIGHT)
+        self.plotItem.vb.setYRange(0, 1, padding=0)  # type: ignore
+        self.plotItem.vb.setMouseEnabled(x=False, y=False)  # type: ignore
+        self.getViewBox().setXLink(main_viewbox)  # type: ignore
+        self._img = pg.ImageItem(axisOrder="row-major")
+        self._img.setAutoDownsample(False)
+        self.addItem(self._img)
+        self._caption = QLabel(self)
+        self._caption.setStyleSheet(
+            "color: #e6e6e6; font-weight: 600; font-size: 10pt; "
+            "background: transparent; padding-left: 6px;"
+        )
+        self._caption.move(4, 2)
+        self._caption.hide()
+        self.hide()
+
+    def set_delta(
+        self,
+        x0: float,
+        x1: float,
+        rgb: np.ndarray,
+        caption: str,
+    ) -> None:
+        """Show opaque RGB bar for [x0, x1]. rgb shape (rows, T, 3), float [0,1]."""
+        img = np.asarray(rgb, dtype=np.float32)
+        self._img.setImage(img, autoLevels=False, levels=(0.0, 1.0))
+        self._img.setRect(float(x0), 0.0, max(float(x1) - float(x0), 1e-6), 1.0)
+        self.plotItem.vb.setYRange(0, 1, padding=0)  # type: ignore
+        self._caption.setText(caption)
+        self._caption.adjustSize()
+        self._caption.show()
+        self.show()
+
+    def clear_delta(self) -> None:
+        self._img.clear()
+        self._caption.hide()
+        self.hide()
 
 
 class TimePlot(pg.PlotWidget):
@@ -138,7 +189,7 @@ class TimePlot(pg.PlotWidget):
 
 
 class TimelineStack(QWidget):
-    """Top: frame timeline (curve, cursor). Bottom: aggregate range only. Linked X."""
+    """Top: frame timeline; optional Δ bar; bottom: aggregate range. Linked X."""
 
     def __init__(self, parent: QWidget, image_viewer: pg.ImageView) -> None:
         super().__init__(parent)
@@ -152,6 +203,9 @@ class TimelineStack(QWidget):
         top_row.addWidget(self.label_timeline_mode)
         layout.addLayout(top_row)
         self.main_plot = TimePlot(self, image_viewer)
+        self.delta_band = ProbeDeltaBand(
+            self, self.main_plot.getViewBox(),
+        )
         self.agg_sep = QFrame()
         self.agg_sep.setFixedHeight(4)
         self.agg_sep.setStyleSheet(get_agg_separator_stylesheet())
@@ -161,6 +215,7 @@ class TimelineStack(QWidget):
             self, self.main_plot.getViewBox(),
         )
         layout.addWidget(self.main_plot, 1)
+        layout.addWidget(self.delta_band, 0)
         layout.addWidget(self.agg_sep, 0)
         layout.addWidget(self.agg_sep_spacer, 0)
         layout.addWidget(self.agg_band, 0)
@@ -1343,6 +1398,21 @@ class TimelineProbeController:
     def pins(self) -> list[tuple[int, int]]:
         return list(self._pins)
 
+    def compare_pair(self) -> tuple[tuple[int, int], tuple[int, int], str] | None:
+        """Reference vs other pixel for the Δ bar.
+
+        - 1 pin + live cursor → (P1, live, \"live\")  — explore against P1
+        - ≥2 pins → (P1, P2, \"pins\") — stable A/B; P3+ are curves only, not in Δ
+        - Live dash may still show with ≥2 pins, but does not drive the bar
+        """
+        if len(self._pins) >= 2:
+            return self._pins[0], self._pins[1], "pins"
+        if len(self._pins) == 1 and self._live_xy is not None:
+            if self._live_xy == self._pins[0]:
+                return None
+            return self._pins[0], self._live_xy, "live"
+        return None
+
     def set_max_pins(self, n: int) -> None:
         """Cap pin count (1–4). Excess pins are dropped from the end."""
         n = max(1, min(_PROBE_MAX_PINS_HARD, int(n)))
@@ -1365,7 +1435,13 @@ class TimelineProbeController:
                 (x, y, _PROBE_PIN_COLORS[i], "solid")
                 for i, (x, y) in enumerate(self._pins)
             ]
-            if self._live_xy is not None and self._live_xy not in self._pins:
+            # Live preview on the timeline only while exploring with 0–1 pins.
+            # With ≥2 pins the Δ bar is P2−P1; a moving live dash is confusing.
+            if (
+                len(self._pins) < 2
+                and self._live_xy is not None
+                and self._live_xy not in self._pins
+            ):
                 out.append(
                     (self._live_xy[0], self._live_xy[1], (160, 160, 160), "dash")
                 )

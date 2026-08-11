@@ -407,6 +407,9 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_probe_max_pins.valueChanged.connect(
             self._on_probe_max_pins_changed
         )
+        self.ui.checkbox_probe_similarity.stateChanged.connect(
+            self._on_probe_similarity_toggled
+        )
         self.ui.checkbox_tof.stateChanged.connect(
             self.tof_adapter.toggle_plot
         )
@@ -1470,11 +1473,16 @@ class MainWindow(QMainWindow):
         self.ui.label_probe_max_pins.setVisible(False)
         self.ui.spinbox_probe_max_pins.setVisible(is_probe)
         self.ui.spinbox_probe_max_pins.setEnabled(is_probe)
+        self.ui.checkbox_probe_similarity.setVisible(is_probe)
+        self.ui.checkbox_probe_similarity.setEnabled(is_probe)
         if is_probe:
             self.ui.button_reset_roi.setText(self.ui._reset_roi_probe_text)
             self.ui.button_reset_roi.setToolTip(
                 "Clear all Live Probe pins and move marker to image center. "
                 "Esc clears pins only."
+            )
+            self.ui.image_viewer.set_probe_similarity(
+                self.ui.checkbox_probe_similarity.isChecked()
             )
         else:
             self.ui.button_reset_roi.setText(self.ui._reset_roi_default_text)
@@ -1485,6 +1493,11 @@ class MainWindow(QMainWindow):
 
     def _on_probe_max_pins_changed(self, n: int) -> None:
         self._timeline_probe.set_max_pins(int(n))
+
+    def _on_probe_similarity_toggled(self) -> None:
+        self.ui.image_viewer.set_probe_similarity(
+            self.ui.checkbox_probe_similarity.isChecked()
+        )
 
     def keyPressEvent(self, event) -> None:
         if isinstance(event, QKeyEvent) and event.key() == Qt.Key.Key_Escape:

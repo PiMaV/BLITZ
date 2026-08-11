@@ -65,6 +65,13 @@ Relevant: `docs/extraction_envelopes.md`, `ExtractionPlot`.
 
 ## P2 — Features with clear user value
 
+### Live Probe: lagged cross-correlation
+
+Zero-lag Pearson + difference/similarity strip already ship with Live Probe.
+Optional later: full cross-correlation (lag axis / peak lag / r_max) for delayed fronts — not started.
+
+Relevant: `TimelineProbeController`, `ImageViewer` probe similarity path.
+
 ### Auto-crop in the load dialog
 
 MAX preview: threshold bounding box + margin; user confirms, no auto-apply on load.

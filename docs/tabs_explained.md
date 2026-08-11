@@ -98,6 +98,7 @@ There is no separate toolbar; actions live in the menu bar, Options tabs, and do
 | **Update on drop** | Recompute ROI plot on mouse release | Auto for large ROIs; off in Live Probe |
 | **Reset ROI** | Centered default (~10% size) | Live Probe: Clear pins + center |
 | **Max pins** | Live Probe only (1–4, default 2) | Caps comparison pins |
+| **Δ bar** | Live Probe: opaque signed-Δ strip under timeline | dark≈0, red/blue = sign of Live−P1 or P2−P1 |
 | **TOF** | Overlay time-of-flight on timeline | Enabled after File → Load TOF; optional sync / invert / smooth |
 | **Isolines Show / Count** | Intensity contours | `pg.IsocurveItem`; levels from mean ± std linspace |
 | **Isoline Smoothing / Downsample** | Pre-filter before isocurves | OpenCV Gaussian + spatial downsample |

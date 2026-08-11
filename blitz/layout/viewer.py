@@ -44,6 +44,8 @@ class ImageViewer(pg.ImageView):
         self._timeline_sample_mode = "rect"  # "rect" | "poly" | "probe"
         self._probe_xy: tuple[int, int] | None = None
         self._probe_controller = None  # set by MainWindow (TimelineProbeController)
+        self._probe_show_similarity = True
+        self._probe_delta_band = None  # ProbeDeltaBand from TimelineStack
         self._timeline_aggregation = "mean"
         self._timeline_show_bands = False
         super().__init__(view=view, roi=self.square_roi)
@@ -119,6 +121,177 @@ class ImageViewer(pg.ImageView):
         """Attach TimelineProbeController created by MainWindow."""
         self._probe_controller = controller
 
+    def set_probe_delta_band(self, band) -> None:
+        """Attach opaque Δ strip widget (TimelineStack.delta_band)."""
+        self._probe_delta_band = band
+        if band is not None:
+            band.clear_delta()
+
+    def set_probe_similarity(self, enabled: bool) -> None:
+        """Toggle Live Probe signed-Δ color bar + summary label."""
+        self._probe_show_similarity = bool(enabled)
+        if not self._probe_show_similarity:
+            self._clear_probe_similarity_overlay()
+        if self._timeline_sample_mode == "probe" and self.ui.roiBtn.isChecked():
+            self.roiChanged()
+
+    def _clear_probe_similarity_overlay(self) -> None:
+        band = self._probe_delta_band
+        if band is not None:
+            band.clear_delta()
+
+    @staticmethod
+    def _probe_pearson(a: np.ndarray, b: np.ndarray) -> float:
+        """Zero-lag Pearson r in [-1, 1] (not lagged cross-correlation)."""
+        a = np.asarray(a, dtype=float).ravel()
+        b = np.asarray(b, dtype=float).ravel()
+        n = min(a.size, b.size)
+        if n < 2:
+            return float("nan")
+        a, b = a[:n], b[:n]
+        mask = np.isfinite(a) & np.isfinite(b)
+        if int(mask.sum()) < 2:
+            return float("nan")
+        a, b = a[mask], b[mask]
+        sa, sb = float(np.std(a)), float(np.std(b))
+        if sa < 1e-12 and sb < 1e-12:
+            return 1.0
+        if sa < 1e-12 or sb < 1e-12:
+            return 0.0
+        r = float(np.corrcoef(a, b)[0, 1])
+        return r if np.isfinite(r) else float("nan")
+
+    @staticmethod
+    def _probe_signed_delta(
+        ref: np.ndarray, other: np.ndarray
+    ) -> tuple[np.ndarray, float]:
+        """Per-frame signed Δ=(other−ref), scaled to about [-1, 1].
+
+        Scale uses the larger robust amplitude of the two series (95th pct of
+        |x-median|), so a quiet series vs an active one saturates strongly
+        instead of looking falsely \"similar\".
+        """
+        ref = np.asarray(ref, dtype=float).ravel()
+        other = np.asarray(other, dtype=float).ravel()
+        n = min(ref.size, other.size)
+        ref, other = ref[:n], other[:n]
+        diff = other - ref
+
+        def _amp(x: np.ndarray) -> float:
+            if x.size == 0:
+                return 0.0
+            med = float(np.nanmedian(x))
+            return float(np.nanpercentile(np.abs(x - med), 95))
+
+        # Scale from series amplitudes only (not |diff|), so quiet-vs-active
+        # saturates instead of being renormalized toward gray.
+        scale = max(_amp(ref), _amp(other), 1e-9)
+        t = np.clip(diff / scale, -1.0, 1.0)
+        if n >= 5:
+            k = max(3, min(7, (n // 50) * 2 + 1))
+            ker = np.ones(k, dtype=float) / k
+            t = np.clip(np.convolve(t, ker, mode="same"), -1.0, 1.0)
+        return t, scale
+
+    @staticmethod
+    def _probe_delta_rgb(t: np.ndarray, *, rows: int = 48) -> np.ndarray:
+        """Opaque diverging bar (rows, T, 3): electric blue ← slate ≈0 → hot red.
+
+        Mid |Δ| is gamma-boosted so the strip reads as color, not muddy brown.
+        Values are float RGB in [0, 1] (display levels 0–1; not a 255 ceiling).
+        """
+        t = np.clip(np.asarray(t, dtype=float).ravel(), -1.0, 1.0)
+        mag = np.abs(t) ** 0.5  # mid values light up sooner than linear
+        pos = np.where(t > 0.0, mag, 0.0)
+        neg = np.where(t < 0.0, mag, 0.0)
+        # sRGB stops (0–1): lifted zero so neutral is visible on dark UI
+        zero = np.array([0.10, 0.11, 0.15], dtype=np.float32)
+        hot = np.array([1.00, 0.28, 0.12], dtype=np.float32)   # hot coral-red
+        cold = np.array([0.15, 0.55, 1.00], dtype=np.float32)  # electric blue
+        rgb = (
+            zero[None, :]
+            + (hot - zero)[None, :] * pos[:, None].astype(np.float32)
+            + (cold - zero)[None, :] * neg[:, None].astype(np.float32)
+        )
+        row = np.clip(rgb, 0.0, 1.0).astype(np.float32)
+        return np.repeat(row[None, :, :], max(1, int(rows)), axis=0)
+
+    def _set_probe_signal_range(
+        self,
+        xvals: np.ndarray,
+        signal_ys: list[np.ndarray],
+        *,
+        in_agg: bool,
+    ) -> tuple[float, float, float, float]:
+        """X/Y range from signal curves only (Δ bar is a separate widget)."""
+        xvals = np.asarray(xvals, dtype=float).ravel()
+        if xvals.size == 0:
+            return 0.0, 1.0, 0.0, 1.0
+        x0 = float(np.nanmin(xvals))
+        x1 = float(np.nanmax(xvals))
+        if not np.isfinite(x0) or not np.isfinite(x1):
+            x0, x1 = 0.0, 1.0
+        if x1 <= x0:
+            x1 = x0 + 1.0
+
+        ymin, ymax = np.inf, -np.inf
+        for y in signal_ys:
+            arr = np.asarray(y, dtype=float).ravel()
+            if arr.size == 0:
+                continue
+            lo = float(np.nanmin(arr))
+            hi = float(np.nanmax(arr))
+            if np.isfinite(lo):
+                ymin = min(ymin, lo)
+            if np.isfinite(hi):
+                ymax = max(ymax, hi)
+        if not np.isfinite(ymin) or not np.isfinite(ymax):
+            ymin, ymax = 0.0, 1.0
+        if ymax <= ymin:
+            ymax = ymin + 1.0
+        pad = 0.05 * (ymax - ymin)
+        y0 = ymin - pad
+        y1 = ymax + pad
+
+        if in_agg:
+            self.timeLine.setBounds([x0, x1])
+            self.ui.roiPlot.setXRange(x0, x1, padding=0)
+        else:
+            self.ui.roiPlot.setXRange(x0, x1, padding=0.02)
+        self.ui.roiPlot.setYRange(y0, y1, padding=0)
+        return x0, x1, y0, y1
+
+    def _update_probe_similarity_overlay(
+        self,
+        xvals: np.ndarray,
+        ref: np.ndarray,
+        other: np.ndarray,
+        kind: str,
+    ) -> None:
+        """Opaque signed-Δ color strip in ProbeDeltaBand (outside plot grid)."""
+        band = self._probe_delta_band
+        if band is None:
+            return
+        ref_a = np.asarray(ref, dtype=float).ravel()
+        other_a = np.asarray(other, dtype=float).ravel()
+        xv = np.asarray(xvals, dtype=float).ravel()
+        n = min(ref_a.size, other_a.size, xv.size)
+        if n < 1:
+            self._clear_probe_similarity_overlay()
+            return
+        ref_a, other_a, xv = ref_a[:n], other_a[:n], xv[:n]
+        t, _scale = self._probe_signed_delta(ref_a, other_a)
+        pear = self._probe_pearson(ref_a, other_a)
+        rms = float(np.sqrt(np.nanmean((other_a - ref_a) ** 2)))
+
+        rgb = self._probe_delta_rgb(t, rows=24)
+        x0 = float(xv[0])
+        x1 = float(xv[-1]) if xv.size > 1 else x0 + 1.0
+        tag = "P2−P1" if kind == "pins" else "Live−P1"
+        r_txt = f"{pear:+.2f}" if np.isfinite(pear) else "—"
+        caption = f"{tag}   blue<0  dark≈0  red>0   r={r_txt}  rmsΔ={rms:.3g}"
+        band.set_delta(x0, x1, rgb, caption)
+
     def on_probe_samples_changed(self) -> None:
         """Refresh timeline when Live Probe hover/pins change."""
         if self._timeline_sample_mode == "probe" and self.ui.roiBtn.isChecked():
@@ -147,6 +320,7 @@ class ImageViewer(pg.ImageView):
         if prev == "probe" and mode != "probe":
             if self._probe_controller is not None:
                 self._probe_controller.set_enabled(False)
+            self._clear_probe_similarity_overlay()
 
         if mode in ("rect", "poly"):
             target = self.square_roi if mode == "rect" else self.poly_roi
@@ -210,6 +384,7 @@ class ImageViewer(pg.ImageView):
             self.roi.hide()
             if self._probe_controller is not None:
                 self._probe_controller.set_enabled(False)
+            self._clear_probe_similarity_overlay()
             self.ui.roiPlot.setMouseEnabled(False, False)
             for c in self.roiCurves:
                 c.hide()
@@ -325,6 +500,7 @@ class ImageViewer(pg.ImageView):
                     norm_samples.append((s[0], s[1], s[2], "solid"))
             samples = norm_samples
             if not samples:
+                self._clear_probe_similarity_overlay()
                 return
             if self.axes["t"] is None and not in_agg:
                 xvals = np.array([0.0])
@@ -333,6 +509,7 @@ class ImageViewer(pg.ImageView):
                     np.arange(img.shape[0]) if in_agg else self.tVals
                 )
             plots: list = []
+            series_by_xy: dict[tuple[int, int], np.ndarray] = {}
             n_solid = sum(1 for s in samples if s[3] == "solid")
             # Multi-channel RGB only for a single solid sample (no pin compare).
             for sx, sy, color, style in samples:
@@ -356,14 +533,28 @@ class ImageViewer(pg.ImageView):
                             plots.append(
                                 (xvals, series[:, i], pg.mkPen(c, width=1))
                             )
+                        # Channel-mean for similarity pair math.
+                        series_by_xy[(int(sx), int(sy))] = np.nanmean(
+                            np.asarray(series, dtype=float), axis=-1
+                        )
                         continue
-                    plots.append((xvals, np.asarray(series).squeeze(), pen))
+                    y1 = np.asarray(series).squeeze()
+                    plots.append((xvals, y1, pen))
+                    series_by_xy[(int(sx), int(sy))] = np.asarray(y1, dtype=float)
                     continue
                 series = self._probe_series_at(img, sx, sy)
                 if series is None:
                     continue
-                plots.append((xvals, np.asarray(series).squeeze(), pen))
+                y1 = np.asarray(series).squeeze()
+                plots.append((xvals, y1, pen))
+                series_by_xy[(int(sx), int(sy))] = np.asarray(y1, dtype=float)
+
+            # Difference + similarity overlays (separate items; do not drive axis).
+            pair = ctrl.compare_pair() if ctrl is not None else None
+            signal_ys = [np.asarray(y) for _, y, _ in plots]
+
             if not plots:
+                self._clear_probe_similarity_overlay()
                 return
             while len(plots) < len(self.roiCurves):
                 c = self.roiCurves.pop()
@@ -373,13 +564,33 @@ class ImageViewer(pg.ImageView):
             for i in range(len(plots)):
                 x, y, p = plots[i]
                 self.roiCurves[i].setData(x, y, pen=p)
-            if in_agg and len(xvals) > 0:
-                xmin = 0.0
-                xmax = float(np.asarray(xvals).max())
-                self.timeLine.setBounds([xmin, xmax])
-                self.ui.roiPlot.setXRange(0.0, xmax, padding=0)
+
+            self._set_probe_signal_range(
+                np.asarray(xvals),
+                signal_ys,
+                in_agg=in_agg,
+            )
+
+            if self._probe_show_similarity and pair is not None:
+                (rx, ry), (ox, oy), kind = pair
+                ref = series_by_xy.get((rx, ry))
+                other = series_by_xy.get((ox, oy))
+                if ref is None:
+                    ref = self._probe_series_at(img, rx, ry)
+                if other is None:
+                    other = self._probe_series_at(img, ox, oy)
+                if ref is not None and other is not None:
+                    self._update_probe_similarity_overlay(
+                        np.asarray(xvals),
+                        np.asarray(ref),
+                        np.asarray(other),
+                        kind,
+                    )
+                else:
+                    self._clear_probe_similarity_overlay()
             else:
-                self.ui.roiPlot.plotItem.vb.autoRange()  # type: ignore
+                self._clear_probe_similarity_overlay()
+
             self._update_reference_timeline_curve()
             return
 

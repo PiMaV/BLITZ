@@ -40,7 +40,7 @@ flowchart LR
 ```
 
 - **Rectangular / Polygon:** Zonal ROI on the image; timeline shows mean/median (optional min/max bands) over the region for every frame.
-- **Live Probe:** ROI box hidden; teal live ghost (outline only — Linked Cursor keeps the top-right intensity tip). Up to **N pins** via **Max pins** (1–4, default 2). Timeline: solid pin curves + dashed live preview while pins are set. Click adds/removes pins; at cap, new click replaces oldest. Esc clears pins; **Clear pins** also recenters.
+- **Live Probe:** ROI box hidden; teal live ghost (outline only — Linked Cursor keeps the top-right intensity tip). Up to **N pins** via **Max pins** (1–4, default 2). Timeline: solid pin curves + dashed live preview while pins are set. Optional **Δ bar**: opaque strip *under* the frame timeline (X-linked, no grid) for signed `Live−P1` or `P2−P1` (dark ≈ 0, red = other higher, blue = other lower), plus `r` / `rmsΔ` caption. Click adds/removes pins; at cap, new click replaces oldest. Esc clears pins; **Clear pins** also recenters. Lagged cross-correlation is backlog only.
 - Independent of the Probe dock (current-frame value under cursor) and of Linked cursor.
 
 ---

@@ -191,6 +191,7 @@ class UI_MainWindow(QWidget):
         )
         self.roi_plot = self.timeline_stack.main_plot
         self.roi_plot.showGrid(x=True, y=True, alpha=0.4)
+        self.image_viewer.set_probe_delta_band(self.timeline_stack.delta_band)
         self.image_viewer.ui.roiPlot.setParent(None)
         self.image_viewer.ui.roiPlot = self.roi_plot
         while len(self.image_viewer.roiCurves) > 0:
@@ -712,10 +713,19 @@ class UI_MainWindow(QWidget):
         )
         self.label_probe_max_pins.setVisible(False)
         self.spinbox_probe_max_pins.setVisible(False)
+        self.checkbox_probe_similarity = QCheckBox("Δ bar")
+        self.checkbox_probe_similarity.setChecked(True)
+        self.checkbox_probe_similarity.setToolTip(
+            "Opaque Δ color bar: Live−P1 (one pin) or P2−P1 (two+ pins). "
+            "dark ≈ 0, red = other higher, blue = other lower. "
+            "P3/P4 are timeline curves only — not in the bar."
+        )
+        self.checkbox_probe_similarity.setVisible(False)
         roi_layout = QGridLayout()
         roi_layout.addWidget(self.checkbox_roi, 0, 0, 1, 1)
         roi_layout.addWidget(self.combobox_roi, 0, 1, 1, 1)
         roi_layout.addWidget(self.spinbox_probe_max_pins, 0, 2, 1, 1)
+        roi_layout.addWidget(self.checkbox_probe_similarity, 1, 1, 1, 2)
         roi_layout.addWidget(self.checkbox_roi_drop, 2, 1, 1, 1)
         roi_layout.addWidget(self.button_reset_roi, 2, 2, 1, 1)
         roi_layout.addWidget(self.checkbox_tof, 3, 0, 1, 1)
