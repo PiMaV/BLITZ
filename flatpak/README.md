@@ -80,7 +80,7 @@ Match `--runtime` to the manifest `runtime-version` / SDK branch.
    File: `https://mess.engineering/.well-known/org.flathub.VerifiedApps.txt`
    (path reserved; paste the Developer Portal token after the app exists on Flathub).
 
-2. **Pinned source:** `engineering.mess.BLITZ.yml` already uses git tag `v2.0.11`.
+2. **Pinned source:** `engineering.mess.BLITZ.yml` already uses git tag `v2.0.12`.
    When shipping a new release, bump `tag` and `commit` together.
 
 3. Fork [flathub/flathub](https://github.com/flathub/flathub), open a PR against

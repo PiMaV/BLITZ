@@ -38,6 +38,8 @@ Related: [`docs/missing_features.md`](docs/missing_features.md) (hidden UI / con
 - **v2.0.11** Shade tab (hillshade): view-only overlay after RoSEE; Azimuth /
   Elevation / Z factor; Crosshair & Polyline keep sampling height (not shade)
 - **v2.0.11** Docs: `docs/features.md` hero list + refreshed `tabs_explained.md`
+- **v2.0.12** Live Probe timeline: pixel pointer (+ multi-pin) alongside ROI;
+  opaque signed Δ bar (Live−P1 / P2−P1) under the frame timeline
 
 ---
 
