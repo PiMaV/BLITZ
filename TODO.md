@@ -181,3 +181,7 @@ Relevant: `blitz/data/web.py`, `blitz/layout/main.py` (`end_web_connection`).
 Hidden UI (crop widget) and pure concepts (autograd, ML broken-file detection): [`docs/missing_features.md`](docs/missing_features.md).
 
 `docs/sources_and_variants.md` still describes Standard/Full EXE — historical until updated (“add-ons outside + Flatpak”).
+
+**WETTER-wide (not BLITZ-only):** thinly populated matrices, compression, optional
+threshold-as-absent — see
+[`../WETTER/docs/sparse_matrices.md`](../WETTER/docs/sparse_matrices.md).
