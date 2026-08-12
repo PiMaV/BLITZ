@@ -42,6 +42,18 @@ So: **“Connected”** = dialog is open and stream is running. After **Stop**, 
 
 ---
 
+## 3b. Game of Life (sibling to Cam Mock)
+
+- **Purpose:** Classic Conway **B3/S23** as a synthetic stream — **not** a variant inside Lissajous/Lightning. Own Stream-tab entry so the feature can grow independently.
+- **Architecture:** Same pull / ring-buffer contract as Cam Mock (`ConwayLifeHandler` in `blitz/data/conway.py`, UI in `blitz/layout/conway_life.py`).
+- **Parameters:** rectangular grid W×H (default **W64 × H128**), cell scale default **1**, **Speed** (gen/s, live-adjustable), buffer MB, seed, pattern (with mini preview icons), wrap, mode Classic | Ember, Ember **Decay (gens)** default **3** (disabled/grayed in Classic).
+- **Grayscale levels (LUT-friendly):** **Classic** = only `0` / `1`. **Ember** = `0…N` with `N = Decay` (alive = N, trail = N-1…1). First frame pins LUT Min/Max to that range.
+- **Ember:** cellular decay trail is display-only (not neighbors). Rules stay pure B3/S23 on `{0,1}`.
+- **On Stop:** Final ring snapshot → scrub generations in the BLITZ timeline.
+- **Backlog:** stronger/controllable cell-grid overlay; optional dedicated Conway color bar (see `TODO.md` P4).
+
+---
+
 ## 4. Webcam (real camera)
 
 - **Purpose:** Live stream from USB webcam via `cv2.VideoCapture`. Buffer configurable; FPS measured from actual capture.
@@ -57,14 +69,14 @@ So: **“Connected”** = dialog is open and stream is running. After **Stop**, 
 
 ## 5. Summary table
 
-| Aspect              | Cam Mock                    | Webcam                 |
-|---------------------|-----------------------------|------------------------------|
-| Model               | Pull (timer → get_snapshot) | Push (frame_ready)           |
-| Ring in             | Handler                     | Worker                       |
-| Live vs timeline    | —                           | Combo: Live (last frame) or Timeline (full ring) |
-| Display cap         | Yes (e.g. 50 MB)           | Live = 1 frame; Timeline = full buffer |
-| Final snapshot      | get_snapshot(999 MB) on stop| Worker emits final buffer on exit |
-| Viewer on last frame| Callback sets index         | Callback sets index          |
+| Aspect              | Cam Mock                    | Game of Life               | Webcam                 |
+|---------------------|-----------------------------|----------------------------|------------------------------|
+| Model               | Pull (timer → get_snapshot) | Pull (same)                | Push (frame_ready)           |
+| Ring in             | Handler                     | Handler                    | Worker                       |
+| Live vs timeline    | —                           | —                          | Combo: Live (last frame) or Timeline (full ring) |
+| Display cap         | Yes (e.g. 50 MB)           | Yes (same)                 | Live = 1 frame; Timeline = full buffer |
+| Final snapshot      | get_snapshot(999 MB) on stop| get_snapshot(999 MB) on stop| Worker emits final buffer on exit |
+| Viewer on last frame| Callback sets index         | Callback sets index        | Callback sets index          |
 
 ---
 

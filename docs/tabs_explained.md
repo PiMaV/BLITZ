@@ -204,6 +204,7 @@ Requires `T ≥ 2` and non-aggregate view. Approximate defaults: `n_oversamples=
 | Control | What it does | Notes |
 |---------|--------------|-------|
 | **Generate Synthetic Live Data Stream** | Lissajous / Lightning ring buffer | No hardware; FPS, resolution, grayscale, exposure knobs |
+| **Game of Life** | Classic Conway B3/S23 ring buffer | Sibling; W64×H128; Classic 0/1 or Ember 0…N; cell scale 1; pattern icons; Speed live; scrub after Stop |
 | **Webcam** | USB camera via OpenCV | Exposure, gain, brightness, contrast; ring buffer |
 | **Network Address / Token** | Remote `.npy` ingest | Socket.IO + HTTP download; sync viewer index / selection |
 

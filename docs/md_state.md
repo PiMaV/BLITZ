@@ -27,7 +27,7 @@ Overview of all documentation files in this repository.
 |------|---------|
 | [`docs/timeline_aggregation.md`](timeline_aggregation.md) | Details on the Timeline panel and aggregation modes. |
 | [`docs/extraction_envelopes.md`](extraction_envelopes.md) | Explanation of the H/V extraction plot envelopes. |
-| [`docs/live_and_mock.md`](live_and_mock.md) | Technical details on Live Sources (Ring Buffer, Camera, Lissajous). |
+| [`docs/live_and_mock.md`](live_and_mock.md) | Technical details on Live Sources (Ring Buffer, Camera, Lissajous, Conway Life). |
 | [`docs/settings.md`](settings.md) | Discussion on settings and project storage strategy. |
 | [`docs/monitoring_and_sensors.md`](monitoring_and_sensors.md) | CPU/RAM/Disk monitoring via `psutil`. |
 

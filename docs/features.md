@@ -9,4 +9,4 @@ Concise overview of BLITZ’s strongest analysis and visualization capabilities.
 - **Drag-and-Drop Matrix Handling** — Drop images, video, or `.npy` stacks straight into the viewer; optional load dialogs for 8-bit, normalize, grayscale, size/subset ratio, and RAM caps.
 - **Temporal Ops & Zonal Timeline** — Background subtraction / flat-field division from aggregate range, file, or sliding window; ROI mean/median curves with envelope bands, or **Live Probe** pixel time series (hover + pins) with optional signed **Δ bar**.
 - **Crosshair Profilschnitte** — Linked H/V extraction plots with line-width averaging, dataset envelopes, and RoSEE event bounds on cumulative fluctuation signals.
-- **Bulk Load → Live Stream** — Folder/video pipelines at multi-GB scale, plus synthetic Lissajous/Lightning streams, USB webcam, and network `.npy` ingest.
+- **Bulk Load → Live Stream** — Folder/video pipelines at multi-GB scale, plus synthetic Lissajous/Lightning streams, classic Conway Game of Life, USB webcam, and network `.npy` ingest.

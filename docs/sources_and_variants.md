@@ -89,6 +89,7 @@ BLITZ is designed to be distributed in two variants:
 ### Handlers (Implemented)
 - **WebDataLoader:** WOLKE integration (Socket.IO + HTTP Download)
 - **SimulatedLiveHandler:** Generates Lissajous/Lightning visualization as Live Stream
+- **ConwayLifeHandler:** Classic Conway B3/S23 as a sibling Live Stream (`blitz/data/conway.py`) — not a Simulated Live variant
 - **RealCameraHandler:** Real USB Webcam via cv2.VideoCapture (custom dialog with sliders)
 
 ### Converters (Implemented)

@@ -11,6 +11,8 @@ Related: [`docs/missing_features.md`](docs/missing_features.md) (hidden UI / con
 
 ## Recently done (this stretch)
 
+- **v2.0.13** Conway Game of Life (Stream sibling to Synthetic Live): Classic B3/S23
+  ring buffer, Ember decay `0…N`, pattern preview, LUT pin; docs + backlog notes
 - **Folder load chooser**: mixed folders → pick group (images / video / npy / ASCII / HIKMICRO °C); naming-schema clusters; file list + preview
 - **HIKMICRO** radiometric JPEG → approx. °C in-core (numpy); ASCII/`.txt` grids via converter; exotic formats policy → `docs/exotic_formats.md`
 - **Mixed HxW** in one folder: crop-to-common-min vs cancel (`MixedImageSizesDialog` + `mixed_size_policy`)
@@ -118,6 +120,19 @@ See `docker/README.md`, `flatpak/README.md`.
 ---
 
 ## P4 — Backlog / discussion
+
+### Controllable cell-grid overlay (esp. Conway / blocky data)
+
+Make the spatial **cell grid** (hairline lattice over the image) more visible and
+**user-controllable** (on/off, contrast/alpha, maybe pitch). Especially useful for
+Game of Life and other discrete rasters where the lattice is the point — not only
+a faint viewer decoration.
+
+### Dedicated Conway / discrete-level color bar
+
+Conway emits Classic ``0/1`` or Ember ``0…N`` (Decay) for LUT mapping. Optional
+later: a preset colormap tuned to that ladder (and/or auto-select on Game of Life
+start) so decay reads even clearer without hand-picking plasma.
 
 ### Project files (`.blitz`) — rethink, don’t just restore
 
