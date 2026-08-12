@@ -81,6 +81,7 @@ from .export_dialog import run_export
 from .isoline import IsolineAdapter
 from .rosee import ROSEEAdapter
 from .shade import ShadeAdapter
+from .conway_life import ConwayLifeWidget
 from .simulated_live import SimulatedLiveWidget
 from .tof import TOFAdapter
 from .pca import PCAAdapter
@@ -111,6 +112,7 @@ class MainWindow(QMainWindow):
         self._ascii_session_defaults: dict = {}
         self._folder_chooser_last_id: str | None = None
         self._simulated_live: SimulatedLiveWidget | None = None
+        self._conway_life: ConwayLifeWidget | None = None
         self._real_camera_dialog: RealCameraDialog | None = None
         self._aggregate_first_open: bool = True
 
@@ -248,6 +250,11 @@ class MainWindow(QMainWindow):
                 self._simulated_live.stop_stream()
             except Exception:
                 pass
+        if self._conway_life:
+            try:
+                self._conway_life.stop_stream()
+            except Exception:
+                pass
         if self._real_camera_dialog:
             try:
                 self._real_camera_dialog.stop_stream()
@@ -361,6 +368,7 @@ class MainWindow(QMainWindow):
             lambda: self.end_web_connection(None)
         )
         self.ui.button_simulated_live.pressed.connect(self.show_simulated_live)
+        self.ui.button_conway_life.pressed.connect(self.show_conway_life)
         self.ui.button_real_camera.pressed.connect(self.show_real_camera_dialog)
         self.ui.checkbox_flipx.clicked.connect(
             lambda: self.ui.image_viewer.manipulate("flip_x")
@@ -2384,6 +2392,43 @@ class MainWindow(QMainWindow):
         self._simulated_live.show()
         self._simulated_live.raise_()
         self._simulated_live.activateWindow()
+
+    def show_conway_life(self) -> None:
+        """Open Conway Game of Life streamer (sibling to Simulated Live)."""
+        from PyQt6.QtCore import Qt
+        self._conway_first_frame = True
+        if self._conway_life is None:
+            self._conway_life = ConwayLifeWidget(self)
+            self._conway_life.setWindowFlags(
+                Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint
+            )
+
+            def _conway_frame_cb(img):
+                self.ui.image_viewer.set_image(img, live_update=True)
+                self.ui.image_viewer.setCurrentIndex(img.n_images - 1)
+                if self._conway_first_frame:
+                    self._conway_first_frame = False
+                    self.reset_options()
+                    # Classic 0..1 or Ember 0..N — pin LUT for clean colormaps.
+                    lut_max = (
+                        self._conway_life.lut_max_level()
+                        if self._conway_life is not None
+                        else 1
+                    )
+                    self.ui.spin_lut_min.blockSignals(True)
+                    self.ui.spin_lut_max.blockSignals(True)
+                    self.ui.spin_lut_min.setValue(0)
+                    self.ui.spin_lut_max.setValue(lut_max)
+                    self.ui.spin_lut_min.blockSignals(False)
+                    self.ui.spin_lut_max.blockSignals(False)
+                    self.ui.image_viewer.ui.histogram.setLevels(min=0, max=lut_max)
+                    self._update_lut_fit_status()
+
+            self._conway_life.set_frame_callback(_conway_frame_cb)
+            self._conway_life.setWindowIcon(self.windowIcon())
+        self._conway_life.show()
+        self._conway_life.raise_()
+        self._conway_life.activateWindow()
 
     def show_real_camera_dialog(self) -> None:
         """Open Webcam dialog: sliders, Start/Stop, streams to viewer."""

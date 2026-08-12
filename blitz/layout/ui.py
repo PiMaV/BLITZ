@@ -1355,6 +1355,12 @@ class UI_MainWindow(QWidget):
         self.button_simulated_live = QPushButton("Generate Synthetic Live Data Stream")
         self.button_simulated_live.setToolTip("Generate synthetic live data stream (Lissajous, Lightning). No real device.")
         stream_layout.addWidget(self.button_simulated_live)
+        self.button_conway_life = QPushButton("Game of Life")
+        self.button_conway_life.setToolTip(
+            "Classic Conway Game of Life stream (B3/S23). Sibling to Synthetic Live — "
+            "rectangular grid, seed/pattern, scrub timeline after Stop."
+        )
+        stream_layout.addWidget(self.button_conway_life)
         self.button_real_camera = QPushButton("Webcam")
         self.button_real_camera.setToolTip("Real camera (USB webcam)")
         stream_layout.addWidget(self.button_real_camera)

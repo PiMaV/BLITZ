@@ -25,6 +25,7 @@
     "button_connect": "Connect to the given server address. Keeps listening until manually disconnected.",
     "button_disconnect": "Disconnect from the server.",
     "button_simulated_live": "Generate synthetic live data stream (Lissajous, Lightning). No video file.",
+    "button_conway_life": "Classic Conway (B3/S23). Classic levels 0/1; Ember 0…N (Decay, default 3). Cell scale default 1. Pattern mini-previews. Speed live; scrub after Stop.",
     "checkbox_mask": "Shows a rectangular selection area. Resize and apply for masking all images.",
     "button_reset_mask": "Resets the mask and shows the original image.",
     "button_image_mask": "Select a binary image of the same size as the current data to mask all pixels where that image has value 1.",
