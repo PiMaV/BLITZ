@@ -22,5 +22,12 @@ When BLITZ should “handle more formats” without bloating the core:
 2. **Mini-server** — convert remotely; BLITZ only receives standard payloads
    (aligned with WOLKE → viewer `.npy` delivery).
 
+### EVT3 event cameras (IDS / Prophesee)
+
+**EVT Sidecar** (`../EVT/`) is the exotic path for EVT3 `.raw` archives: decode
+once, re-bin with live Δt / polarity / window, and push stacks to BLITZ over the
+**WOLKE** Socket.IO + HTTP `.npy` contract. Not embedded in the BLITZ Flatpak.
+See `../EVT/README.md`.
+
 Do **not** grow the core Flatpak with exotic native deps unless a format is
 numpy/cv2-only and clearly belongs in the standard loader (like HIKMICRO).

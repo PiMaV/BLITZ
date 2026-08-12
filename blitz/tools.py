@@ -5,7 +5,7 @@ from typing import Any, Optional, Self, Sequence
 
 import numpy as np
 import psutil
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QObject, Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QTextCharFormat
 from PyQt6.QtWidgets import (QApplication, QDialog, QLabel, QProgressBar,
                              QStatusBar, QTextEdit, QVBoxLayout)
@@ -27,8 +27,18 @@ def log(message: str, color: str | tuple[int, int, int] = "white") -> None:
         LOGGER.log(message, color=color)
     if _LOG_ONE_LINER is not None and message != "\n":
         txt = str(message).strip()[:120]
-        _LOG_ONE_LINER.setText(txt)
-        _LOG_ONE_LINER.setToolTip(str(message).strip())
+        tip = str(message).strip()
+        # Status label must only be touched on the GUI thread (Network worker logs here).
+        label = _LOG_ONE_LINER
+        if QThread.currentThread() is label.thread():
+            label.setText(txt)
+            label.setToolTip(tip)
+        else:
+            def _apply(lab=label, t=txt, tip_=tip) -> None:
+                lab.setText(t)
+                lab.setToolTip(tip_)
+
+            QTimer.singleShot(0, _apply)
 
 
 def setup_logger(logger: Any, one_liner_label: Optional[QLabel] = None) -> None:
@@ -60,24 +70,46 @@ class LoadingDialog(QDialog):
         self.setWindowTitle(message)
 
 
+class _LogBridge(QObject):
+    """Marshals log lines onto the GUI thread (QueuedConnection)."""
+
+    appended = pyqtSignal(object, object)  # message, color
+
+
 class LoggingTextEdit(QTextEdit):
+    """Thread-safe app log. Workers (Network, loaders) must not touch QTextEdit directly."""
 
     COLOR_WARNING = QColor(255, 0, 0)
     COLOR_TEXT = QColor(255, 255, 255)
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._bridge = _LogBridge(self)
+        # Explicit queued: cross-thread emit from Network QThread → main thread append
+        self._bridge.appended.connect(
+            self._append_log, Qt.ConnectionType.QueuedConnection
+        )
 
     def log(
         self,
         message: Any,
         color: str | tuple[int, int, int] = "white",
     ) -> None:
+        self._bridge.appended.emit(message, color)
+
+    def _append_log(
+        self,
+        message: Any,
+        color: str | tuple[int, int, int] = "white",
+    ) -> None:
         cursor = self.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
-        format = QTextCharFormat()
-        format.setFont(QFont("Courier New"))
+        fmt = QTextCharFormat()
+        fmt.setFont(QFont("Courier New"))
         qc = QColor(*color) if isinstance(color, tuple) else QColor(color)
-        format.setForeground(qc)
-        format.setFontPointSize(settings.get("viewer/font_size_log"))
-        cursor.mergeCharFormat(format)
+        fmt.setForeground(qc)
+        fmt.setFontPointSize(settings.get("viewer/font_size_log"))
+        cursor.mergeCharFormat(fmt)
         if message != "\n":
             cursor.insertText(f"> {message}\n")
         self.setTextCursor(cursor)

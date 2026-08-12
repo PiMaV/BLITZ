@@ -45,6 +45,8 @@ _default_core_settings = {
     "web/connect_attempts": 3,
     "web/connect_timeout": 1,
     "web/download_attempts": 3,
+    # Full GET body (WOLKE / EVT Sidecar .npy); 2s was far too short for multi‑MB stacks
+    "web/download_timeout": 120,
 
     "app/restart_exit_code": -12341234,
     "app/theme": "dark",

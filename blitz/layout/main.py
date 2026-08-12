@@ -2217,10 +2217,15 @@ class MainWindow(QMainWindow):
             self._reconnect_histogram_if_needed(log_on=False)
             return
         xdata, ydata = np.asarray(h[0]), np.asarray(h[1], dtype=np.float64)
-        if len(ydata) == 0:
+        if len(ydata) == 0 or len(xdata) == 0:
             vb.setLogMode("y", False)
             self._reconnect_histogram_if_needed(log_on=False)
             return
+        # Histogram can briefly disagree with plot curve after stack replace
+        n = min(len(xdata), len(ydata))
+        if n == 0:
+            return
+        xdata, ydata = xdata[:n], ydata[:n]
         with np.errstate(invalid="ignore"):
             ymax_raw = float(np.nanmax(ydata))
         if not np.isfinite(ymax_raw) or ymax_raw <= 0:

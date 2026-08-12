@@ -92,13 +92,18 @@ class _WebDownloader(QObject):
     def download(self) -> None:
         response = None
         attempts = 0
-        max_attempts = settings.get('web/download_attempts')
+        max_attempts = settings.get("web/download_attempts")
+        timeout = settings.get("web/download_timeout")
         while attempts < max_attempts:
             try:
-                response = requests.get(self._target, timeout=2)
+                # (connect, read) — read must allow large .npy from WOLKE / sidecars
+                response = requests.get(self._target, timeout=(timeout, timeout))
             except (ConnectTimeout, RequestException) as e:
-                log(f"[NET] Connection error: {e}, "
-                    f"Attempt {attempts+1}/{max_attempts}", color="orange")
+                log(
+                    f"[NET] Connection error: {e}, "
+                    f"Attempt {attempts+1}/{max_attempts}",
+                    color="orange",
+                )
                 attempts += 1
             else:
                 break
@@ -106,6 +111,10 @@ class _WebDownloader(QObject):
             with tempfile.NamedTemporaryFile(suffix=".npy", delete=False) as f:
                 f.write(response.content)
                 cache_file = Path(f.name)
+            log(
+                f"[NET] Downloaded {len(response.content) / (1024*1024):.1f} MB",
+                color="green",
+            )
             self.download_finished.emit(cache_file)
             return
         elif response is None:
@@ -128,11 +137,13 @@ class WebDataLoader(QObject):
         self._target = target_address
         self._token = token
         self._connect_thread = QThread()
-        self._download_thread = QThread()
+        self._download_thread: QThread | None = None
+        self._downloader: _WebDownloader | None = None
         self._load_kwargs = kwargs
         self._selection_imagedata: ImageData | None = None
         self._pending_file_name: str | None = None
         self._pending_index: int | None = None
+        self._download_busy = False
 
     def _start_listening(self) -> None:
         self._socket = _WebSocket(self._target)
@@ -162,12 +173,18 @@ class WebDataLoader(QObject):
         self._start_download(file_name)
 
     def _start_download(self, file_name: str) -> None:
+        if self._download_busy:
+            log("[NET] Download already in progress, skipping", color="orange")
+            return
         target = self._target
         if not target.endswith("/"):
             target += "/"
         target += f"{self._token}"
         target += f"?filename={file_name}"
 
+        # Fresh QThread per download — a finished QThread cannot be restarted
+        self._download_busy = True
+        self._download_thread = QThread()
         self._downloader = _WebDownloader(target)
         self._downloader.moveToThread(self._download_thread)
         self._download_thread.started.connect(self._downloader.download)
@@ -175,8 +192,16 @@ class WebDataLoader(QObject):
         self._download_thread.start()
 
     def _finish_download(self, path: Path | None) -> None:
-        self._download_thread.quit()
-        self._download_thread.wait()
+        thread = self._download_thread
+        if thread is not None:
+            thread.quit()
+            thread.wait()
+            thread.deleteLater()
+            self._download_thread = None
+        if self._downloader is not None:
+            self._downloader.deleteLater()
+            self._downloader = None
+        self._download_busy = False
         if path is not None:
             try:
                 img = DataLoader(**self._load_kwargs).load(path)
@@ -193,14 +218,16 @@ class WebDataLoader(QObject):
                     self.image_received.emit(img, None)
             except Exception as e:
                 log(f"[NET] Error loading downloaded file: {e}", color="red")
-                self.image_received.emit(None, None)
+                # Keep socket listening; only a None payload from the socket
+                # tears down the connection (see end_web_connection).
+                return
             finally:
                 try:
                     os.remove(path)
                 except OSError:
                     log(f"[NET] Failed to remove temp file: {path}", color="orange")
         else:
-            self.image_received.emit(None, None)
+            log("[NET] Download failed — still listening for next push", color="orange")
 
     def emit_index(self, index: int) -> None:
         """Tell WOLKE which row index is shown (BLITZ -> WOLKE sync)."""

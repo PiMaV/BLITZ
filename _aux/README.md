@@ -10,4 +10,5 @@ repo root minimal.
 Shared WETTER resources (outside BLITZ):
 
 - [`converters/`](../../converters/) — format bridges → `.npy`
+- [`EVT/`](../../EVT/) — EVT Sidecar (EVT3 → BLITZ via WOLKE contract)
 - [`datasets/`](../../datasets/) — sample / reference datasets

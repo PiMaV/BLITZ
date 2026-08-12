@@ -51,6 +51,13 @@ _(none open)_
 
 ## P1 — Bugs / UX you notice every day
 
+### SIGSEGV after failed Network Connect + Log tab
+
+Native crash (`SIGSEGV`), no Python traceback. Repro: Connect to dead host → open
+**Log**. Cause: worker-thread `log()` into `QTextEdit`. Mitigation in
+`blitz/tools.py` (queued marshal) — **re-test**; see `BUGS.md` +
+`docs/agent_handoff_sigsegv_log.md`.
+
 ### Color swatch shows LUT color, not real RGB
 
 The little color patch at the cursor is filled from the **colorscale / LUT gradient**, not from the actual pixel RGB. Prefer a true-color swatch when the image is RGB.
