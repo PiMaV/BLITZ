@@ -15,12 +15,12 @@ WOLKE may still gzip when the client asks. The Connect button and the **NET** /
 **BUSY** badge show download percent and opening so a large stack is not silent.
 After load, `ImageData` is still a dense NumPy cube. Optional File-tab
 **Floor |v|** zeros values below a threshold (lossy, default off) without
-shrinking RAM — File / Folder load only, never Network / Stream.
+shrinking RAM — File tab applies to File, Folder, and Network Connect.
 
 ```mermaid
 flowchart LR
   subgraph produce [Producer]
-    evt["EVT bin then uint8"]
+    evt["EVT bin then npy float32 default"]
     wolke["WOLKE np.save"]
   end
   subgraph wire [HTTP]

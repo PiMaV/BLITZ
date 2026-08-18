@@ -69,7 +69,7 @@ There is no separate toolbar; actions live in the menu bar, Options tabs, and do
 | **8 bit** | Fixed dtype scale to 8-bit (RAM) | No per-image brightness stretch |
 | **Normalize each image** | Per-frame stretch to full range | Independent of 8-bit; works for 8/16-bit and float |
 | **grayscale** | RGB → luminance (default on) | RAM / speed |
-| **Floor \|v\|** | Opt-in: `\|v\| < thr` → 0 on **File / Folder** `.npy` load | Lossy; default off; **no RAM win**. **Not** applied to Network / Stream / Event reader. |
+| **Floor \|v\|** | Opt-in: `\|v\| < thr` → 0 on `.npy` load | Lossy; default off; **no RAM win**. Same File-tab value for File, Folder, and Network. Event reader does not expose Floor (counts are already sparse). |
 | **size ratio** | Spatial downsample `[0, 1]` | Width & height scale |
 | **subset ratio** | Temporal subsample `[0, 1]` | e.g. `0.1` ≈ every 10th frame |
 | **max. RAM** | Cap load buffer | Bound by available RAM |
@@ -314,7 +314,7 @@ Aggregate result feeds Ops **Range** subtract/divide sources.
 
 ### Load-time transforms (dialogs)
 
-Frame range / step (video), resize, 8-bit, grayscale, normalize, pre-load ROI + Flip X/Y/XY, mixed-size policy. File-tab **Floor |v|** applies to File / Folder `.npy` only (not Network / Stream).
+Frame range / step (video), resize, 8-bit, grayscale, normalize, pre-load ROI + Flip X/Y/XY, mixed-size policy. File-tab **Floor |v|** applies to File / Folder `.npy` and to Network ingest (same contract).
 
 ---
 

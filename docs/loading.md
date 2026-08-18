@@ -119,7 +119,7 @@ load_images(path)
 ## DataLoader-Parameter
 
 - `size_ratio`, `subset_ratio`, `max_ram`, `convert_to_8_bit`, `grayscale`, `normalize`, `mask`, `crop`
-- `floor_abs` (optional float): File-tab **Floor |v|**. After `np.load`, before 8-bit/resize, set `|v| < floor_abs` to 0. Default `None` (off). Lossy; does not reduce RAM. Logged in load provenance. **File / Folder only** — Network / Stream / Event reader never apply Floor.
+- `floor_abs` (optional float): File-tab **Floor |v|**. After `np.load`, before 8-bit/resize, set `|v| < floor_abs` to 0. Default `None` (off). Lossy; does not reduce RAM. Logged in load provenance. Same File-tab value for File, Folder, and Network Connect.
 - `file_list`: explizite Dateiliste vom Folder-Chooser (kein silent majority)
 - `mixed_size_policy`: `"crop_min"` nach Mixed-Sizes-Dialog
 - `frame_range`, `step`: nur fuer Video, via `load(path, frame_range=..., step=...)`

@@ -535,10 +535,10 @@ class UI_MainWindow(QWidget):
         self.checkbox_load_floor_abs = QCheckBox("Floor |v|")
         self.checkbox_load_floor_abs.setChecked(False)
         self.checkbox_load_floor_abs.setToolTip(
-            "Opt-in for File / Folder load only: set |v| < threshold to 0 "
-            "(lossy). Not applied to Network / Stream / Event reader. "
-            "Does not reduce RAM — zeros still occupy the dense cube. "
-            "Default off so radiometric / °C floats stay intact."
+            "Opt-in: set |v| < threshold to 0 on load (lossy). "
+            "Applies to File, Folder, and Network ingest — same contract. "
+            "Event reader does not need this (counts are already sparse). "
+            "Does not reduce RAM — zeros still occupy the dense cube."
         )
         floor_hlay.addWidget(self.checkbox_load_floor_abs)
         self.spinbox_load_floor_abs = QDoubleSpinBox()

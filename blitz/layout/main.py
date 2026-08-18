@@ -2354,7 +2354,7 @@ class MainWindow(QMainWindow):
             convert_to_8_bit=self.ui.checkbox_load_8bit.isChecked(),
             normalize=self.ui.checkbox_load_normalize.isChecked(),
             grayscale=self.ui.checkbox_load_grayscale.isChecked(),
-            floor_abs=None,
+            floor_abs=self._floor_abs_from_ui(),
         )
         self._web_connection.ingest_started.connect(self._on_web_ingest_started)
         self._web_connection.ingest_progress.connect(self._on_web_ingest_progress)
