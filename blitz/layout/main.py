@@ -830,21 +830,6 @@ class MainWindow(QMainWindow):
             self.ui.checkbox_load_grayscale.setChecked,
         )
         settings.connect_sync(
-            "default/load_floor_abs",
-            self.ui.checkbox_load_floor_abs.stateChanged,
-            self.ui.checkbox_load_floor_abs.isChecked,
-            self.ui.checkbox_load_floor_abs.setChecked,
-        )
-        settings.connect_sync(
-            "default/load_floor_abs_value",
-            self.ui.spinbox_load_floor_abs.editingFinished,
-            self.ui.spinbox_load_floor_abs.value,
-            self.ui.spinbox_load_floor_abs.setValue,
-        )
-        self.ui.spinbox_load_floor_abs.setEnabled(
-            self.ui.checkbox_load_floor_abs.isChecked()
-        )
-        settings.connect_sync(
             "default/max_ram",
             self.ui.spinbox_max_ram.editingFinished,
             self.ui.spinbox_max_ram.value,
@@ -2333,12 +2318,6 @@ class MainWindow(QMainWindow):
         for s in spinners:
             s.blockSignals(False)
 
-    def _floor_abs_from_ui(self) -> float | None:
-        if not self.ui.checkbox_load_floor_abs.isChecked():
-            return None
-        value = float(self.ui.spinbox_load_floor_abs.value())
-        return value if value > 0 else None
-
     def start_web_connection(self) -> None:
         address = self.ui.address_edit.text()
         token = self.ui.token_edit.text()
@@ -2354,7 +2333,6 @@ class MainWindow(QMainWindow):
             convert_to_8_bit=self.ui.checkbox_load_8bit.isChecked(),
             normalize=self.ui.checkbox_load_normalize.isChecked(),
             grayscale=self.ui.checkbox_load_grayscale.isChecked(),
-            floor_abs=self._floor_abs_from_ui(),
         )
         self._web_connection.ingest_started.connect(self._on_web_ingest_started)
         self._web_connection.ingest_progress.connect(self._on_web_ingest_progress)
@@ -2684,7 +2662,6 @@ class MainWindow(QMainWindow):
                     normalize=
                         self.ui.checkbox_load_normalize.isChecked(),
                     grayscale=self.ui.checkbox_load_grayscale.isChecked(),
-                    floor_abs=self._floor_abs_from_ui(),
                     mask=mask,
                     crop=crop,
                 )
@@ -2761,7 +2738,6 @@ class MainWindow(QMainWindow):
             "convert_to_8_bit": self.ui.checkbox_load_8bit.isChecked(),
             "normalize": self.ui.checkbox_load_normalize.isChecked(),
             "grayscale": self.ui.checkbox_load_grayscale.isChecked(),
-            "floor_abs": self._floor_abs_from_ui(),
         }
 
         mixed_size_policy = None

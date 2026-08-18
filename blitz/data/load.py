@@ -63,18 +63,6 @@ from .tools import (adjust_ratio_for_memory, resize_and_convert,
                     resize_and_convert_to_8_bit, _to_8bit_fixed_scale)
 
 
-def apply_floor_abs(array: np.ndarray, floor_abs: float | None) -> np.ndarray:
-    """Set |v| < floor_abs to 0. No-op if floor_abs is None or <= 0.
-
-    The array stays dense (zeros occupy the same RAM as values).
-    """
-    if floor_abs is None or floor_abs <= 0:
-        return array
-    out = array if array.flags.writeable else np.array(array, copy=True)
-    out[np.abs(out) < floor_abs] = 0
-    return out
-
-
 def _resize_stack_frame(
     frame: np.ndarray,
     size_ratio: float,
@@ -545,7 +533,6 @@ class DataLoader:
         grayscale: bool = False,
         mask: Optional[tuple[slice, slice]] = None,
         crop: Optional[tuple[int, int]] = None,
-        floor_abs: Optional[float] = None,
     ) -> None:
         self.max_ram = max_ram
         self.size_ratio = size_ratio
@@ -557,7 +544,6 @@ class DataLoader:
         if mask is not None:
             self.mask = (mask[1], mask[0])
         self.crop = crop
-        self.floor_abs = floor_abs
 
     def load(
         self,
@@ -590,7 +576,6 @@ class DataLoader:
             ("8bit", str(self.convert_to_8_bit)),
             ("normalize", str(self.normalize)),
             ("grayscale", str(data.meta[0].color_model == "grayscale")),
-            ("floor |v|", "off" if self.floor_abs is None else self.floor_abs),
             ("max. RAM", round(self.max_ram, 3)),
             ("Size-ratio", round(self.size_ratio, 3)),
             ("Subset-ratio", round(self.subset_ratio, 3)),
@@ -988,7 +973,6 @@ class DataLoader:
 
     def _load_array(self, path: Path) -> ImageData:
         array: np.ndarray = np.load(path, allow_pickle=False)
-        array = apply_floor_abs(array, self.floor_abs)
         gray = True
         match array.ndim:
             case 4:
@@ -1049,7 +1033,6 @@ class DataLoader:
         path: Path,
     ) -> tuple[np.ndarray, MetaData]:
         array: np.ndarray = np.load(path, allow_pickle=False)
-        array = apply_floor_abs(array, self.floor_abs)
         if array.ndim >= 4 or (array.ndim == 3 and array.shape[2] != 3):
             log(f"Error: Unsupported array shape {array.shape}", color="red")
             data = DataLoader.from_text(

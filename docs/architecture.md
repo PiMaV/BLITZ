@@ -13,9 +13,8 @@ BLITZ is a Python-based image viewer and analysis tool built with **PyQt6** and 
 Network `.npy` ingest stays a dense blob. The Event reader gzip is opt-in and
 off on loopback. The Connect button and the **NET** / **BUSY** badge show
 download percent so a large stack is not silent. After load, `ImageData` is
-still a dense NumPy cube. Optional File-tab **Floor |v|** zeros values below a
-threshold (lossy, default off) without shrinking RAM — File tab applies to File,
-Folder, and Network Connect.
+still a dense NumPy cube. Contrast is a LUT/display concern (Fit / Trim),
+not a load-time threshold.
 
 ```mermaid
 flowchart LR
@@ -28,14 +27,12 @@ flowchart LR
   end
   subgraph blitzLoad [BLITZ]
     dl["DataLoader"]
-    C["C: opt-in abs v less thr to 0"]
     idata["ImageData dense RAM"]
   end
   evt --> A
   wolke --> A
   A --> dl
-  dl --> C
-  C --> idata
+  dl --> idata
 ```
 
 See [`../WETTER/docs/sparse_matrices.md`](../WETTER/docs/sparse_matrices.md).

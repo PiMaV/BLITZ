@@ -202,5 +202,6 @@ Hidden UI (crop widget) and pure concepts (autograd, ML broken-file detection): 
 
 `docs/sources_and_variants.md` still describes Standard/Full EXE — historical until updated (“add-ons outside + Flatpak”).
 
-**WETTER-wide:** thinly populated matrices — HTTP gzip (**A**) and opt-in Floor |v|
-(**C**) — see [`../WETTER/docs/sparse_matrices.md`](../WETTER/docs/sparse_matrices.md).
+**WETTER-wide:** thinly populated matrices — HTTP gzip (**A**) shipped; Floor (**C**)
+and sparse `ImageData` (**D**) dropped — see
+[`../WETTER/docs/sparse_matrices.md`](../WETTER/docs/sparse_matrices.md).
