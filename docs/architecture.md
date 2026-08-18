@@ -10,12 +10,12 @@ Fuer Standard vs. Full Build, Loader/Converter/Handler und die Dependency-Regel 
 
 BLITZ is a Python-based image viewer and analysis tool built with **PyQt6** and **PyQtGraph**. It is designed to handle large datasets by loading them into memory (RAM) and offering efficient slicing, aggregation, and visualization.
 
-Network `.npy` ingest: Event reader is uncompressed by default (localhost);
-WOLKE may still gzip when the client asks. The Connect button and the **NET** /
-**BUSY** badge show download percent and opening so a large stack is not silent.
-After load, `ImageData` is still a dense NumPy cube. Optional File-tab
-**Floor |v|** zeros values below a threshold (lossy, default off) without
-shrinking RAM — File tab applies to File, Folder, and Network Connect.
+Network `.npy` ingest stays a dense blob. The Event reader gzip is opt-in and
+off on loopback. The Connect button and the **NET** / **BUSY** badge show
+download percent so a large stack is not silent. After load, `ImageData` is
+still a dense NumPy cube. Optional File-tab **Floor |v|** zeros values below a
+threshold (lossy, default off) without shrinking RAM — File tab applies to File,
+Folder, and Network Connect.
 
 ```mermaid
 flowchart LR
