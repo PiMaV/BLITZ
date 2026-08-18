@@ -239,6 +239,7 @@ class WebDataLoader(QObject):
             and index is not None
             and self._selection_imagedata is not None
         ):
+            # Same ImageData, new frame. MainWindow must seek, not reload.
             self.image_received.emit(self._selection_imagedata, index)
             return
         self._pending_file_name = file_name

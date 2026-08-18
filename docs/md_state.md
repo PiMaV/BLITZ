@@ -16,7 +16,7 @@ Overview of all documentation files in this repository.
 
 | File | Purpose |
 |------|---------|
-| [`docs/architecture.md`](architecture.md) | High-level code structure, data/UI separation. |
+| [`docs/architecture.md`](architecture.md) | High-level code structure, data/UI separation, **cube measurand rule** (Preview vs Apply vs outside). |
 | [`docs/sources_and_variants.md`](sources_and_variants.md) | Standard vs. Full build explanation, Loader/Handler architecture. |
 | [`docs/loading.md`](loading.md) | Detailed flow of data loading, dialogs, and session defaults. |
 | [`docs/unravel_and_stores.md`](unravel_and_stores.md) | Technical details on internal data storage (Raw/Result stores). |

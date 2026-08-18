@@ -2389,37 +2389,41 @@ class MainWindow(QMainWindow):
         self.statusBar().setStyleSheet(get_style("statusbar_idle"))
         self.statusBar().showMessage("Network: listening")
 
+    def _seek_viewer_frame(self, index: int) -> None:
+        """Show frame `index` on the cube already in the viewer. No reload."""
+        data = getattr(self.ui.image_viewer, "data", None)
+        n = max(1, data.n_images) if data is not None else 1
+        idx = max(0, min(int(index), n - 1))
+        self._web_suppress_emit_index = True
+        try:
+            self.ui.image_viewer.setCurrentIndex(idx)
+            self.ui.image_viewer.timeLine.setPos((idx, 0))
+            self.ui.spinbox_current_frame.blockSignals(True)
+            self.ui.spinbox_current_frame.setMaximum(max(0, n - 1))
+            self.ui.spinbox_current_frame.setValue(idx)
+            self.ui.spinbox_current_frame.blockSignals(False)
+        finally:
+            self._web_suppress_emit_index = False
+
     def end_web_connection(
         self, img: ImageData | None, index: int | None = None
     ) -> None:
         if img is not None:
             ingest = getattr(self, "_web_ingest_active", False)
+            same_cube = img is getattr(self.ui.image_viewer, "data", None)
+            # Index-only WOLKE sync: packet already in RAM. Treat as timeline
+            # scrub — set_image + reset_options would flash BUSY and wipe ROI.
+            if not ingest and index is not None and same_cube:
+                self._seek_viewer_frame(index)
+                return
 
             def _apply_network_image() -> None:
                 if index is not None:
-                    self._web_suppress_emit_index = True
                     self._web_restore_index_after_reset = index
                 self.ui.image_viewer.set_image(img)
-                if index is not None:
-                    n = max(1, img.n_images)
-                    idx = max(0, min(index, n - 1))
-                    self.ui.image_viewer.setCurrentIndex(idx)
-                    self.ui.image_viewer.timeLine.setPos((idx, 0))
-                    self.ui.spinbox_current_frame.blockSignals(True)
-                    self.ui.spinbox_current_frame.setMaximum(max(0, n - 1))
-                    self.ui.spinbox_current_frame.setValue(idx)
-                    self.ui.spinbox_current_frame.blockSignals(False)
                 self.reset_options()
                 if index is not None:
-                    n = max(1, img.n_images)
-                    idx = max(0, min(index, n - 1))
-                    self.ui.image_viewer.setCurrentIndex(idx)
-                    self.ui.image_viewer.timeLine.setPos((idx, 0))
-                    self.ui.spinbox_current_frame.blockSignals(True)
-                    self.ui.spinbox_current_frame.setMaximum(max(0, n - 1))
-                    self.ui.spinbox_current_frame.setValue(idx)
-                    self.ui.spinbox_current_frame.blockSignals(False)
-                    self._web_suppress_emit_index = False
+                    self._seek_viewer_frame(index)
                     QTimer.singleShot(
                         50,
                         lambda: setattr(self, "_web_restore_index_after_reset", None),

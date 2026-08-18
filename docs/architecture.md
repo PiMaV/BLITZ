@@ -37,6 +37,38 @@ flowchart LR
 
 See [`../WETTER/docs/sparse_matrices.md`](../WETTER/docs/sparse_matrices.md).
 
+## Cube measurand rule
+
+BLITZ analyzes **one** dense `ImageData` cube. Features must not pretend a
+different physical quantity is that cube.
+
+```mermaid
+flowchart TD
+  q{"Same measurand as ImageData?"}
+  q -->|"yes: lighting, LUT, contours, RoSEE bounds"| preview["Preview overlay — never bake into the cube"]
+  q -->|"yes: Ops, reduce, flip, PCA reconstruction"| ops["Preview and/or Apply on the cube"]
+  q -->|"no: arrival time, flow, eigenimages, event lists"| neu["New cube: outside BLITZ, or Apply a new ImageData"]
+  q -->|"not a cube: TOF, extra sensors"| aux["Auxiliary 1D beside the cube"]
+```
+
+- **Same measurand, display only** — Preview. Shade hillshade, LUT, isolines.
+  Probe / polyline / PCA keep reading height or intensity. **Shade must not
+  Apply-replace the stack** (that would store lighting `0…1` as if it were the
+  measurement).
+- **Same measurand, arithmetic / reduce** — Preview and/or Ops **Apply to full**.
+  Load 8-bit / grayscale / subset chooses the cube at ingest; that is not an
+  overlay.
+- **New measurand** — Produce the cube **outside** (EVT / converters / a later
+  sidecar) or **Apply** a distinct `ImageData` the user can leave. Do not overlay
+  it on the original. PCA **View components** already swaps in eigenimages and
+  restores via **View PCA** off — that is Apply-as-view-swap, not a Shade-style
+  overlay.
+- **Auxiliary 1D** — TOF today; more sensor curves later. Not a cube overlay.
+
+Optional later: cache hillshade for the **current** azimuth / elevation / Z
+while scrubbing `T` (or a coarse angle atlas). That is paint optimization, not
+a new measurand and not Apply.
+
 ## Directory Structure
 
 *   **`blitz/`**: The main package.

@@ -155,7 +155,10 @@ Real-time arithmetic pipeline on the `(T, H, W, C)` volume (`ImageData._apply_op
 
 ## Shade Tab
 
-View-only **hillshade** (relief / Schummerung). Analysis buffer remains height/intensity.
+View-only **hillshade** (relief / Schummerung). Same measurand as the cube
+(height / intensity); lighting is Preview only. There is **no Apply → replace
+stack** — that would bake `0…1` shade into `ImageData`. See the
+[cube measurand rule](architecture.md#cube-measurand-rule).
 
 | Control | What it does | Algorithm / notes |
 |---------|--------------|-------------------|
@@ -164,13 +167,17 @@ View-only **hillshade** (relief / Schummerung). Analysis buffer remains height/i
 | **Elevation** | Sun height `0–90°` | Horizon → zenith |
 | **Z factor** | Vertical exaggeration `0.1–20` | Scales height before `np.gradient` |
 
-**Math (`calculate_hillshade`):** height from grayscale or luminance `0.299R+0.587G+0.114B` → `dx, dy = ∇z` → unit normal · light vector → shade clipped to `[0, 1]`.
+**Math (`calculate_hillshade`):** height from grayscale or luminance `0.299R+0.587G+0.114B` → `dx, dy = ∇z` → unit normal · light vector → shade clipped to `[0, 1]`. Scrub recomputes the current frame. A later cache (current angles over `T`, or a coarse az/elev atlas) is paint optimization only.
 
 ---
 
 ## PCA Tab
 
 Principal Component Analysis via **SVD** on the flattened stack `(T, features)`.
+**View reconstruction** is the same measurand (rank-k intensity). **View
+components** swaps in a new `ImageData` (eigenimages) until View is turned off
+— Apply-as-view-swap, not a Preview overlay. See the
+[cube measurand rule](architecture.md#cube-measurand-rule).
 
 | Control | What it does | Algorithm / notes |
 |---------|--------------|-------------------|
@@ -206,7 +213,7 @@ Requires `T ≥ 2` and non-aggregate view. Approximate defaults: `n_oversamples=
 | **Generate Synthetic Live Data Stream** | Lissajous / Lightning ring buffer | No hardware; FPS, resolution, grayscale, exposure knobs |
 | **Game of Life** | Classic Conway B3/S23 ring buffer | Sibling; W64×H128; Classic 0/1 or Ember 0…N; cell scale 1; pattern icons; Speed live; scrub after Stop |
 | **Webcam** | USB camera via OpenCV | Exposure, gain, brightness, contrast; ring buffer |
-| **Network Address / Token** | Remote `.npy` ingest | Socket.IO + HTTP download; **NET** + % while downloading, **BUSY** while opening; index-only WOLKE sync stays quiet |
+| **Network Address / Token** | Remote `.npy` ingest | Socket.IO + HTTP download; **NET** + % while downloading, **BUSY** while opening; index-only WOLKE sync seeks the cached cube (no reload, no BUSY, ROI/options kept) |
 
 ---
 
@@ -381,7 +388,7 @@ Status visible in **Bench → Numba**.
 | Measure | Tools | Area, circularity, bbox | AU calibration |
 | Polyline profile | Tools + Polyline dock | Path sample + ⊥ band stats | CSV |
 | RoSEE | RoSEE | Cumsum fluctuation extrema | — |
-| Hillshade | Shade | Lambertian `n·l` from `∇z` | View-only |
+| Hillshade | Shade | Lambertian `n·l` from `∇z` | Preview only; no Apply |
 | PCA / SVD | PCA | Exact or randomized SVD | — |
 | LUT levels | LUT dock | Percentile / min-max | (LUT export hidden) |
 | Live / webcam / net | Stream | Ring buffer / OpenCV / Socket.IO | npy over network |

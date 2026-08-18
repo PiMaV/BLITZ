@@ -11,6 +11,9 @@ Related: [`docs/missing_features.md`](docs/missing_features.md) (hidden UI / con
 
 ## Recently done (this stretch)
 
+- **Network index-only seek:** WOLKE table click on an already-loaded
+  `__selection__.npy` only changes the current frame (no `set_image`, no
+  `reset_options`, no BUSY). New stacks still go NET → BUSY → IDLE.
 - **v2.0.15** Network ingest: **NET** / percent while the `.npy` downloads, **BUSY**
   while it opens (large Event-reader stacks were silent before). Loopback
   downloads skip gzip (`Accept-Encoding: identity`).
@@ -179,20 +182,28 @@ Checkbox / volume view — unscoped.
 
 Likely BUSY/UI overhead; profile.
 
-### Shade follow-ups
+### Shade: keep Preview, never Apply-replace
 
-Blend (color relief × hillshade); Apply → replace stack; real sun / GeoTIFF north.
-Core invariant stays: analysis reads height unless user explicitly Applies.
+Hillshade stays. **Do not** add Apply → replace stack (would store lighting as
+the cube). Product rule: [`docs/architecture.md`](docs/architecture.md#cube-measurand-rule).
+Blend / real-sun / GeoTIFF remain parked. Arrival Map / optical-flow overlays
+and a generic Overlay tab are **not** planned.
+
+Optional later (optimization only): cache shade for the current az/elev/Z over
+`T` so timeline scrub stays smooth; a coarse angle atlas is a further opt.
+
+### TOF → auxiliary curve
+
+TOF is a leftover: one sensor’s 1D time response on the timeline, not
+time-of-flight imaging and not a time surface. Keep File → Load TOF; do not
+remove, do not rename. Later: generalize to **auxiliary 1D curves** (more
+sensors next to the cube). Separate story from cube analysis / overlays.
 
 ---
 
 ## WOLKE (no priority)
 
-### Sync feels laggy / briefly “busy”
-
-Index-only sync should not full-refresh / flash BUSY when matrix is already in RAM.
-
-Relevant: `blitz/data/web.py`, `blitz/layout/main.py` (`end_web_connection`).
+_(index-only BUSY flash: fixed — seek the cached cube, do not reload.)_
 
 ---
 
