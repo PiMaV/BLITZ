@@ -63,6 +63,18 @@ from .tools import (adjust_ratio_for_memory, resize_and_convert,
                     resize_and_convert_to_8_bit, _to_8bit_fixed_scale)
 
 
+def _resize_stack_frame(
+    frame: np.ndarray,
+    size_ratio: float,
+    convert_to_8_bit: bool,
+    normalize: bool,
+) -> np.ndarray:
+    """Top-level so multiprocessing.Pool can pickle it (nested defs cannot)."""
+    return resize_and_convert_to_8_bit(
+        frame, size_ratio, convert_to_8_bit, normalize
+    )
+
+
 def get_video_preview(
     path: Path,
     n_frames: int = 10,
@@ -982,31 +994,21 @@ class DataLoader:
                     "Error loading files", color=(255, 0, 0)
                 )
         # now the first dimension is time
-        def function_(x):
-            return resize_and_convert_to_8_bit(
-                x,
-                self.size_ratio,
-                self.convert_to_8_bit,
-                self.normalize,
-            )
-
         total_size_estimate = array[0].nbytes * array.shape[0]
         frame = array[0].squeeze()
         cfg_key = _config_key_from_sample(frame) if frame.ndim >= 2 else None
         files_t, size_t = _get_multicore_thresholds(
             array.shape[0], total_size_estimate, cfg_key
         )
-        if (array.shape[0] > files_t or total_size_estimate > size_t):
+        job_args = [
+            (a, self.size_ratio, self.convert_to_8_bit, self.normalize)
+            for a in array
+        ]
+        if array.shape[0] > files_t or total_size_estimate > size_t:
             with Pool(physical_cpu_count()) as pool:
-                matrices = pool.starmap(
-                    function_,
-                    [(a, ) for a in array],
-                )
+                matrices = pool.starmap(_resize_stack_frame, job_args)
         else:
-            matrices = []
-            for a in array:
-                matrix = function_(a)
-                matrices.append(matrix)
+            matrices = [_resize_stack_frame(*args) for args in job_args]
 
         array = np.stack(matrices)
         if self.mask is not None:
