@@ -830,6 +830,21 @@ class MainWindow(QMainWindow):
             self.ui.checkbox_load_grayscale.setChecked,
         )
         settings.connect_sync(
+            "default/load_floor_abs",
+            self.ui.checkbox_load_floor_abs.stateChanged,
+            self.ui.checkbox_load_floor_abs.isChecked,
+            self.ui.checkbox_load_floor_abs.setChecked,
+        )
+        settings.connect_sync(
+            "default/load_floor_abs_value",
+            self.ui.spinbox_load_floor_abs.editingFinished,
+            self.ui.spinbox_load_floor_abs.value,
+            self.ui.spinbox_load_floor_abs.setValue,
+        )
+        self.ui.spinbox_load_floor_abs.setEnabled(
+            self.ui.checkbox_load_floor_abs.isChecked()
+        )
+        settings.connect_sync(
             "default/max_ram",
             self.ui.spinbox_max_ram.editingFinished,
             self.ui.spinbox_max_ram.value,
@@ -2318,13 +2333,33 @@ class MainWindow(QMainWindow):
         for s in spinners:
             s.blockSignals(False)
 
+    def _floor_abs_from_ui(self) -> float | None:
+        if not self.ui.checkbox_load_floor_abs.isChecked():
+            return None
+        value = float(self.ui.spinbox_load_floor_abs.value())
+        return value if value > 0 else None
+
     def start_web_connection(self) -> None:
         address = self.ui.address_edit.text()
         token = self.ui.token_edit.text()
         if not address or not token:
             return
 
-        self._web_connection = WebDataLoader(address, token)
+        self._web_connection = WebDataLoader(
+            address,
+            token,
+            size_ratio=self.ui.spinbox_load_size.value(),
+            subset_ratio=self.ui.spinbox_load_subset.value(),
+            max_ram=self.ui.spinbox_max_ram.value(),
+            convert_to_8_bit=self.ui.checkbox_load_8bit.isChecked(),
+            normalize=self.ui.checkbox_load_normalize.isChecked(),
+            grayscale=self.ui.checkbox_load_grayscale.isChecked(),
+            floor_abs=None,
+        )
+        self._web_connection.ingest_started.connect(self._on_web_ingest_started)
+        self._web_connection.ingest_progress.connect(self._on_web_ingest_progress)
+        self._web_connection.ingest_opening.connect(self._on_web_ingest_opening)
+        self._web_connection.ingest_failed.connect(self._on_web_ingest_failed)
         self._web_connection.image_received.connect(self.end_web_connection)
         self._web_connection.start()
         self.ui.button_connect.setEnabled(False)
@@ -2333,43 +2368,110 @@ class MainWindow(QMainWindow):
         self.ui.address_edit.setEnabled(False)
         self.ui.token_edit.setEnabled(False)
 
+    def _on_web_ingest_started(self) -> None:
+        self._web_ingest_active = True
+        log("[NET] Receiving stack…", color="orange")
+        self.ui.button_connect.setText("Downloading…")
+        self.ui.blocking_status.setText("NET")
+        self.ui.blocking_status.setStyleSheet(get_style("scan"))
+        self.statusBar().setStyleSheet(get_style("statusbar_busy"))
+        self.statusBar().showMessage("Network: downloading stack…")
+
+    def _on_web_ingest_progress(self, got: int, total: int) -> None:
+        if total > 0:
+            pct = min(99, int(100 * got / total))
+            self.ui.button_connect.setText(f"Downloading {pct}%")
+            self.ui.blocking_status.setText(f"NET {pct}%")
+            self.statusBar().showMessage(
+                f"Network: downloading {got / (1024 * 1024):.0f} / "
+                f"{total / (1024 * 1024):.0f} MB"
+            )
+        else:
+            mb = got / (1024 * 1024)
+            self.ui.button_connect.setText(f"Downloading {mb:.0f} MB")
+            self.ui.blocking_status.setText("NET")
+            self.statusBar().showMessage(f"Network: downloading {mb:.0f} MB")
+
+    def _on_web_ingest_opening(self) -> None:
+        self.ui.button_connect.setText("Opening stack…")
+        self.ui.blocking_status.setText("BUSY")
+        self.ui.blocking_status.setStyleSheet(get_style("busy"))
+        self.statusBar().showMessage("Network: opening stack…")
+        QApplication.processEvents()
+
+    def _on_web_ingest_failed(self) -> None:
+        if self.ui.button_disconnect.isEnabled():
+            self._restore_web_listening_ui()
+        self.statusBar().showMessage("Network: download failed — still listening")
+
+    def _restore_web_listening_ui(self) -> None:
+        self.ui.button_connect.setText("Listening...")
+        self.ui.blocking_status.setText("IDLE")
+        self.ui.blocking_status.setStyleSheet(get_style("idle"))
+        self.statusBar().setStyleSheet(get_style("statusbar_idle"))
+        self.statusBar().showMessage("Network: listening")
+
     def end_web_connection(
         self, img: ImageData | None, index: int | None = None
     ) -> None:
         if img is not None:
-            if index is not None:
-                self._web_suppress_emit_index = True
-                self._web_restore_index_after_reset = index
-            self.ui.image_viewer.set_image(img)
-            if index is not None:
-                n = max(1, img.n_images)
-                idx = max(0, min(index, n - 1))
-                self.ui.image_viewer.setCurrentIndex(idx)
-                self.ui.image_viewer.timeLine.setPos((idx, 0))
-                self.ui.spinbox_current_frame.blockSignals(True)
-                self.ui.spinbox_current_frame.setMaximum(max(0, n - 1))
-                self.ui.spinbox_current_frame.setValue(idx)
-                self.ui.spinbox_current_frame.blockSignals(False)
-            self.reset_options()
-            if index is not None:
-                n = max(1, img.n_images)
-                idx = max(0, min(index, n - 1))
-                self.ui.image_viewer.setCurrentIndex(idx)
-                self.ui.image_viewer.timeLine.setPos((idx, 0))
-                self.ui.spinbox_current_frame.blockSignals(True)
-                self.ui.spinbox_current_frame.setMaximum(max(0, n - 1))
-                self.ui.spinbox_current_frame.setValue(idx)
-                self.ui.spinbox_current_frame.blockSignals(False)
-                self._web_suppress_emit_index = False
-                # Clear web-restore flag after any deferred apply_ops (e.g. singleShot(0)) has run
-                QTimer.singleShot(50, lambda: setattr(self, "_web_restore_index_after_reset", None))
+            ingest = getattr(self, "_web_ingest_active", False)
+
+            def _apply_network_image() -> None:
+                if index is not None:
+                    self._web_suppress_emit_index = True
+                    self._web_restore_index_after_reset = index
+                self.ui.image_viewer.set_image(img)
+                if index is not None:
+                    n = max(1, img.n_images)
+                    idx = max(0, min(index, n - 1))
+                    self.ui.image_viewer.setCurrentIndex(idx)
+                    self.ui.image_viewer.timeLine.setPos((idx, 0))
+                    self.ui.spinbox_current_frame.blockSignals(True)
+                    self.ui.spinbox_current_frame.setMaximum(max(0, n - 1))
+                    self.ui.spinbox_current_frame.setValue(idx)
+                    self.ui.spinbox_current_frame.blockSignals(False)
+                self.reset_options()
+                if index is not None:
+                    n = max(1, img.n_images)
+                    idx = max(0, min(index, n - 1))
+                    self.ui.image_viewer.setCurrentIndex(idx)
+                    self.ui.image_viewer.timeLine.setPos((idx, 0))
+                    self.ui.spinbox_current_frame.blockSignals(True)
+                    self.ui.spinbox_current_frame.setMaximum(max(0, n - 1))
+                    self.ui.spinbox_current_frame.setValue(idx)
+                    self.ui.spinbox_current_frame.blockSignals(False)
+                    self._web_suppress_emit_index = False
+                    QTimer.singleShot(
+                        50,
+                        lambda: setattr(self, "_web_restore_index_after_reset", None),
+                    )
+
+            if ingest:
+                with LoadingManager(
+                    self,
+                    "Applying network stack…",
+                    blocking_label=self.ui.blocking_status,
+                    statusbar=self.statusBar(),
+                    blocking_delay_ms=0,
+                ):
+                    _apply_network_image()
+                self._web_ingest_active = False
+                self._restore_web_listening_ui()
+            else:
+                _apply_network_image()
         else:
+            self._web_ingest_active = False
             self._web_connection.stop()
             self.ui.address_edit.setEnabled(True)
             self.ui.token_edit.setEnabled(True)
             self.ui.button_connect.setEnabled(True)
             self.ui.button_connect.setText("Connect")
             self.ui.button_disconnect.setEnabled(False)
+            self.ui.blocking_status.setText("IDLE")
+            self.ui.blocking_status.setStyleSheet(get_style("idle"))
+            self.statusBar().setStyleSheet(get_style("statusbar_idle"))
+            self.statusBar().clearMessage()
             self._web_connection.deleteLater()
 
     def show_simulated_live(self) -> None:
@@ -2582,6 +2684,7 @@ class MainWindow(QMainWindow):
                     normalize=
                         self.ui.checkbox_load_normalize.isChecked(),
                     grayscale=self.ui.checkbox_load_grayscale.isChecked(),
+                    floor_abs=self._floor_abs_from_ui(),
                     mask=mask,
                     crop=crop,
                 )
@@ -2658,6 +2761,7 @@ class MainWindow(QMainWindow):
             "convert_to_8_bit": self.ui.checkbox_load_8bit.isChecked(),
             "normalize": self.ui.checkbox_load_normalize.isChecked(),
             "grayscale": self.ui.checkbox_load_grayscale.isChecked(),
+            "floor_abs": self._floor_abs_from_ui(),
         }
 
         mixed_size_policy = None

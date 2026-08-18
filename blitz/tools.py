@@ -323,6 +323,14 @@ def format_pixel_value(
         return f"{v:.2f}"
 
 
+def _format_pixel_scalar_fixed(v: float, width: int) -> str:
+    if np.isfinite(v) and v == int(v):
+        return f"{int(v):{width}d}"
+    if np.isfinite(v):
+        return f"{v:{width}.2f}"
+    return f"{v}"
+
+
 def format_pixel_value_fixed(
     value: np.ndarray | Sequence[float | int] | None,
     bits: int,
@@ -334,8 +342,6 @@ def format_pixel_value_fixed(
         return "—" if not is_rgb else "(—, —, —)"
     arr = np.asarray(value)
     if is_rgb and arr.size >= 3:
-        parts = arr.flatten()[:3]
-        vals = [int(round(float(p))) for p in parts]
-        return f"({vals[0]:{width}d},{vals[1]:{width}d},{vals[2]:{width}d})"
-    v = int(round(float(arr.flat[0])))
-    return f"{v:{width}d}"
+        parts = [_format_pixel_scalar_fixed(float(p), width) for p in arr.flatten()[:3]]
+        return f"({parts[0]},{parts[1]},{parts[2]})"
+    return _format_pixel_scalar_fixed(float(arr.flat[0]), width)

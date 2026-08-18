@@ -69,6 +69,7 @@ There is no separate toolbar; actions live in the menu bar, Options tabs, and do
 | **8 bit** | Fixed dtype scale to 8-bit (RAM) | No per-image brightness stretch |
 | **Normalize each image** | Per-frame stretch to full range | Independent of 8-bit; works for 8/16-bit and float |
 | **grayscale** | RGB → luminance (default on) | RAM / speed |
+| **Floor \|v\|** | Opt-in: `\|v\| < thr` → 0 on **File / Folder** `.npy` load | Lossy; default off; **no RAM win**. **Not** applied to Network / Stream / Event reader. |
 | **size ratio** | Spatial downsample `[0, 1]` | Width & height scale |
 | **subset ratio** | Temporal subsample `[0, 1]` | e.g. `0.1` ≈ every 10th frame |
 | **max. RAM** | Cap load buffer | Bound by available RAM |
@@ -206,7 +207,7 @@ Requires `T ≥ 2` and non-aggregate view. Approximate defaults: `n_oversamples=
 | **Generate Synthetic Live Data Stream** | Lissajous / Lightning ring buffer | No hardware; FPS, resolution, grayscale, exposure knobs |
 | **Game of Life** | Classic Conway B3/S23 ring buffer | Sibling; W64×H128; Classic 0/1 or Ember 0…N; cell scale 1; pattern icons; Speed live; scrub after Stop |
 | **Webcam** | USB camera via OpenCV | Exposure, gain, brightness, contrast; ring buffer |
-| **Network Address / Token** | Remote `.npy` ingest | Socket.IO + HTTP download; sync viewer index / selection |
+| **Network Address / Token** | Remote `.npy` ingest | Socket.IO + HTTP download; **NET** + % while downloading, **BUSY** while opening; index-only WOLKE sync stays quiet |
 
 ---
 
@@ -313,7 +314,7 @@ Aggregate result feeds Ops **Range** subtract/divide sources.
 
 ### Load-time transforms (dialogs)
 
-Frame range / step (video), resize, 8-bit, grayscale, normalize, pre-load ROI + Flip X/Y/XY, mixed-size policy.
+Frame range / step (video), resize, 8-bit, grayscale, normalize, pre-load ROI + Flip X/Y/XY, mixed-size policy. File-tab **Floor |v|** applies to File / Folder `.npy` only (not Network / Stream).
 
 ---
 

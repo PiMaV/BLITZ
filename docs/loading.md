@@ -41,7 +41,7 @@ load_images(folder)
 
 ### Quellen der Parameter
 
-1. **Load-Tab (UI)**: `size_ratio`, `subset_ratio`, `max_ram`, `convert_to_8_bit`, `grayscale`
+1. **Load-Tab (UI)**: `size_ratio`, `subset_ratio`, `max_ram`, `convert_to_8_bit`, `grayscale`, `floor_abs`
 2. **Video-Dialog** (wenn geoeffnet): `frame_range`, `step`, `size_ratio`, `grayscale`, `mask`, `mask_rel`
 3. **Session-Defaults** (`_video_session_defaults`): Letzte Einstellungen aus dem Video-Dialog
 
@@ -119,6 +119,7 @@ load_images(path)
 ## DataLoader-Parameter
 
 - `size_ratio`, `subset_ratio`, `max_ram`, `convert_to_8_bit`, `grayscale`, `normalize`, `mask`, `crop`
+- `floor_abs` (optional float): File-tab **Floor |v|**. After `np.load`, before 8-bit/resize, set `|v| < floor_abs` to 0. Default `None` (off). Lossy; does not reduce RAM. Logged in load provenance. **File / Folder only** — Network / Stream / Event reader never apply Floor.
 - `file_list`: explizite Dateiliste vom Folder-Chooser (kein silent majority)
 - `mixed_size_policy`: `"crop_min"` nach Mixed-Sizes-Dialog
 - `frame_range`, `step`: nur fuer Video, via `load(path, frame_range=..., step=...)`

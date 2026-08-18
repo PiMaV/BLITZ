@@ -10,6 +10,36 @@ Fuer Standard vs. Full Build, Loader/Converter/Handler und die Dependency-Regel 
 
 BLITZ is a Python-based image viewer and analysis tool built with **PyQt6** and **PyQtGraph**. It is designed to handle large datasets by loading them into memory (RAM) and offering efficient slicing, aggregation, and visualization.
 
+Network `.npy` ingest: Event reader is uncompressed by default (localhost);
+WOLKE may still gzip when the client asks. The Connect button and the **NET** /
+**BUSY** badge show download percent and opening so a large stack is not silent.
+After load, `ImageData` is still a dense NumPy cube. Optional File-tab
+**Floor |v|** zeros values below a threshold (lossy, default off) without
+shrinking RAM — File / Folder load only, never Network / Stream.
+
+```mermaid
+flowchart LR
+  subgraph produce [Producer]
+    evt["EVT bin then uint8"]
+    wolke["WOLKE np.save"]
+  end
+  subgraph wire [HTTP]
+    A["A: optional gzip of dense npy"]
+  end
+  subgraph blitzLoad [BLITZ]
+    dl["DataLoader"]
+    C["C: opt-in abs v less thr to 0"]
+    idata["ImageData dense RAM"]
+  end
+  evt --> A
+  wolke --> A
+  A --> dl
+  dl --> C
+  C --> idata
+```
+
+See [`../WETTER/docs/sparse_matrices.md`](../WETTER/docs/sparse_matrices.md).
+
 ## Directory Structure
 
 *   **`blitz/`**: The main package.

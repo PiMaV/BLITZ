@@ -34,6 +34,8 @@ _default_core_settings = {
     "default/load_8bit": False,
     "default/load_normalize": False,
     "default/load_grayscale": True,
+    "default/load_floor_abs": False,
+    "default/load_floor_abs_value": 0.0,
     "default/max_ram": 2.,
     "default/show_load_dialog": True,
     "default/colormap": "plasma",

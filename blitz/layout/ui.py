@@ -531,6 +531,32 @@ class UI_MainWindow(QWidget):
         self.checkbox_load_grayscale.setChecked(True)
         load_hlay.addWidget(self.checkbox_load_grayscale)
         import_layout.addLayout(load_hlay)
+        floor_hlay = QHBoxLayout()
+        self.checkbox_load_floor_abs = QCheckBox("Floor |v|")
+        self.checkbox_load_floor_abs.setChecked(False)
+        self.checkbox_load_floor_abs.setToolTip(
+            "Opt-in for File / Folder load only: set |v| < threshold to 0 "
+            "(lossy). Not applied to Network / Stream / Event reader. "
+            "Does not reduce RAM — zeros still occupy the dense cube. "
+            "Default off so radiometric / °C floats stay intact."
+        )
+        floor_hlay.addWidget(self.checkbox_load_floor_abs)
+        self.spinbox_load_floor_abs = QDoubleSpinBox()
+        self.spinbox_load_floor_abs.setRange(0.0, 1e12)
+        self.spinbox_load_floor_abs.setDecimals(6)
+        self.spinbox_load_floor_abs.setValue(0.0)
+        self.spinbox_load_floor_abs.setSingleStep(0.1)
+        self.spinbox_load_floor_abs.setPrefix("thr: ")
+        self.spinbox_load_floor_abs.setEnabled(False)
+        self.spinbox_load_floor_abs.setToolTip(
+            "Absolute threshold in source units (e.g. °C or DN). "
+            "Applied only when Floor |v| is checked."
+        )
+        self.checkbox_load_floor_abs.toggled.connect(
+            self.spinbox_load_floor_abs.setEnabled
+        )
+        floor_hlay.addWidget(self.spinbox_load_floor_abs)
+        import_layout.addLayout(floor_hlay)
         self.spinbox_load_size = QDoubleSpinBox()
         self.spinbox_load_size.setRange(0, 1)
         self.spinbox_load_size.setValue(1)

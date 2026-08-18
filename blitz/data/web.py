@@ -2,6 +2,7 @@ import os
 import tempfile
 from pathlib import Path
 from queue import Empty, Queue
+from urllib.parse import urlparse
 
 import requests
 import socketio
@@ -13,6 +14,11 @@ from .. import settings
 from ..tools import log
 from .image import ImageData
 from .load import DataLoader
+
+
+def _loopback_http_target(url: str) -> bool:
+    host = (urlparse(url).hostname or "").lower()
+    return host in {"127.0.0.1", "localhost", "::1"}
 
 
 class _WebSocket(QObject):
@@ -84,6 +90,7 @@ class _WebSocket(QObject):
 class _WebDownloader(QObject):
 
     download_finished = pyqtSignal(object)
+    download_progress = pyqtSignal(int, int)  # bytes_got, bytes_total (0 if unknown)
 
     def __init__(self, target_address: str) -> None:
         super().__init__()
@@ -97,7 +104,17 @@ class _WebDownloader(QObject):
         while attempts < max_attempts:
             try:
                 # (connect, read) — read must allow large .npy from WOLKE / sidecars
-                response = requests.get(self._target, timeout=(timeout, timeout))
+                headers = None
+                if _loopback_http_target(self._target):
+                    # Same machine: zip+unzip is CPU for no bandwidth. EVT gzip is
+                    # opt-in anyway; this keeps WOLKE on localhost uncompressed too.
+                    headers = {"Accept-Encoding": "identity"}
+                response = requests.get(
+                    self._target,
+                    timeout=(timeout, timeout),
+                    stream=True,
+                    headers=headers,
+                )
             except (ConnectTimeout, RequestException) as e:
                 log(
                     f"[NET] Connection error: {e}, "
@@ -108,13 +125,39 @@ class _WebDownloader(QObject):
             else:
                 break
         if response is not None and response.status_code == 200:
+            total = 0
+            try:
+                total = int(response.headers.get("Content-Length") or 0)
+            except (TypeError, ValueError):
+                total = 0
+            got = 0
             with tempfile.NamedTemporaryFile(suffix=".npy", delete=False) as f:
-                f.write(response.content)
+                for chunk in _iter_response_bytes(response):
+                    f.write(chunk)
+                    got += len(chunk)
+                    self.download_progress.emit(got, total)
+                if got == 0:
+                    body = response.content or b""
+                    f.write(body)
+                    got = len(body)
+                    self.download_progress.emit(got, total)
                 cache_file = Path(f.name)
-            log(
-                f"[NET] Downloaded {len(response.content) / (1024*1024):.1f} MB",
-                color="green",
-            )
+            raw_mb = got / (1024 * 1024)
+            enc = response.headers.get("Content-Encoding", "")
+            if total:
+                wire_mb = total / (1024 * 1024)
+                extra = (
+                    f", {enc} {wire_mb:.1f} MB on wire"
+                    if enc
+                    else f", {wire_mb:.1f} MB Content-Length"
+                )
+                log(f"[NET] Downloaded {raw_mb:.1f} MB{extra}", color="green")
+            else:
+                log(f"[NET] Downloaded {raw_mb:.1f} MB", color="green")
+            try:
+                response.close()
+            except Exception:
+                pass
             self.download_finished.emit(cache_file)
             return
         elif response is None:
@@ -125,12 +168,42 @@ class _WebDownloader(QObject):
                 f"{self._target.split('filename=')[1]}",
                 color="red",
             )
+        if response is not None:
+            try:
+                response.close()
+            except Exception:
+                pass
         self.download_finished.emit(None)
+
+
+def _iter_response_bytes(response, chunk_size: int = 256 * 1024):
+    """Yield real byte chunks; ignore non-bytes iterators (unit-test mocks)."""
+    iterator = getattr(response, "iter_content", None)
+    if not callable(iterator):
+        return
+    try:
+        chunks = iterator(chunk_size=chunk_size)
+    except TypeError:
+        chunks = iterator()
+    if chunks is None:
+        return
+    try:
+        for chunk in chunks:
+            if isinstance(chunk, (bytes, bytearray)) and chunk:
+                yield bytes(chunk)
+            elif not isinstance(chunk, (bytes, bytearray)):
+                return
+    except TypeError:
+        return
 
 
 class WebDataLoader(QObject):
 
     image_received = pyqtSignal(object, object)
+    ingest_started = pyqtSignal()
+    ingest_progress = pyqtSignal(int, int)  # bytes_got, bytes_total (0 if unknown)
+    ingest_opening = pyqtSignal()
+    ingest_failed = pyqtSignal()
 
     def __init__(self, target_address: str, token: str, **kwargs) -> None:
         super().__init__()
@@ -183,11 +256,13 @@ class WebDataLoader(QObject):
         target += f"?filename={file_name}"
 
         # Fresh QThread per download — a finished QThread cannot be restarted
+        self.ingest_started.emit()
         self._download_busy = True
         self._download_thread = QThread()
         self._downloader = _WebDownloader(target)
         self._downloader.moveToThread(self._download_thread)
         self._download_thread.started.connect(self._downloader.download)
+        self._downloader.download_progress.connect(self.ingest_progress)
         self._downloader.download_finished.connect(self._finish_download)
         self._download_thread.start()
 
@@ -204,6 +279,7 @@ class WebDataLoader(QObject):
         self._download_busy = False
         if path is not None:
             try:
+                self.ingest_opening.emit()
                 img = DataLoader(**self._load_kwargs).load(path)
                 if self._pending_file_name == "__selection__.npy":
                     self._selection_imagedata = img
@@ -220,6 +296,7 @@ class WebDataLoader(QObject):
                 log(f"[NET] Error loading downloaded file: {e}", color="red")
                 # Keep socket listening; only a None payload from the socket
                 # tears down the connection (see end_web_connection).
+                self.ingest_failed.emit()
                 return
             finally:
                 try:
@@ -228,6 +305,7 @@ class WebDataLoader(QObject):
                     log(f"[NET] Failed to remove temp file: {path}", color="orange")
         else:
             log("[NET] Download failed — still listening for next push", color="orange")
+            self.ingest_failed.emit()
 
     def emit_index(self, index: int) -> None:
         """Tell WOLKE which row index is shown (BLITZ -> WOLKE sync)."""

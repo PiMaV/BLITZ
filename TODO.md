@@ -11,6 +11,9 @@ Related: [`docs/missing_features.md`](docs/missing_features.md) (hidden UI / con
 
 ## Recently done (this stretch)
 
+- **v2.0.15** Network ingest: **NET** / percent while the `.npy` downloads, **BUSY**
+  while it opens (large Event-reader stacks were silent before). Loopback
+  downloads skip gzip (`Accept-Encoding: identity`).
 - **v2.0.14** Network `.npy` load: pickle crash when stacks exceeded the
   multicore size threshold (`Can't get local object DataLoader._load_array…`)
 - **v2.0.13** Conway Game of Life (Stream sibling to Synthetic Live): Classic B3/S23
@@ -199,6 +202,5 @@ Hidden UI (crop widget) and pure concepts (autograd, ML broken-file detection): 
 
 `docs/sources_and_variants.md` still describes Standard/Full EXE — historical until updated (“add-ons outside + Flatpak”).
 
-**WETTER-wide (not BLITZ-only):** thinly populated matrices, compression, optional
-threshold-as-absent — see
-[`../WETTER/docs/sparse_matrices.md`](../WETTER/docs/sparse_matrices.md).
+**WETTER-wide:** thinly populated matrices — HTTP gzip (**A**) and opt-in Floor |v|
+(**C**) — see [`../WETTER/docs/sparse_matrices.md`](../WETTER/docs/sparse_matrices.md).

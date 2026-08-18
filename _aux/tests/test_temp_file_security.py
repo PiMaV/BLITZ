@@ -38,6 +38,7 @@ def _install_mocks():
         ('cv2', MagicMock()),
         ('numpy', MagicMock()),
         ('natsort', MagicMock()),
+        ('pyqtgraph', MagicMock()),
     ]
     for name, mock in mods:
         orig[name] = sys.modules.get(name)
@@ -66,6 +67,10 @@ def _install_mocks():
 
     sys.modules['blitz.data.tools'] = mock_module('blitz.data.tools')
     sys.modules['blitz.layout'] = mock_module('blitz.layout')
+
+    image_mod = mock_module('blitz.data.image')
+    image_mod.ImageData = MagicMock()
+    sys.modules['blitz.data.image'] = image_mod
 
     # blitz.data.web often pre-loaded with real PyQt6; force reload with mocks
     sys.modules.pop('blitz.data.web', None)
