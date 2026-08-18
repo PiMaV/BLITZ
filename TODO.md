@@ -11,6 +11,8 @@ Related: [`docs/missing_features.md`](docs/missing_features.md) (hidden UI / con
 
 ## Recently done (this stretch)
 
+- **v2.0.14** Network `.npy` load: pickle crash when stacks exceeded the
+  multicore size threshold (`Can't get local object DataLoader._load_array…`)
 - **v2.0.13** Conway Game of Life (Stream sibling to Synthetic Live): Classic B3/S23
   ring buffer, Ember decay `0…N`, pattern preview, LUT pin; docs + backlog notes
 - **Folder load chooser**: mixed folders → pick group (images / video / npy / ASCII / HIKMICRO °C); naming-schema clusters; file list + preview
