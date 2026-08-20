@@ -463,11 +463,34 @@ QTabWidget::pane {
 QTabBar::tab {
     background-color: #1f2335;
     color: #565f89;
-    padding: 8px 16px;
+    padding: 6px 10px;
     margin-right: 2px;
 }
-QTabBar::tab:selected { color: #7aa2f7; font-weight: bold; background-color: #1a1b26; border: 1px solid #3b4261; border-bottom: none; }
+QTabBar::tab:selected { color: #7aa2f7; font-weight: bold; background-color: #1a1b26; border: 1px solid #3b4261; border-bottom: 2px solid #7aa2f7; }
 QTabBar::tab:hover:!selected { color: #a9b1d6; }
+
+QPushButton#optTab {
+    background-color: #1f2335;
+    color: #565f89;
+    border: 1px solid #3b4261;
+    border-radius: 4px;
+    padding: 6px 10px;
+    min-width: 0px;
+    font-size: 9pt;
+}
+QPushButton#optTab:hover:!checked { color: #a9b1d6; }
+QPushButton#optTab:checked {
+    color: #7aa2f7;
+    font-weight: bold;
+    background-color: #1a1b26;
+    border: 1px solid #3b4261;
+    border-bottom: 2px solid #7aa2f7;
+}
+QStackedWidget#optTabPane {
+    border: 1px solid #3b4261;
+    border-radius: 4px;
+    background-color: #1a1b26;
+}
 
 QMenuBar { background-color: #1a1b26; color: #a9b1d6; border-bottom: 1px solid #3b4261; }
 QMenuBar::item:selected { background-color: #24283b; color: #7aa2f7; }
@@ -628,11 +651,34 @@ QTabWidget::pane {
 QTabBar::tab {
     background-color: #e0e2e8;
     color: #565f89;
-    padding: 8px 16px;
+    padding: 6px 10px;
     margin-right: 2px;
 }
-QTabBar::tab:selected { color: #7aa2f7; font-weight: bold; background-color: #d5d6db; border: 1px solid #9aa5ce; border-bottom: none; }
+QTabBar::tab:selected { color: #7aa2f7; font-weight: bold; background-color: #d5d6db; border: 1px solid #9aa5ce; border-bottom: 2px solid #7aa2f7; }
 QTabBar::tab:hover:!selected { color: #1a1b26; }
+
+QPushButton#optTab {
+    background-color: #e0e2e8;
+    color: #565f89;
+    border: 1px solid #9aa5ce;
+    border-radius: 4px;
+    padding: 6px 10px;
+    min-width: 0px;
+    font-size: 9pt;
+}
+QPushButton#optTab:hover:!checked { color: #1a1b26; }
+QPushButton#optTab:checked {
+    color: #7aa2f7;
+    font-weight: bold;
+    background-color: #d5d6db;
+    border: 1px solid #9aa5ce;
+    border-bottom: 2px solid #7aa2f7;
+}
+QStackedWidget#optTabPane {
+    border: 1px solid #9aa5ce;
+    border-radius: 4px;
+    background-color: #d5d6db;
+}
 
 QMenuBar { background-color: #d5d6db; color: #565f89; border-bottom: 1px solid #9aa5ce; }
 QMenuBar::item:selected { background-color: #e0e2e8; color: #7aa2f7; }

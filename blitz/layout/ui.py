@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (QAbstractSpinBox, QApplication, QButtonGroup,
                              QGridLayout, QGroupBox, QHBoxLayout, QLabel,
                              QLayout, QLineEdit, QMenu, QMenuBar,
                              QPushButton, QRadioButton, QScrollArea, QSizePolicy,
-                             QSlider, QSplitter, QSpinBox, QStatusBar, QTabWidget,
+                             QSlider, QSplitter, QSpinBox, QStatusBar,
                              QTableWidget, QVBoxLayout, QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
 
@@ -18,6 +18,7 @@ from ..data.ops import ReduceOperation, reduce_display_name
 from .. import settings
 from ..theme import get_style, get_plot_bg, get_agg_groupbox_stylesheet, get_agg_separator_stylesheet
 from ..tools import LoggingTextEdit, get_available_ram, setup_logger
+from .tabbar import OptionsTabWidget
 from .bench_compact import BenchCompact
 from .bench_data import BenchData
 from .bench_sparklines import BenchSparklines
@@ -480,13 +481,12 @@ class UI_MainWindow(QWidget):
         self.option_tabwidget.addTab(scrollarea, name)
 
     def setup_option_dock(self) -> None:
-        self.option_tabwidget = QTabWidget()
-        self.dock_option.addWidget(self.option_tabwidget)
-        self.option_tabwidget.setStyleSheet(
-            "QTabWidget::pane { border: 1px solid #3b4261; border-radius: 4px; } "
-            "QTabBar::tab:selected { color: #7aa2f7; font-weight: bold; } "
-            "font-size: 9pt;"
+        self.option_tabwidget = OptionsTabWidget()
+        self.option_tabwidget.setToolTip(
+            "Option pages wrap onto extra rows — Stream and Log stay visible "
+            "(no hidden tabs off to the right)."
         )
+        self.dock_option.addWidget(self.option_tabwidget)
 
         # --- File ---
         file_layout = QVBoxLayout()
@@ -1377,7 +1377,7 @@ class UI_MainWindow(QWidget):
         self.button_real_camera = QPushButton("Webcam")
         self.button_real_camera.setToolTip("Real camera (USB webcam)")
         stream_layout.addWidget(self.button_real_camera)
-        connect_label = QLabel("Network")
+        connect_label = QLabel("Connect (EVT / WOLKE)")
         connect_label.setStyleSheet(get_style("heading"))
         stream_layout.addWidget(connect_label)
         address_label = QLabel("Address:")

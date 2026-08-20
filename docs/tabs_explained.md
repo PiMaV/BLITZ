@@ -37,7 +37,7 @@ Source-backed inventory of BLITZ analysis, visualization, and data-processing ca
 | **H Plot** / **V Plot** | Crosshair line profiles (horizontal / vertical) |
 | **Probe** | Frames count, cursor position, LUT-mapped color + swatch |
 | **LUT** | Histogram LUT, levels, colormap, Fit / Trim, IDLE + Bench compact |
-| **Options** | Tabbed control panel (File → Log) |
+| **Options** | Tabbed control panel (File → Log). Tabs **wrap onto extra rows** so later pages (Stream, Log) stay visible instead of hiding off to the right. |
 | **Timeline** | ROI time series + Frame \| Range side panel |
 | **Polyline** | Path-intensity profile (starts hidden; Tools → Show) |
 
@@ -221,12 +221,14 @@ Requires `T ≥ 2` and non-aggregate view. Approximate defaults: `n_oversamples=
 
 ## Stream Tab
 
+This is the page **EVT** and **WOLKE** tell you to open (there is no separate Network tab). Tabs wrap onto extra rows so Stream stays visible in a narrow Options dock.
+
 | Control | What it does | Notes |
 |---------|--------------|-------|
 | **Generate Synthetic Live Data Stream** | Lissajous / Lightning ring buffer | No hardware; FPS, resolution, grayscale, exposure knobs |
 | **Game of Life** | Classic Conway B3/S23 ring buffer | Sibling; W64×H128; Classic 0/1 or Ember 0…N; cell scale 1; pattern icons; Speed live; scrub after Stop |
 | **Webcam** | USB camera via OpenCV | Exposure, gain, brightness, contrast; ring buffer |
-| **Network Address / Token** | Remote `.npy` ingest | Socket.IO + HTTP download; **NET** + % while downloading, **BUSY** while opening; index-only WOLKE sync seeks the cached cube (no reload, no BUSY, ROI/options kept) |
+| **Connect (EVT / WOLKE)** | Remote `.npy` ingest | Socket.IO + HTTP download; **NET** + % while downloading, **BUSY** while opening; index-only WOLKE sync seeks the cached cube (no reload, no BUSY, ROI/options kept) |
 
 ---
 
