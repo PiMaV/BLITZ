@@ -1199,6 +1199,19 @@ class UI_MainWindow(QWidget):
         self.slider_shade_z.setRange(1, 200)
         self.slider_shade_z.setValue(10)
         shade_layout.addWidget(self.slider_shade_z)
+        shade_precached_group = QGroupBox("Pre-cache")
+        shade_precached_layout = QVBoxLayout()
+        self.checkbox_shade_precached = QCheckBox("Pre-cache azimuth (30°)")
+        self.checkbox_shade_precached.setChecked(False)
+        self.checkbox_shade_precached.setToolTip(
+            "Freeze elevation and Z factor, then pre-render hillshade at 30° "
+            "azimuth steps in the background. Azimuth scrub then swaps cached "
+            "frames instead of recomputing. Paint optimization only — analysis "
+            "still uses height."
+        )
+        shade_precached_layout.addWidget(self.checkbox_shade_precached)
+        shade_precached_group.setLayout(shade_precached_layout)
+        shade_layout.addWidget(shade_precached_group)
         self.label_shade_status = QLabel(
             "Artificial sun · analysis always uses height"
         )

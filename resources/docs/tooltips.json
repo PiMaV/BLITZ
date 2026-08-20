@@ -101,5 +101,6 @@
     "slider_shade_elevation": "Light elevation 0–90°. Same as the Elevation spinner.",
     "spinbox_shade_z": "Vertical exaggeration before shading. Higher values deepen slopes (more dramatic relief). Step 0.5.",
     "slider_shade_z": "Vertical exaggeration (Z factor). Same as the Z factor spinner.",
+    "checkbox_shade_precached": "Freeze elevation and Z factor, then pre-render hillshade at 30° azimuth steps in the background. Azimuth scrub then swaps cached frames instead of recomputing. Paint optimization only — analysis still uses height.",
     "label_shade_status": "Reminds that Preview is view chrome only; analysis always uses height."
 }

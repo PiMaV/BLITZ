@@ -190,7 +190,8 @@ Blend / real-sun / GeoTIFF remain parked. Arrival Map / optical-flow overlays
 and a generic Overlay tab are **not** planned.
 
 Optional later (optimization only): cache shade for the current az/elev/Z over
-`T` so timeline scrub stays smooth; a coarse angle atlas is a further opt.
+`T` so timeline scrub stays smooth. The 30° azimuth atlas (current frame) is
+implemented as Shade **Pre-cache**.
 
 ### TOF → auxiliary curve
 

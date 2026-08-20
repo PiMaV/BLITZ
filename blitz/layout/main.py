@@ -80,6 +80,7 @@ from .dialogs import (AsciiLoadOptionsDialog, CropTimelineDialog,
 from .export_dialog import run_export
 from .isoline import IsolineAdapter
 from .rosee import ROSEEAdapter
+from ..data.hillshade import snap_azimuth_deg
 from .shade import ShadeAdapter
 from .conway_life import ConwayLifeWidget
 from .simulated_live import SimulatedLiveWidget
@@ -566,6 +567,9 @@ class MainWindow(QMainWindow):
         )
         self.ui.spinbox_shade_z.valueChanged.connect(self._on_shade_z_spin)
         self.ui.slider_shade_z.valueChanged.connect(self._on_shade_z_slider)
+        self.ui.checkbox_shade_precached.stateChanged.connect(
+            self._on_shade_precached
+        )
         self.ui.checkbox_rosee_h.stateChanged.connect(self.toggle_rosee)
         self.ui.checkbox_rosee_v.stateChanged.connect(self.toggle_rosee)
         self.ui.checkbox_rosee_local_extrema.stateChanged.connect(
@@ -1068,6 +1072,12 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_shade_preview.blockSignals(True)
         self.ui.checkbox_shade_preview.setChecked(False)
         self.ui.checkbox_shade_preview.blockSignals(False)
+        self.ui.checkbox_shade_precached.blockSignals(True)
+        self.ui.checkbox_shade_precached.setChecked(False)
+        self.ui.checkbox_shade_precached.blockSignals(False)
+        self._set_shade_elev_z_enabled(True)
+        self._set_shade_azimuth_step(5)
+        self.shade_adapter.set_precached(False)
         self.shade_adapter.set_preview(False)
         self.ui.spinbox_shade_azimuth.setValue(315.0)
         self.ui.slider_shade_azimuth.setValue(315)
@@ -3323,15 +3333,73 @@ class MainWindow(QMainWindow):
             self.ui.dock_polyline.hide()
 
     def _on_shade_preview(self) -> None:
-        self.shade_adapter.set_preview(self.ui.checkbox_shade_preview.isChecked())
+        on = self.ui.checkbox_shade_preview.isChecked()
+        if not on and self.ui.checkbox_shade_precached.isChecked():
+            self.ui.checkbox_shade_precached.blockSignals(True)
+            self.ui.checkbox_shade_precached.setChecked(False)
+            self.ui.checkbox_shade_precached.blockSignals(False)
+            self._set_shade_elev_z_enabled(True)
+            self._set_shade_azimuth_step(5)
+            self.shade_adapter.set_precached(False)
+        self.shade_adapter.set_preview(on)
+
+    def _on_shade_precached(self) -> None:
+        on = self.ui.checkbox_shade_precached.isChecked()
+        if on:
+            if not self.ui.checkbox_shade_preview.isChecked():
+                self.ui.checkbox_shade_preview.blockSignals(True)
+                self.ui.checkbox_shade_preview.setChecked(True)
+                self.ui.checkbox_shade_preview.blockSignals(False)
+            self._set_shade_elev_z_enabled(False)
+            self._set_shade_azimuth_step(30)
+            snapped = self._snap_shade_azimuth_ui(
+                self.ui.spinbox_shade_azimuth.value()
+            )
+            self.shade_adapter.set_params(azimuth=snapped)
+            self.shade_adapter.set_precached(True)
+            return
+        self._set_shade_elev_z_enabled(True)
+        self._set_shade_azimuth_step(5)
+        self.shade_adapter.set_precached(False)
+
+    def _set_shade_elev_z_enabled(self, enabled: bool) -> None:
+        for widget in (
+            self.ui.spinbox_shade_elevation,
+            self.ui.slider_shade_elevation,
+            self.ui.spinbox_shade_z,
+            self.ui.slider_shade_z,
+        ):
+            widget.setEnabled(enabled)
+
+    def _set_shade_azimuth_step(self, step: int) -> None:
+        self.ui.spinbox_shade_azimuth.setSingleStep(float(step))
+        self.ui.slider_shade_azimuth.setSingleStep(step)
+        self.ui.slider_shade_azimuth.setPageStep(step)
+
+    def _snap_shade_azimuth_ui(self, value: float) -> float:
+        snapped = float(snap_azimuth_deg(value))
+        self.ui.spinbox_shade_azimuth.blockSignals(True)
+        self.ui.slider_shade_azimuth.blockSignals(True)
+        self.ui.spinbox_shade_azimuth.setValue(snapped)
+        self.ui.slider_shade_azimuth.setValue(int(snapped))
+        self.ui.spinbox_shade_azimuth.blockSignals(False)
+        self.ui.slider_shade_azimuth.blockSignals(False)
+        return snapped
 
     def _on_shade_azimuth_spin(self, value: float) -> None:
-        self.ui.slider_shade_azimuth.blockSignals(True)
-        self.ui.slider_shade_azimuth.setValue(int(round(value)))
-        self.ui.slider_shade_azimuth.blockSignals(False)
+        if self.shade_adapter.is_precached:
+            value = self._snap_shade_azimuth_ui(value)
+        else:
+            self.ui.slider_shade_azimuth.blockSignals(True)
+            self.ui.slider_shade_azimuth.setValue(int(round(value)))
+            self.ui.slider_shade_azimuth.blockSignals(False)
         self.shade_adapter.set_params(azimuth=value)
 
     def _on_shade_azimuth_slider(self, value: int) -> None:
+        if self.shade_adapter.is_precached:
+            snapped = self._snap_shade_azimuth_ui(float(value))
+            self.shade_adapter.set_params(azimuth=snapped)
+            return
         self.ui.spinbox_shade_azimuth.blockSignals(True)
         self.ui.spinbox_shade_azimuth.setValue(float(value))
         self.ui.spinbox_shade_azimuth.blockSignals(False)

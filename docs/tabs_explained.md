@@ -163,11 +163,24 @@ stack** — that would bake `0…1` shade into `ImageData`. See the
 | Control | What it does | Algorithm / notes |
 |---------|--------------|-------------------|
 | **Preview** | Toggle Lambertian shade overlay | Separate `ImageItem` (z≈0.1); base opacity → 0 while previewing |
-| **Azimuth** | Light direction `0–360°` | `0°` = top (+y), clockwise toward +x |
-| **Elevation** | Sun height `0–90°` | Horizon → zenith |
-| **Z factor** | Vertical exaggeration `0.1–20` | Scales height before `np.gradient` |
+| **Azimuth** | Light direction `0–360°` | `0°` = top (+y), clockwise toward +x; 30° steps while Pre-cache is on |
+| **Elevation** | Sun height `0–90°` | Horizon → zenith; locked while Pre-cache is on |
+| **Z factor** | Vertical exaggeration `0.1–20` | Scales height before `np.gradient`; locked while Pre-cache is on |
+| **Pre-cache azimuth (30°)** | Freeze elev/Z; background 30° atlas | Worker: gradients once, then `n·l` per bin; uint8 overlay swap |
 
-**Math (`calculate_hillshade`):** height from grayscale or luminance `0.299R+0.587G+0.114B` → `dx, dy = ∇z` → unit normal · light vector → shade clipped to `[0, 1]`. Scrub recomputes the current frame. A later cache (current angles over `T`, or a coarse az/elev atlas) is paint optimization only.
+**Math (`calculate_hillshade`):** height from grayscale or luminance `0.299R+0.587G+0.114B` → `dx, dy = ∇z` → unit normal · light vector → shade clipped to `[0, 1]`. Live scrub recomputes the current frame. **Pre-cache** builds a 12-bin azimuth atlas for the current `T` (paint optimization only). Timeline scrub rebuilds that atlas; a cache over all `T` at one angle is still later.
+
+```mermaid
+flowchart TD
+  setup["Set elevation and Z"] --> freeze["Check Pre-cache"]
+  freeze --> lock["Lock elev and Z; snap az to 30 deg"]
+  lock --> worker["QThread: normals once, then 12 az bins"]
+  worker --> hit{"Azimuth bin ready?"}
+  hit -->|yes| swap["setImage from atlas"]
+  hit -->|no| wait["Keep last overlay; status Caching"]
+  worker --> done["All 12 ready"]
+  uncheck["Uncheck Pre-cache"] --> live["Live 80 ms recompute"]
+```
 
 ---
 
@@ -388,7 +401,7 @@ Status visible in **Bench → Numba**.
 | Measure | Tools | Area, circularity, bbox | AU calibration |
 | Polyline profile | Tools + Polyline dock | Path sample + ⊥ band stats | CSV |
 | RoSEE | RoSEE | Cumsum fluctuation extrema | — |
-| Hillshade | Shade | Lambertian `n·l` from `∇z` | Preview only; no Apply |
+| Hillshade | Shade | Lambertian `n·l` from `∇z` | Preview only; no Apply; optional 30° azimuth pre-cache |
 | PCA / SVD | PCA | Exact or randomized SVD | — |
 | LUT levels | LUT dock | Percentile / min-max | (LUT export hidden) |
 | Live / webcam / net | Stream | Ring buffer / OpenCV / Socket.IO | npy over network |
