@@ -104,5 +104,8 @@
     "checkbox_shade_precached": "Freeze elevation and Z factor, then pre-render hillshade at the chosen azimuth step in the background. Azimuth scrub then swaps cached frames. Paint optimization only — analysis still uses height.",
     "spinbox_shade_cache_step": "Azimuth raster for Pre-cache. Finest is 5° (72 frames). 1° is not offered — that would store 360 full-size copies. Steps that do not divide 360° snap to the nearest valid raster. Watch the RAM line before enabling.",
     "label_shade_cache_ram": "Estimated atlas size, compute peak, and currently free RAM. Red: would exceed ~90% of free RAM (Pre-cache will not start). Orange: large but allowed.",
-    "label_shade_status": "Reminds that Preview is view chrome only; analysis always uses height."
+    "label_shade_status": "Reminds that Preview is view chrome only; analysis always uses height.",
+    "checkbox_flow_preview": "D8 drainage as a view-only overlay: gold→green→cyan veins where many cells drain. Low accumulation stays transparent so the LUT or Shade remains visible. Paint only — analysis still uses height.",
+    "checkbox_flow_log": "Colour by log1p(accumulation) so main drainage stands out instead of one sink dominating. Off = linear cell counts.",
+    "label_flow_status": "Reminds that Flow is view chrome only; analysis always uses height."
 }

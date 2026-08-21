@@ -193,6 +193,8 @@ Optional later (optimization only): cache shade for the current az/elev/Z over
 `T` so timeline scrub stays smooth. The azimuth atlas (viewport of the current frame, step 5–90°) is implemented
 as Shade **Pre-cache**. Overlay paint is viewport-local (crop + downsample).
 Combined coloured lights live on the sky dome (independent drag + colour + Preset).
+**Flow → Preview accumulation** (D8, viewport, gold–cyan veins) is implemented on
+the Shade tab. Seed path / fill-to-level / legend stay parked. Not palaeo reconstruction.
 
 ### TOF → auxiliary curve
 

@@ -172,6 +172,12 @@ stack** — that would bake `0…1` shade into `ImageData`. See the
 | **Pre-cache azimuth** | Freeze elev/Z; background azimuth atlas | Worker on the **viewport** patch; uint8 overlay swap |
 | **Step** | Atlas raster `5–90°` (default 30°) | Finest is 5° (72 frames). 1° is not offered. Must divide 360°. |
 | **RAM line** | Atlas / peak / free RAM | Sized from the viewport patch, not the full frame |
+| **Flow → Preview accumulation** | D8 drainage overlay | Each cell → steepest of 8 neighbours; gold–cyan veins (not a filled slab). Viewport paint; sits on LUT or Shade. Analysis = height |
+| **Flow → Log scale** | `log1p` colour stretch | Default on so channels show instead of one sink |
+
+**Math (`calculate_hillshade`):** height from grayscale or luminance `0.299R+0.587G+0.114B` → `dx, dy = ∇z` → unit normal · light vector → shade clipped to `[0, 1]`. Overlay paint uses the **visible ViewBox** (crop + halo, downsampled to ~screen size) and `ImageItem.setRect` to align. **Combined** averages coloured lights (RGB overlay). **Pre-cache** atlases that viewport patch for the current `T`. A cache over all `T` at one angle is still later.
+
+**Math (`d8_accumulation`):** same viewport height patch → steepest-descent among 8 neighbours (drop / distance; diagonals `√2`) → accumulate cell counts high-to-low. Pits/flats are sinks. Overlay is RGBA (not a cube). Not a palaeo reconstruction: buildings in the DEM steer flow.
 
 **Math (`calculate_hillshade`):** height from grayscale or luminance `0.299R+0.587G+0.114B` → `dx, dy = ∇z` → unit normal · light vector → shade clipped to `[0, 1]`. Overlay paint uses the **visible ViewBox** (crop + halo, downsampled to ~screen size) and `ImageItem.setRect` to align. **Combined** averages coloured lights (RGB overlay). **Pre-cache** atlases that viewport patch for the current `T`. A cache over all `T` at one angle is still later.
 
@@ -198,6 +204,14 @@ flowchart TD
   hit -->|no| wait["Keep last overlay; status Caching"]
   worker --> done["All 12 ready"]
   uncheck["Uncheck Pre-cache"] --> live["Live 80 ms recompute"]
+```
+
+```mermaid
+flowchart TD
+  patch["Viewport height patch"] --> d8["Steepest of 8 neighbours"]
+  d8 --> acc["Accumulate cell counts high to low"]
+  acc --> rgba["log1p cyan RGBA"]
+  rgba --> overlay["Overlay on height or Shade"]
 ```
 
 ---
@@ -398,6 +412,7 @@ When Numba is available (`HAS_NUMBA`), parallel `nopython` kernels (`fastmath`, 
 | `apply_pipeline_fused` | Fused Subtract + Divide |
 | `sliding_mean_numba` | Sliding-window **Mean** normalization |
 | `_reduce_mean/max/min/std_impl` | Timeline / Ops axis-0 reduce |
+| `_accumulate_jit` | D8 flow accumulation (high-to-low add) |
 
 **Not Numba:** Median reduce (threaded NumPy `nanmedian`); non-Mean sliding aggregates (loop + reduce). Fallback: ThreadPoolExecutor split on height for large reduces (>10 MB).
 
@@ -422,6 +437,7 @@ Status visible in **Bench → Numba**.
 | Polyline profile | Tools + Polyline dock | Path sample + ⊥ band stats | CSV |
 | RoSEE | RoSEE | Cumsum fluctuation extrema | — |
 | Hillshade | Shade | Lambertian `n·l` from `∇z` | Preview overlay; viewport paint; sky dome; Combined coloured lights |
+| D8 accumulation | Shade → Flow | Steepest-descent 8-neighbour drain | Preview cyan overlay; viewport; log1p default |
 | PCA / SVD | PCA | Exact or randomized SVD | — |
 | LUT levels | LUT dock | Percentile / min-max | (LUT export hidden) |
 | Live / webcam / net | Stream | Ring buffer / OpenCV / Socket.IO | npy over network |

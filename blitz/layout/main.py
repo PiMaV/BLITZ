@@ -82,6 +82,7 @@ from .isoline import IsolineAdapter
 from .rosee import ROSEEAdapter
 from ..data.hillshade import clamp_azimuth_cache_step, snap_azimuth_deg
 from .shade import ShadeAdapter
+from .flow import FlowAdapter
 from .conway_life import ConwayLifeWidget
 from .simulated_live import SimulatedLiveWidget
 from .tof import TOFAdapter
@@ -134,6 +135,10 @@ class MainWindow(QMainWindow):
             status_label=self.ui.label_shade_status,
             ram_label=self.ui.label_shade_cache_ram,
             on_precache_off=self._sync_shade_precache_ui_off,
+        )
+        self.flow_adapter = FlowAdapter(
+            self.ui.image_viewer,
+            status_label=self.ui.label_flow_status,
         )
         self._linked_cursor = LinkedCursorController(
             self.ui.image_viewer,
@@ -555,6 +560,8 @@ class MainWindow(QMainWindow):
         )
         self.ui.checkbox_rosee_active.stateChanged.connect(self.toggle_rosee)
         self.ui.checkbox_shade_preview.stateChanged.connect(self._on_shade_preview)
+        self.ui.checkbox_flow_preview.stateChanged.connect(self._on_flow_preview)
+        self.ui.checkbox_flow_log.stateChanged.connect(self._on_flow_log)
         self.ui.spinbox_shade_azimuth.valueChanged.connect(
             self._on_shade_azimuth_spin
         )
@@ -1108,6 +1115,14 @@ class MainWindow(QMainWindow):
         self.ui.orbit_shade_azimuth.setElevation(45.0)
         self.ui.spinbox_shade_z.setValue(1.0)
         self.ui.orbit_shade_azimuth.setZFactor(1.0)
+        self.ui.checkbox_flow_preview.blockSignals(True)
+        self.ui.checkbox_flow_preview.setChecked(False)
+        self.ui.checkbox_flow_preview.blockSignals(False)
+        self.ui.checkbox_flow_log.blockSignals(True)
+        self.ui.checkbox_flow_log.setChecked(True)
+        self.ui.checkbox_flow_log.blockSignals(False)
+        self.flow_adapter.set_log_scale(True)
+        self.flow_adapter.set_preview(False)
         self.ui.spinbox_crop_range_start.setValue(0)
         self.ui.spinbox_crop_range_start.setMaximum(
             self.ui.image_viewer.data.n_images - 1
@@ -3365,6 +3380,12 @@ class MainWindow(QMainWindow):
             self._set_shade_azimuth_step(5, snap=False)
             self.shade_adapter.set_precached(False)
         self.shade_adapter.set_preview(on)
+
+    def _on_flow_preview(self) -> None:
+        self.flow_adapter.set_preview(self.ui.checkbox_flow_preview.isChecked())
+
+    def _on_flow_log(self) -> None:
+        self.flow_adapter.set_log_scale(self.ui.checkbox_flow_log.isChecked())
 
     def _on_shade_precached(self) -> None:
         on = self.ui.checkbox_shade_precached.isChecked()

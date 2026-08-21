@@ -358,7 +358,7 @@ ll=\x22#1e2030\x22 str\
 oke=\x22#3b4261\x22 st\
 roke-width=\x221.5\x22\
 />\x0a</svg>\x0a\
-\x00\x004B\
+\x00\x006\x1b\
 {\
 \x0a    \x22action_ope\
 n_file\x22: \x22Select\
@@ -1195,8 +1195,37 @@ tus\x22: \x22Reminds t\
 hat Preview is v\
 iew chrome only;\
  analysis always\
- uses height.\x22\x0a}\
-\x0a\
+ uses height.\x22,\x0a\
+    \x22checkbox_fl\
+ow_preview\x22: \x22D8\
+ drainage as a v\
+iew-only overlay\
+: gold\xe2\x86\x92green\xe2\x86\
+\x92cyan veins wher\
+e many cells dra\
+in. Low accumula\
+tion stays trans\
+parent so the LU\
+T or Shade remai\
+ns visible. Pain\
+t only \xe2\x80\x94 analy\
+sis still uses h\
+eight.\x22,\x0a    \x22ch\
+eckbox_flow_log\x22\
+: \x22Colour by log\
+1p(accumulation)\
+ so main drainag\
+e stands out ins\
+tead of one sink\
+ dominating. Off\
+ = linear cell c\
+ounts.\x22,\x0a    \x22la\
+bel_flow_status\x22\
+: \x22Reminds that \
+Flow is view chr\
+ome only; analys\
+is always uses h\
+eight.\x22\x0a}\x0a\
 "
 
 qt_resource_name = b"\
@@ -1240,7 +1269,7 @@ qt_resource_struct = b"\
 \x00\x00\x00\x1c\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\
 \x00\x00\x01\x9f\xa3\xe2w^\
 \x00\x00\x00r\x00\x00\x00\x00\x00\x01\x00\x00\x15\x9c\
-\x00\x00\x01\xa0$\x16\xd4\x92\
+\x00\x00\x01\xa0$:\xfdV\
 "
 
 def qInitResources():

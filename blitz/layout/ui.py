@@ -1232,6 +1232,22 @@ class UI_MainWindow(QWidget):
         self.label_shade_status.setStyleSheet("color: #888; font-size: 10pt;")
         self.label_shade_status.setWordWrap(True)
         shade_layout.addWidget(self.label_shade_status)
+        flow_group = QGroupBox("Flow")
+        flow_layout = QVBoxLayout()
+        self.checkbox_flow_preview = QCheckBox("Preview accumulation")
+        self.checkbox_flow_preview.setChecked(False)
+        flow_layout.addWidget(self.checkbox_flow_preview)
+        self.checkbox_flow_log = QCheckBox("Log scale")
+        self.checkbox_flow_log.setChecked(True)
+        flow_layout.addWidget(self.checkbox_flow_log)
+        self.label_flow_status = QLabel(
+            "D8 drainage · analysis always uses height"
+        )
+        self.label_flow_status.setStyleSheet("color: #888; font-size: 10pt;")
+        self.label_flow_status.setWordWrap(True)
+        flow_layout.addWidget(self.label_flow_status)
+        flow_group.setLayout(flow_layout)
+        shade_layout.addWidget(flow_group)
         shade_layout.addStretch()
         self.create_option_tab(shade_layout, "Shade")
 

@@ -51,8 +51,8 @@ flowchart TD
   q -->|"not a cube: TOF, extra sensors"| aux["Auxiliary 1D beside the cube"]
 ```
 
-- **Same measurand, display only** — Preview. Shade hillshade, LUT, isolines.
-  Probe / polyline / PCA keep reading height or intensity. **Shade must not
+- **Same measurand, display only** — Preview. Shade hillshade, LUT, isolines,
+  D8 flow accumulation. Probe / polyline / PCA keep reading height or intensity. **Shade must not
   Apply-replace the stack** (that would store lighting `0…1` as if it were the
   measurement).
 - **Same measurand, arithmetic / reduce** — Preview and/or Ops **Apply to full**.
@@ -98,6 +98,14 @@ flowchart TD
   hit -->|no| wait["Keep last overlay; status Caching"]
   worker --> done["All 12 ready"]
   uncheck["Uncheck Pre-cache"] --> live["Live 80 ms recompute"]
+```
+
+```mermaid
+flowchart TD
+  patch["Viewport height patch"] --> d8["Steepest of 8 neighbours"]
+  d8 --> acc["Accumulate cell counts high to low"]
+  acc --> rgba["log1p cyan RGBA"]
+  rgba --> overlay["Overlay on height or Shade"]
 ```
 
 ## Directory Structure
