@@ -11,7 +11,8 @@ Related: [`docs/missing_features.md`](docs/missing_features.md) (hidden UI / con
 
 ## Recently done (this stretch)
 
-- **Cursor swatch:** RGB uses the source pixel; grayscale still follows the LUT.
+- **v2.1.1** Close-safe Shade/Flow timers; RGB cursor swatch (gray stays LUT);
+  load-dialog **Auto-crop**; Timeline dock comes back when a stream grows past T=1.
 - **v2.1.0** Shade sky dome (azimuth / elevation / Z, Combined colours,
   invertY north, Pre-cache wrap through 0°) and D8 **Flow** accumulation
   overlay (viewport veins, Preview-only). Seed path / fill / legend parked.
@@ -71,19 +72,6 @@ Native crash (`SIGSEGV`), no Python traceback. Repro: Connect to dead host → o
 **Log**. Cause: worker-thread `log()` into `QTextEdit`. Mitigation in
 `blitz/tools.py` (queued marshal) — **re-test**; see `BUGS.md` +
 `docs/agent_handoff_sigsegv_log.md`.
-
-### Timeline dock missing after load / stream
-
-**In play:** first stream frame is often T=1 (hides the dock); live throttle then
-skips paint so T>1 never re-shows it. `hide()` can also leave 0 height. Viewer
-now emits when T crosses 1 even if paint is skipped; show path restores min height.
-
-### Auto-crop in the load dialog
-
-**In play:** **Auto-crop** next to Reset ROI (Video / Image / ASCII). Fits the
-existing crop rectangle to content in the **MAX** (or current) preview —
-threshold + margin. User can still drag; **OK** is what loads. Never runs on
-silent drag-and-drop.
 
 ---
 
