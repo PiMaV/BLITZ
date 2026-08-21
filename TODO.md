@@ -72,6 +72,12 @@ Native crash (`SIGSEGV`), no Python traceback. Repro: Connect to dead host → o
 `blitz/tools.py` (queued marshal) — **re-test**; see `BUGS.md` +
 `docs/agent_handoff_sigsegv_log.md`.
 
+### Timeline dock missing after load / stream
+
+**In play:** first stream frame is often T=1 (hides the dock); live throttle then
+skips paint so T>1 never re-shows it. `hide()` can also leave 0 height. Viewer
+now emits when T crosses 1 even if paint is skipped; show path restores min height.
+
 ### Auto-crop in the load dialog
 
 **In play:** **Auto-crop** next to Reset ROI (Video / Image / ASCII). Fits the

@@ -748,16 +748,12 @@ class MainWindow(QMainWindow):
 
         # Whole bottom dock (plot + Frame/Range panel): no noise for T<=1
         if needs_range:
-            self.ui.dock_t_line.show()
+            self._ensure_timeline_dock_visible()
+        else:
             try:
-                self.ui.dock_t_line.raiseDock()
+                self.ui.dock_t_line.setMinimumHeight(0)
             except Exception:
                 pass
-            # After re-show (e.g. post load dialog), restore horizontal splitter sizes.
-            QTimer.singleShot(
-                0, getattr(self.ui, "_set_timeline_splitter_sizes", lambda: None)
-            )
-        else:
             self.ui.dock_t_line.hide()
 
         if n <= 1:
@@ -3567,6 +3563,23 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_shade_z.setValue(float(value))
         self.ui.spinbox_shade_z.blockSignals(False)
         self.shade_adapter.set_params(z_factor=float(value))
+
+    def _ensure_timeline_dock_visible(self) -> None:
+        """Re-open the Timeline after T>1. hide() can leave a 0-height strip."""
+        dock = self.ui.dock_t_line
+        dock.show()
+        try:
+            min_h = max(80, int(getattr(self.ui, "_bottom_band_h", 100)))
+            dock.setMinimumHeight(min_h)
+        except Exception:
+            pass
+        try:
+            dock.raiseDock()
+        except Exception:
+            pass
+        QTimer.singleShot(
+            0, getattr(self.ui, "_set_timeline_splitter_sizes", lambda: None)
+        )
 
     def _raise_polyline_dock(self) -> None:
         if not self.ui.checkbox_polyline_profile.isChecked():

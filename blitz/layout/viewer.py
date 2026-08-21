@@ -838,12 +838,19 @@ class ImageViewer(pg.ImageView):
         self.image_size_changed.emit()
 
     def set_image(self, img: ImageData, live_update: bool = False) -> None:
+        old_n = 0
+        if self.data is not None:
+            try:
+                old_n = int(self.data.n_images)
+            except Exception:
+                old_n = 0
         self.data = img
+        new_n = int(img.n_images)
         # New dataset (non-live): always apply Trim-based fit once, even if Keep fitting is off.
         if not live_update:
             self._fit_levels_once = True
         # No throttle for full-dataset (multi-frame, non-live) to always show final buffer
-        if not live_update and img.n_images > 1:
+        if not live_update and new_n > 1:
             self._last_set_image_time = time.perf_counter()
             self.update_image(live_update=False)
             return
@@ -852,6 +859,11 @@ class ImageViewer(pg.ImageView):
         if now - self._last_set_image_time >= throttle:
             self._last_set_image_time = now
             self.update_image(live_update=live_update)
+            return
+        # Live paint skipped: still tell the docks when T crosses 1 (stream
+        # starts at one frame, then the ring fills — otherwise Timeline stays hidden).
+        if (old_n > 1) != (new_n > 1):
+            self.image_changed.emit()
 
     def update_image(self, live_update: bool = False, keep_timestep: bool = False) -> None:
         if live_update:
