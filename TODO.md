@@ -132,6 +132,22 @@ See `docker/README.md`, `flatpak/README.md`.
 
 ## P4 — Backlog / discussion
 
+### Options tabs: categories again (replace wrapping rows)
+
+Wrapping tabs (File → Log on extra rows) are a **stopgap** so Stream/Log are
+not clipped off the right. Reconsider a **two-level strip**: a short row of
+**main categories** on top, **subcategories** on the line below. Still two
+lines in the common case, but a category can drop more items when selected
+instead of putting every specialist page on the primary strip.
+
+Motivation: tools like **Shade / hillshade** are cool and should stay, but
+not everyone needs them on the same rank as File / View / Ops. Park rare
+pages under a category (e.g. Analysis → Shade, PCA, RoSEE) rather than
+hiding them or crowding the top row.
+
+Do not implement until the wrapping layout has been lived with; this is IA,
+not a bugfix.
+
 ### Controllable cell-grid overlay (esp. Conway / blocky data)
 
 Make the spatial **cell grid** (hairline lattice over the image) more visible and
