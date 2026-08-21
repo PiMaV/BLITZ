@@ -29,5 +29,16 @@ archives: decode once, re-bin with live Δt / polarity / window, and push stacks
 to BLITZ over the **WOLKE** Socket.IO + HTTP `.npy` contract. Not embedded in
 the BLITZ Flatpak. A later live/multi-cam streamer (**FUNKE**) is backlog only.
 
+### DGM / GeoTIFF tiles (LGL)
+
+Do **not** mosaic in the BLITZ folder loader (that would stack tiles as `T`).
+Use the suite sidecar `../converters/dgm_mosaic/` (`uv run dgm-mosaic`):
+OpenCV + world file / `dgm025_32_{e}_{n}` names, then **Send to BLITZ** over
+the same Socket.IO + HTTP `.npy` contract as the Event reader (not WOLKE, not
+a live tile stream). GUI preview is one mosaic (0…1 stretch, blue–white–red);
+drag a rectangle of tiles to export (holes in the box are 0). Optional disk
+`.npy`. GeoTIFF stays out of the Flatpak; GDAL is not required. Stream address
+`http://127.0.0.1:5056`, token `dgm`.
+
 Do **not** grow the core Flatpak with exotic native deps unless a format is
 numpy/cv2-only and clearly belongs in the standard loader (like HIKMICRO).
