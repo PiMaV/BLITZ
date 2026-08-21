@@ -5,6 +5,8 @@ from __future__ import annotations
 import numpy as np
 
 AZIMUTH_CACHE_STEP_DEG = 30
+AZIMUTH_CACHE_STEP_MIN_DEG = 5
+AZIMUTH_CACHE_STEP_MAX_DEG = 90
 
 
 def height_from_frame(frame: np.ndarray) -> np.ndarray:
@@ -22,14 +24,27 @@ def height_from_frame(frame: np.ndarray) -> np.ndarray:
     return arr.astype(np.float64, copy=False)
 
 
+def clamp_azimuth_cache_step(step_deg: float) -> int:
+    """Clamp to ``[5, 90]`` and the nearest step that divides 360° (no 1° atlas)."""
+    try:
+        raw = int(round(float(step_deg)))
+    except (TypeError, ValueError):
+        return AZIMUTH_CACHE_STEP_DEG
+    lo = AZIMUTH_CACHE_STEP_MIN_DEG
+    hi = AZIMUTH_CACHE_STEP_MAX_DEG
+    step = min(hi, max(lo, raw))
+    if 360 % step == 0:
+        return step
+    candidates = [d for d in range(lo, hi + 1) if 360 % d == 0]
+    return min(candidates, key=lambda d: (abs(d - raw), d))
+
+
 def snap_azimuth_deg(
     azimuth_deg: float,
     step_deg: float = AZIMUTH_CACHE_STEP_DEG,
 ) -> int:
-    """Snap azimuth to the cache raster with half-up rounding (315° → 330°)."""
-    step = int(step_deg)
-    if step <= 0:
-        step = AZIMUTH_CACHE_STEP_DEG
+    """Snap azimuth to the cache raster with half-up rounding (315° → 330° at 30°)."""
+    step = clamp_azimuth_cache_step(step_deg)
     az = float(azimuth_deg) % 360.0
     snapped = int((az + step / 2.0) // step) * step
     return int(snapped % 360)
@@ -37,10 +52,31 @@ def snap_azimuth_deg(
 
 def azimuth_cache_bins(step_deg: float = AZIMUTH_CACHE_STEP_DEG) -> list[int]:
     """Azimuth raster in ``[0, 360)``, e.g. 0, 30, …, 330."""
-    step = int(step_deg)
-    if step <= 0:
-        step = AZIMUTH_CACHE_STEP_DEG
+    step = clamp_azimuth_cache_step(step_deg)
     return list(range(0, 360, step))
+
+
+def azimuth_atlas_nbytes(
+    height: int,
+    width: int,
+    step_deg: float = AZIMUTH_CACHE_STEP_DEG,
+) -> int:
+    """uint8 atlas size in bytes (one copy per azimuth bin)."""
+    h, w = int(height), int(width)
+    if h <= 0 or w <= 0:
+        return 0
+    return len(azimuth_cache_bins(step_deg)) * h * w
+
+
+def azimuth_atlas_peak_nbytes(
+    height: int,
+    width: int,
+    step_deg: float = AZIMUTH_CACHE_STEP_DEG,
+) -> int:
+    """Peak while filling: atlas + float64 height/gradients + one float32 shade."""
+    hw = max(0, int(height)) * max(0, int(width))
+    workspace = hw * (8 + 8 + 8 + 4)  # z, dx, dy, shade
+    return azimuth_atlas_nbytes(height, width, step_deg) + workspace
 
 
 def azimuth_cache_order(

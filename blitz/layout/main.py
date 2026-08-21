@@ -80,7 +80,7 @@ from .dialogs import (AsciiLoadOptionsDialog, CropTimelineDialog,
 from .export_dialog import run_export
 from .isoline import IsolineAdapter
 from .rosee import ROSEEAdapter
-from ..data.hillshade import snap_azimuth_deg
+from ..data.hillshade import clamp_azimuth_cache_step, snap_azimuth_deg
 from .shade import ShadeAdapter
 from .conway_life import ConwayLifeWidget
 from .simulated_live import SimulatedLiveWidget
@@ -132,6 +132,8 @@ class MainWindow(QMainWindow):
         self.shade_adapter = ShadeAdapter(
             self.ui.image_viewer,
             status_label=self.ui.label_shade_status,
+            ram_label=self.ui.label_shade_cache_ram,
+            on_precache_off=self._sync_shade_precache_ui_off,
         )
         self._linked_cursor = LinkedCursorController(
             self.ui.image_viewer,
@@ -569,6 +571,9 @@ class MainWindow(QMainWindow):
         self.ui.slider_shade_z.valueChanged.connect(self._on_shade_z_slider)
         self.ui.checkbox_shade_precached.stateChanged.connect(
             self._on_shade_precached
+        )
+        self.ui.spinbox_shade_cache_step.valueChanged.connect(
+            self._on_shade_cache_step
         )
         self.ui.checkbox_rosee_h.stateChanged.connect(self.toggle_rosee)
         self.ui.checkbox_rosee_v.stateChanged.connect(self.toggle_rosee)
@@ -1075,8 +1080,12 @@ class MainWindow(QMainWindow):
         self.ui.checkbox_shade_precached.blockSignals(True)
         self.ui.checkbox_shade_precached.setChecked(False)
         self.ui.checkbox_shade_precached.blockSignals(False)
+        self.ui.spinbox_shade_cache_step.blockSignals(True)
+        self.ui.spinbox_shade_cache_step.setValue(30)
+        self.ui.spinbox_shade_cache_step.blockSignals(False)
         self._set_shade_elev_z_enabled(True)
         self._set_shade_azimuth_step(5)
+        self.shade_adapter.set_step(30)
         self.shade_adapter.set_precached(False)
         self.shade_adapter.set_preview(False)
         self.ui.spinbox_shade_azimuth.setValue(315.0)
@@ -3350,17 +3359,58 @@ class MainWindow(QMainWindow):
                 self.ui.checkbox_shade_preview.blockSignals(True)
                 self.ui.checkbox_shade_preview.setChecked(True)
                 self.ui.checkbox_shade_preview.blockSignals(False)
+            step = self._clamp_shade_cache_step_ui()
+            self.shade_adapter.set_step(step)
+            if not self.shade_adapter.can_precache():
+                self.ui.checkbox_shade_precached.blockSignals(True)
+                self.ui.checkbox_shade_precached.setChecked(False)
+                self.ui.checkbox_shade_precached.blockSignals(False)
+                return
             self._set_shade_elev_z_enabled(False)
-            self._set_shade_azimuth_step(30)
+            self._set_shade_azimuth_step(step)
             snapped = self._snap_shade_azimuth_ui(
                 self.ui.spinbox_shade_azimuth.value()
             )
             self.shade_adapter.set_params(azimuth=snapped)
-            self.shade_adapter.set_precached(True)
+            if not self.shade_adapter.set_precached(True):
+                self._sync_shade_precache_ui_off()
             return
         self._set_shade_elev_z_enabled(True)
         self._set_shade_azimuth_step(5)
         self.shade_adapter.set_precached(False)
+
+    def _on_shade_cache_step(self, value: int) -> None:
+        step = self._clamp_shade_cache_step_ui(value)
+        self.shade_adapter.set_step(step)
+        if self.shade_adapter.is_precached:
+            self._set_shade_azimuth_step(step)
+            snapped = self._snap_shade_azimuth_ui(
+                self.ui.spinbox_shade_azimuth.value()
+            )
+            self.shade_adapter.set_params(azimuth=snapped)
+        elif self.ui.checkbox_shade_precached.isChecked():
+            self._sync_shade_precache_ui_off()
+
+    def _clamp_shade_cache_step_ui(self, value: Optional[int] = None) -> int:
+        raw = (
+            int(self.ui.spinbox_shade_cache_step.value())
+            if value is None
+            else int(value)
+        )
+        step = clamp_azimuth_cache_step(raw)
+        if step != raw:
+            self.ui.spinbox_shade_cache_step.blockSignals(True)
+            self.ui.spinbox_shade_cache_step.setValue(step)
+            self.ui.spinbox_shade_cache_step.blockSignals(False)
+        return step
+
+    def _sync_shade_precache_ui_off(self) -> None:
+        if self.ui.checkbox_shade_precached.isChecked():
+            self.ui.checkbox_shade_precached.blockSignals(True)
+            self.ui.checkbox_shade_precached.setChecked(False)
+            self.ui.checkbox_shade_precached.blockSignals(False)
+        self._set_shade_elev_z_enabled(True)
+        self._set_shade_azimuth_step(5)
 
     def _set_shade_elev_z_enabled(self, enabled: bool) -> None:
         for widget in (
@@ -3377,7 +3427,9 @@ class MainWindow(QMainWindow):
         self.ui.slider_shade_azimuth.setPageStep(step)
 
     def _snap_shade_azimuth_ui(self, value: float) -> float:
-        snapped = float(snap_azimuth_deg(value))
+        snapped = float(
+            snap_azimuth_deg(value, self.shade_adapter.cache_step_deg)
+        )
         self.ui.spinbox_shade_azimuth.blockSignals(True)
         self.ui.slider_shade_azimuth.blockSignals(True)
         self.ui.spinbox_shade_azimuth.setValue(snapped)

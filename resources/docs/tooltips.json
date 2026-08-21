@@ -101,6 +101,8 @@
     "slider_shade_elevation": "Light elevation 0–90°. Same as the Elevation spinner.",
     "spinbox_shade_z": "Vertical exaggeration before shading. Higher values deepen slopes (more dramatic relief). Step 0.5.",
     "slider_shade_z": "Vertical exaggeration (Z factor). Same as the Z factor spinner.",
-    "checkbox_shade_precached": "Freeze elevation and Z factor, then pre-render hillshade at 30° azimuth steps in the background. Azimuth scrub then swaps cached frames instead of recomputing. Paint optimization only — analysis still uses height.",
+    "checkbox_shade_precached": "Freeze elevation and Z factor, then pre-render hillshade at the chosen azimuth step in the background. Azimuth scrub then swaps cached frames. Paint optimization only — analysis still uses height.",
+    "spinbox_shade_cache_step": "Azimuth raster for Pre-cache. Finest is 5° (72 frames). 1° is not offered — that would store 360 full-size copies. Steps that do not divide 360° snap to the nearest valid raster. Watch the RAM line before enabling.",
+    "label_shade_cache_ram": "Estimated atlas size, compute peak, and currently free RAM. Red: would exceed ~90% of free RAM (Pre-cache will not start). Orange: large but allowed.",
     "label_shade_status": "Reminds that Preview is view chrome only; analysis always uses height."
 }

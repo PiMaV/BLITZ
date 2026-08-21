@@ -361,7 +361,7 @@ ll=\x22#1e2030\x22 str\
 oke=\x22#3b4261\x22 st\
 roke-width=\x221.5\x22\
 />\x0a</svg>\x0a\
-\x00\x000i\
+\x00\x002\x0c\
 {\
 \x0a    \x22action_ope\
 n_file\x22: \x22Select\
@@ -1121,23 +1121,49 @@ ched\x22: \x22Freeze e\
 levation and Z f\
 actor, then pre-\
 render hillshade\
- at 30\xc2\xb0 azimuth\
- steps in the ba\
-ckground. Azimut\
-h scrub then swa\
-ps cached frames\
- instead of reco\
-mputing. Paint o\
-ptimization only\
- \xe2\x80\x94 analysis st\
-ill uses height.\
-\x22,\x0a    \x22label_sh\
-ade_status\x22: \x22Re\
-minds that Previ\
-ew is view chrom\
-e only; analysis\
- always uses hei\
-ght.\x22\x0a}\x0a\
+ at the chosen a\
+zimuth step in t\
+he background. A\
+zimuth scrub the\
+n swaps cached f\
+rames. Paint opt\
+imization only \xe2\
+\x80\x94 analysis stil\
+l uses height.\x22,\
+\x0a    \x22spinbox_sh\
+ade_cache_step\x22:\
+ \x22Azimuth raster\
+ for Pre-cache. \
+Finest is 5\xc2\xb0 (7\
+2 frames). 1\xc2\xb0 i\
+s not offered \xe2\x80\
+\x94 that would sto\
+re 360 full-size\
+ copies. Steps t\
+hat do not divid\
+e 360\xc2\xb0 snap to \
+the nearest vali\
+d raster. Watch \
+the RAM line bef\
+ore enabling.\x22,\x0a\
+    \x22label_shade\
+_cache_ram\x22: \x22Es\
+timated atlas si\
+ze, compute peak\
+, and currently \
+free RAM. Red: w\
+ould exceed ~90%\
+ of free RAM (Pr\
+e-cache will not\
+ start). Orange:\
+ large but allow\
+ed.\x22,\x0a    \x22label\
+_shade_status\x22: \
+\x22Reminds that Pr\
+eview is view ch\
+rome only; analy\
+sis always uses \
+height.\x22\x0a}\x0a\
 "
 
 qt_resource_name = b"\
@@ -1181,7 +1207,7 @@ qt_resource_struct = b"\
 \x00\x00\x00\x1c\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\
 \x00\x00\x01\x9f\xa3\xe2w^\
 \x00\x00\x00r\x00\x00\x00\x00\x00\x01\x00\x00\x15\x9c\
-\x00\x00\x01\xa0\x1fQ\xcch\
+\x00\x00\x01\xa0#\xa65V\
 "
 
 def qInitResources():

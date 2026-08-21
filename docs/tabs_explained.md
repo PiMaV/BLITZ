@@ -163,18 +163,20 @@ stack** — that would bake `0…1` shade into `ImageData`. See the
 | Control | What it does | Algorithm / notes |
 |---------|--------------|-------------------|
 | **Preview** | Toggle Lambertian shade overlay | Separate `ImageItem` (z≈0.1); base opacity → 0 while previewing |
-| **Azimuth** | Light direction `0–360°` | `0°` = top (+y), clockwise toward +x; 30° steps while Pre-cache is on |
+| **Azimuth** | Light direction `0–360°` | `0°` = top (+y), clockwise toward +x; snaps to the Pre-cache step while cache is on |
 | **Elevation** | Sun height `0–90°` | Horizon → zenith; locked while Pre-cache is on |
 | **Z factor** | Vertical exaggeration `0.1–20` | Scales height before `np.gradient`; locked while Pre-cache is on |
-| **Pre-cache azimuth (30°)** | Freeze elev/Z; background 30° atlas | Worker: gradients once, then `n·l` per bin; uint8 overlay swap |
+| **Pre-cache azimuth** | Freeze elev/Z; background azimuth atlas | Worker: gradients once, then `n·l` per bin; uint8 overlay swap |
+| **Step** | Atlas raster `5–90°` (default 30°) | Finest is 5° (72 frames). 1° is not offered. Must divide 360°. |
+| **RAM line** | Atlas / peak / free RAM | Red: block at ~90% of free RAM; orange: large but allowed |
 
-**Math (`calculate_hillshade`):** height from grayscale or luminance `0.299R+0.587G+0.114B` → `dx, dy = ∇z` → unit normal · light vector → shade clipped to `[0, 1]`. Live scrub recomputes the current frame. **Pre-cache** builds a 12-bin azimuth atlas for the current `T` (paint optimization only). Timeline scrub rebuilds that atlas; a cache over all `T` at one angle is still later.
+**Math (`calculate_hillshade`):** height from grayscale or luminance `0.299R+0.587G+0.114B` → `dx, dy = ∇z` → unit normal · light vector → shade clipped to `[0, 1]`. Live scrub recomputes the current frame. **Pre-cache** builds an azimuth atlas for the current `T` (paint optimization only; step 5–90°, default 30°). Timeline scrub rebuilds that atlas; a cache over all `T` at one angle is still later.
 
 ```mermaid
 flowchart TD
   setup["Set elevation and Z"] --> freeze["Check Pre-cache"]
-  freeze --> lock["Lock elev and Z; snap az to 30 deg"]
-  lock --> worker["QThread: normals once, then 12 az bins"]
+  freeze --> lock["Lock elev and Z; snap az to step"]
+  lock --> worker["QThread: normals once, then N az bins"]
   worker --> hit{"Azimuth bin ready?"}
   hit -->|yes| swap["setImage from atlas"]
   hit -->|no| wait["Keep last overlay; status Caching"]
@@ -403,7 +405,7 @@ Status visible in **Bench → Numba**.
 | Measure | Tools | Area, circularity, bbox | AU calibration |
 | Polyline profile | Tools + Polyline dock | Path sample + ⊥ band stats | CSV |
 | RoSEE | RoSEE | Cumsum fluctuation extrema | — |
-| Hillshade | Shade | Lambertian `n·l` from `∇z` | Preview only; no Apply; optional 30° azimuth pre-cache |
+| Hillshade | Shade | Lambertian `n·l` from `∇z` | Preview only; no Apply; azimuth Pre-cache (5–90°) |
 | PCA / SVD | PCA | Exact or randomized SVD | — |
 | LUT levels | LUT dock | Percentile / min-max | (LUT export hidden) |
 | Live / webcam / net | Stream | Ring buffer / OpenCV / Socket.IO | npy over network |

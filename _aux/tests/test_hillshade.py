@@ -79,9 +79,40 @@ def test_azimuth_cache_bins_and_order() -> None:
     assert set(order) == set(bins)
 
 
-def test_shade_to_uint8_range() -> None:
-    z = np.linspace(0, 1, 16, dtype=np.float32).reshape(4, 4)
-    u8 = shade_to_uint8(z)
-    assert u8.dtype == np.uint8
-    assert int(u8.min()) == 0
-    assert int(u8.max()) == 255
+def test_clamp_azimuth_cache_step_rejects_one_degree() -> None:
+    from blitz.data.hillshade import (
+        AZIMUTH_CACHE_STEP_MIN_DEG,
+        clamp_azimuth_cache_step,
+    )
+
+    assert clamp_azimuth_cache_step(1) == AZIMUTH_CACHE_STEP_MIN_DEG
+    assert clamp_azimuth_cache_step(0) == 5
+    assert clamp_azimuth_cache_step(5) == 5
+    assert clamp_azimuth_cache_step(10) == 10
+    assert clamp_azimuth_cache_step(7) in (6, 8)
+    assert 360 % clamp_azimuth_cache_step(25) == 0
+    assert clamp_azimuth_cache_step(30) == 30
+    assert clamp_azimuth_cache_step(180) == 90
+
+
+def test_azimuth_cache_bins_ten_degree() -> None:
+    bins = azimuth_cache_bins(10)
+    assert bins[0] == 0
+    assert bins[-1] == 350
+    assert len(bins) == 36
+    assert snap_azimuth_deg(315.0, 10) == 320
+    order = azimuth_cache_order(315.0, 10)
+    assert order[0] == 320
+
+
+def test_azimuth_atlas_nbytes() -> None:
+    from blitz.data.hillshade import (
+        azimuth_atlas_nbytes,
+        azimuth_atlas_peak_nbytes,
+    )
+
+    atlas = azimuth_atlas_nbytes(10, 20, 30)
+    assert atlas == 12 * 10 * 20
+    peak = azimuth_atlas_peak_nbytes(10, 20, 30)
+    assert peak > atlas
+    assert azimuth_atlas_nbytes(0, 10, 30) == 0

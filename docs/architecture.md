@@ -66,16 +66,19 @@ flowchart TD
 - **Auxiliary 1D** — TOF today; more sensor curves later. Not a cube overlay.
 
 Hillshade **Pre-cache** is paint optimization only (not a new measurand, not
-Apply). Freeze elevation and Z factor, then build a 30° azimuth atlas for the
-**current** `T` frame on a worker thread; azimuth scrub swaps cached overlays.
+Apply). Freeze elevation and Z factor, then build an azimuth atlas for the
+**current** `T` frame on a worker thread (step 5–90°, default 30°; 5° is the
+finest). The RAM line shows atlas size, compute peak, and free memory; Pre-cache
+refuses to start above ~90% of free RAM. Azimuth scrub swaps cached overlays.
 Optional later: cache the current angles over `T` so timeline scrub stays
-smooth.
+smooth. Viewport-local shade (only the zoomed region) is parked — see
+[`TODO.md`](../TODO.md).
 
 ```mermaid
 flowchart TD
   setup["Set elevation and Z"] --> freeze["Check Pre-cache"]
-  freeze --> lock["Lock elev and Z; snap az to 30 deg"]
-  lock --> worker["QThread: normals once, then 12 az bins"]
+  freeze --> lock["Lock elev and Z; snap az to step"]
+  lock --> worker["QThread: normals once, then N az bins"]
   worker --> hit{"Azimuth bin ready?"}
   hit -->|yes| swap["setImage from atlas"]
   hit -->|no| wait["Keep last overlay; status Caching"]
