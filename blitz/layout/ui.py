@@ -19,6 +19,7 @@ from .. import settings
 from ..theme import get_style, get_plot_bg, get_agg_groupbox_stylesheet, get_agg_separator_stylesheet
 from ..tools import LoggingTextEdit, get_available_ram, setup_logger
 from .tabbar import OptionsTabWidget
+from .azimuth_orbit import AzimuthOrbit, WrappingAzimuthSpinBox
 from .bench_compact import BenchCompact
 from .bench_data import BenchData
 from .bench_sparklines import BenchSparklines
@@ -1162,7 +1163,7 @@ class UI_MainWindow(QWidget):
         self.checkbox_shade_preview = QCheckBox("Preview")
         self.checkbox_shade_preview.setChecked(False)
         shade_layout.addWidget(self.checkbox_shade_preview)
-        self.spinbox_shade_azimuth = QDoubleSpinBox()
+        self.spinbox_shade_azimuth = WrappingAzimuthSpinBox()
         self.spinbox_shade_azimuth.setPrefix("Azimuth: ")
         self.spinbox_shade_azimuth.setSuffix("°")
         self.spinbox_shade_azimuth.setRange(0.0, 360.0)
@@ -1170,11 +1171,22 @@ class UI_MainWindow(QWidget):
         self.spinbox_shade_azimuth.setSingleStep(5.0)
         self.spinbox_shade_azimuth.setValue(315.0)
         self.spinbox_shade_azimuth.setWrapping(True)
-        shade_layout.addWidget(self.spinbox_shade_azimuth)
-        self.slider_shade_azimuth = QSlider(Qt.Orientation.Horizontal)
-        self.slider_shade_azimuth.setRange(0, 360)
-        self.slider_shade_azimuth.setValue(315)
-        shade_layout.addWidget(self.slider_shade_azimuth)
+        az_row = QHBoxLayout()
+        az_row.addWidget(self.spinbox_shade_azimuth, 1)
+        self.orbit_shade_azimuth = AzimuthOrbit()
+        az_row.addWidget(self.orbit_shade_azimuth, 0, Qt.AlignmentFlag.AlignRight)
+        shade_layout.addLayout(az_row)
+        combined_row = QHBoxLayout()
+        self.checkbox_shade_combined = QCheckBox("Combined (4 lights)")
+        self.checkbox_shade_combined.setChecked(False)
+        combined_row.addWidget(self.checkbox_shade_combined)
+        self.button_shade_preset = QPushButton("Preset")
+        self.button_shade_preset.setToolTip(
+            "Four lights 90° apart at the current elevation, with distinct colours."
+        )
+        combined_row.addWidget(self.button_shade_preset)
+        combined_row.addStretch()
+        shade_layout.addLayout(combined_row)
         self.spinbox_shade_elevation = QDoubleSpinBox()
         self.spinbox_shade_elevation.setPrefix("Elevation: ")
         self.spinbox_shade_elevation.setSuffix("°")
@@ -1183,22 +1195,13 @@ class UI_MainWindow(QWidget):
         self.spinbox_shade_elevation.setSingleStep(5.0)
         self.spinbox_shade_elevation.setValue(45.0)
         shade_layout.addWidget(self.spinbox_shade_elevation)
-        self.slider_shade_elevation = QSlider(Qt.Orientation.Horizontal)
-        self.slider_shade_elevation.setRange(0, 90)
-        self.slider_shade_elevation.setValue(45)
-        shade_layout.addWidget(self.slider_shade_elevation)
         self.spinbox_shade_z = QDoubleSpinBox()
         self.spinbox_shade_z.setPrefix("Z factor: ")
-        self.spinbox_shade_z.setRange(0.1, 20.0)
-        self.spinbox_shade_z.setDecimals(1)
-        self.spinbox_shade_z.setSingleStep(0.5)
+        self.spinbox_shade_z.setRange(0.01, 2.0)
+        self.spinbox_shade_z.setDecimals(2)
+        self.spinbox_shade_z.setSingleStep(0.05)
         self.spinbox_shade_z.setValue(1.0)
         shade_layout.addWidget(self.spinbox_shade_z)
-        self.slider_shade_z = QSlider(Qt.Orientation.Horizontal)
-        # Slider in 0.1 units: 1 → 0.1, 200 → 20.0
-        self.slider_shade_z.setRange(1, 200)
-        self.slider_shade_z.setValue(10)
-        shade_layout.addWidget(self.slider_shade_z)
         shade_precached_group = QGroupBox("Pre-cache")
         shade_precached_layout = QVBoxLayout()
         self.checkbox_shade_precached = QCheckBox("Pre-cache azimuth")

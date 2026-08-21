@@ -558,17 +558,26 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_shade_azimuth.valueChanged.connect(
             self._on_shade_azimuth_spin
         )
-        self.ui.slider_shade_azimuth.valueChanged.connect(
-            self._on_shade_azimuth_slider
+        self.ui.orbit_shade_azimuth.azimuthChanged.connect(
+            self._on_shade_azimuth_orbit
         )
+        self.ui.orbit_shade_azimuth.elevationChanged.connect(
+            self._on_shade_elevation_orbit
+        )
+        self.ui.orbit_shade_azimuth.zFactorChanged.connect(
+            self._on_shade_z_orbit
+        )
+        self.ui.orbit_shade_azimuth.lightsChanged.connect(
+            self._on_shade_lights
+        )
+        self.ui.checkbox_shade_combined.stateChanged.connect(
+            self._on_shade_combined
+        )
+        self.ui.button_shade_preset.clicked.connect(self._on_shade_preset)
         self.ui.spinbox_shade_elevation.valueChanged.connect(
             self._on_shade_elevation_spin
         )
-        self.ui.slider_shade_elevation.valueChanged.connect(
-            self._on_shade_elevation_slider
-        )
         self.ui.spinbox_shade_z.valueChanged.connect(self._on_shade_z_spin)
-        self.ui.slider_shade_z.valueChanged.connect(self._on_shade_z_slider)
         self.ui.checkbox_shade_precached.stateChanged.connect(
             self._on_shade_precached
         )
@@ -1084,16 +1093,21 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_shade_cache_step.setValue(30)
         self.ui.spinbox_shade_cache_step.blockSignals(False)
         self._set_shade_elev_z_enabled(True)
-        self._set_shade_azimuth_step(5)
+        self._set_shade_azimuth_step(5, snap=False)
         self.shade_adapter.set_step(30)
         self.shade_adapter.set_precached(False)
         self.shade_adapter.set_preview(False)
         self.ui.spinbox_shade_azimuth.setValue(315.0)
-        self.ui.slider_shade_azimuth.setValue(315)
+        self.ui.orbit_shade_azimuth.setAzimuth(315.0)
+        self.ui.checkbox_shade_combined.blockSignals(True)
+        self.ui.checkbox_shade_combined.setChecked(False)
+        self.ui.checkbox_shade_combined.blockSignals(False)
+        self.ui.orbit_shade_azimuth.setCombined(False)
+        self.shade_adapter.set_combined(False)
         self.ui.spinbox_shade_elevation.setValue(45.0)
-        self.ui.slider_shade_elevation.setValue(45)
+        self.ui.orbit_shade_azimuth.setElevation(45.0)
         self.ui.spinbox_shade_z.setValue(1.0)
-        self.ui.slider_shade_z.setValue(10)
+        self.ui.orbit_shade_azimuth.setZFactor(1.0)
         self.ui.spinbox_crop_range_start.setValue(0)
         self.ui.spinbox_crop_range_start.setMaximum(
             self.ui.image_viewer.data.n_images - 1
@@ -3348,7 +3362,7 @@ class MainWindow(QMainWindow):
             self.ui.checkbox_shade_precached.setChecked(False)
             self.ui.checkbox_shade_precached.blockSignals(False)
             self._set_shade_elev_z_enabled(True)
-            self._set_shade_azimuth_step(5)
+            self._set_shade_azimuth_step(5, snap=False)
             self.shade_adapter.set_precached(False)
         self.shade_adapter.set_preview(on)
 
@@ -3367,23 +3381,24 @@ class MainWindow(QMainWindow):
                 self.ui.checkbox_shade_precached.blockSignals(False)
                 return
             self._set_shade_elev_z_enabled(False)
-            self._set_shade_azimuth_step(step)
             snapped = self._snap_shade_azimuth_ui(
                 self.ui.spinbox_shade_azimuth.value()
             )
             self.shade_adapter.set_params(azimuth=snapped)
             if not self.shade_adapter.set_precached(True):
                 self._sync_shade_precache_ui_off()
+                return
+            self._set_shade_azimuth_step(step, snap=True)
             return
         self._set_shade_elev_z_enabled(True)
-        self._set_shade_azimuth_step(5)
+        self._set_shade_azimuth_step(5, snap=False)
         self.shade_adapter.set_precached(False)
 
     def _on_shade_cache_step(self, value: int) -> None:
         step = self._clamp_shade_cache_step_ui(value)
         self.shade_adapter.set_step(step)
         if self.shade_adapter.is_precached:
-            self._set_shade_azimuth_step(step)
+            self._set_shade_azimuth_step(step, snap=True)
             snapped = self._snap_shade_azimuth_ui(
                 self.ui.spinbox_shade_azimuth.value()
             )
@@ -3410,44 +3425,46 @@ class MainWindow(QMainWindow):
             self.ui.checkbox_shade_precached.setChecked(False)
             self.ui.checkbox_shade_precached.blockSignals(False)
         self._set_shade_elev_z_enabled(True)
-        self._set_shade_azimuth_step(5)
+        self._set_shade_azimuth_step(5, snap=False)
 
     def _set_shade_elev_z_enabled(self, enabled: bool) -> None:
         for widget in (
             self.ui.spinbox_shade_elevation,
-            self.ui.slider_shade_elevation,
             self.ui.spinbox_shade_z,
-            self.ui.slider_shade_z,
         ):
             widget.setEnabled(enabled)
+        self.ui.orbit_shade_azimuth.setElevZLocked(not enabled)
 
-    def _set_shade_azimuth_step(self, step: int) -> None:
+    def _set_shade_azimuth_step(self, step: int, *, snap: Optional[bool] = None) -> None:
         self.ui.spinbox_shade_azimuth.setSingleStep(float(step))
-        self.ui.slider_shade_azimuth.setSingleStep(step)
-        self.ui.slider_shade_azimuth.setPageStep(step)
+        if snap is None:
+            snap = self.shade_adapter.is_precached
+        self.ui.orbit_shade_azimuth.setSnapStep(int(step) if snap else None)
 
     def _snap_shade_azimuth_ui(self, value: float) -> float:
         snapped = float(
             snap_azimuth_deg(value, self.shade_adapter.cache_step_deg)
         )
         self.ui.spinbox_shade_azimuth.blockSignals(True)
-        self.ui.slider_shade_azimuth.blockSignals(True)
+        self.ui.orbit_shade_azimuth.blockSignals(True)
         self.ui.spinbox_shade_azimuth.setValue(snapped)
-        self.ui.slider_shade_azimuth.setValue(int(snapped))
+        self.ui.orbit_shade_azimuth.setAzimuth(snapped, rotate_rig=True)
         self.ui.spinbox_shade_azimuth.blockSignals(False)
-        self.ui.slider_shade_azimuth.blockSignals(False)
+        self.ui.orbit_shade_azimuth.blockSignals(False)
         return snapped
 
     def _on_shade_azimuth_spin(self, value: float) -> None:
         if self.shade_adapter.is_precached:
             value = self._snap_shade_azimuth_ui(value)
-        else:
-            self.ui.slider_shade_azimuth.blockSignals(True)
-            self.ui.slider_shade_azimuth.setValue(int(round(value)))
-            self.ui.slider_shade_azimuth.blockSignals(False)
-        self.shade_adapter.set_params(azimuth=value)
+            self.shade_adapter.set_params(azimuth=value)
+            return
+        combined = self.ui.checkbox_shade_combined.isChecked()
+        self.ui.orbit_shade_azimuth.blockSignals(True)
+        self.ui.orbit_shade_azimuth.setAzimuth(float(value), rotate_rig=combined)
+        self.ui.orbit_shade_azimuth.blockSignals(False)
+        self.shade_adapter.set_lights(self.ui.orbit_shade_azimuth.lights())
 
-    def _on_shade_azimuth_slider(self, value: int) -> None:
+    def _on_shade_azimuth_orbit(self, value: float) -> None:
         if self.shade_adapter.is_precached:
             snapped = self._snap_shade_azimuth_ui(float(value))
             self.shade_adapter.set_params(azimuth=snapped)
@@ -3455,33 +3472,50 @@ class MainWindow(QMainWindow):
         self.ui.spinbox_shade_azimuth.blockSignals(True)
         self.ui.spinbox_shade_azimuth.setValue(float(value))
         self.ui.spinbox_shade_azimuth.blockSignals(False)
-        self.shade_adapter.set_params(azimuth=float(value))
+        self.shade_adapter.set_lights(self.ui.orbit_shade_azimuth.lights())
+
+    def _on_shade_combined(self) -> None:
+        on = self.ui.checkbox_shade_combined.isChecked()
+        self.ui.orbit_shade_azimuth.setCombined(on)
+
+    def _on_shade_preset(self) -> None:
+        self.ui.checkbox_shade_combined.blockSignals(True)
+        self.ui.checkbox_shade_combined.setChecked(True)
+        self.ui.checkbox_shade_combined.blockSignals(False)
+        self.ui.orbit_shade_azimuth.applyFourWayPreset()
+
+    def _on_shade_lights(self) -> None:
+        lights = self.ui.orbit_shade_azimuth.lights()
+        on = len(lights) > 1
+        if self.ui.checkbox_shade_combined.isChecked() != on:
+            self.ui.checkbox_shade_combined.blockSignals(True)
+            self.ui.checkbox_shade_combined.setChecked(on)
+            self.ui.checkbox_shade_combined.blockSignals(False)
+        self.shade_adapter.set_lights(lights)
 
     def _on_shade_elevation_spin(self, value: float) -> None:
-        self.ui.slider_shade_elevation.blockSignals(True)
-        self.ui.slider_shade_elevation.setValue(int(round(value)))
-        self.ui.slider_shade_elevation.blockSignals(False)
+        self.ui.orbit_shade_azimuth.blockSignals(True)
+        self.ui.orbit_shade_azimuth.setElevation(float(value))
+        self.ui.orbit_shade_azimuth.blockSignals(False)
         self.shade_adapter.set_params(elevation=value)
 
-    def _on_shade_elevation_slider(self, value: int) -> None:
+    def _on_shade_elevation_orbit(self, value: float) -> None:
         self.ui.spinbox_shade_elevation.blockSignals(True)
         self.ui.spinbox_shade_elevation.setValue(float(value))
         self.ui.spinbox_shade_elevation.blockSignals(False)
         self.shade_adapter.set_params(elevation=float(value))
 
     def _on_shade_z_spin(self, value: float) -> None:
-        # Slider stores tenths (1 → 0.1 … 200 → 20.0)
-        self.ui.slider_shade_z.blockSignals(True)
-        self.ui.slider_shade_z.setValue(int(round(value * 10.0)))
-        self.ui.slider_shade_z.blockSignals(False)
+        self.ui.orbit_shade_azimuth.blockSignals(True)
+        self.ui.orbit_shade_azimuth.setZFactor(float(value))
+        self.ui.orbit_shade_azimuth.blockSignals(False)
         self.shade_adapter.set_params(z_factor=value)
 
-    def _on_shade_z_slider(self, value: int) -> None:
-        z = float(value) / 10.0
+    def _on_shade_z_orbit(self, value: float) -> None:
         self.ui.spinbox_shade_z.blockSignals(True)
-        self.ui.spinbox_shade_z.setValue(z)
+        self.ui.spinbox_shade_z.setValue(float(value))
         self.ui.spinbox_shade_z.blockSignals(False)
-        self.shade_adapter.set_params(z_factor=z)
+        self.shade_adapter.set_params(z_factor=float(value))
 
     def _raise_polyline_dock(self) -> None:
         if not self.ui.checkbox_polyline_profile.isChecked():

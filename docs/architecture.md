@@ -66,13 +66,27 @@ flowchart TD
 - **Auxiliary 1D** — TOF today; more sensor curves later. Not a cube overlay.
 
 Hillshade **Pre-cache** is paint optimization only (not a new measurand, not
-Apply). Freeze elevation and Z factor, then build an azimuth atlas for the
-**current** `T` frame on a worker thread (step 5–90°, default 30°; 5° is the
-finest). The RAM line shows atlas size, compute peak, and free memory; Pre-cache
-refuses to start above ~90% of free RAM. Azimuth scrub swaps cached overlays.
-Optional later: cache the current angles over `T` so timeline scrub stays
-smooth. Viewport-local shade (only the zoomed region) is parked — see
-[`TODO.md`](../TODO.md).
+Apply). Azimuth `0°` is screen north (top of the image). The viewer ViewBox
+uses `invertY`, so the light vector is `ly = -cos(az)` (same as gdaldem);
+east/west stay `lx = sin(az)`. Freeze elevation and Z factor, then build an azimuth atlas for the
+**current viewport** of the current `T` frame on a worker thread (step 5–90°,
+default 30°; 5° is the finest). Overlay paint crops the ViewBox (1 px halo) and
+downsamples to about screen size. The RAM line uses that patch. Combined mode
+blends independent coloured lights (Preset = four at 90°, same elevation).
+Optional later: cache the current angles over `T` so timeline scrub stays smooth.
+
+```mermaid
+flowchart TD
+  dome["Sky dome"] --> az["Around: azimuth 0-360 wrap"]
+  dome --> el["Radius: elevation 0 rim to 90 centre"]
+  dome --> zf["Grey peg shadow opposite the sun; length from Z and elevation"]
+  az --> lights["One sun or four independent"]
+  el --> lights
+  lights --> rgb["Mean of n·l tinted by each colour"]
+  zf --> grad["∇ of z times Z then shade"]
+  rgb --> overlay["Viewport overlay"]
+  grad --> overlay
+```
 
 ```mermaid
 flowchart TD

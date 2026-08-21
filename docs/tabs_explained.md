@@ -163,14 +163,30 @@ stack** — that would bake `0…1` shade into `ImageData`. See the
 | Control | What it does | Algorithm / notes |
 |---------|--------------|-------------------|
 | **Preview** | Toggle Lambertian shade overlay | Separate `ImageItem` (z≈0.1); base opacity → 0 while previewing |
-| **Azimuth** | Light direction `0–360°` | `0°` = top (+y), clockwise toward +x; snaps to the Pre-cache step while cache is on |
-| **Elevation** | Sun height `0–90°` | Horizon → zenith; locked while Pre-cache is on |
-| **Z factor** | Vertical exaggeration `0.1–20` | Scales height before `np.gradient`; locked while Pre-cache is on |
-| **Pre-cache azimuth** | Freeze elev/Z; background azimuth atlas | Worker: gradients once, then `n·l` per bin; uint8 overlay swap |
+| **Azimuth** | Light direction `0–360°` (wraps both ways) | Sky dome + spinner. `0°` / **N** = top of the image (ViewBox `invertY`, decreasing y), clockwise toward +x (90° = east); snaps to the Pre-cache step while cache is on |
+| **Sky dome** | Azimuth, elevation, and Z together | Yellow = sun; grey wedge = peg shadow opposite the sun. `N` / `0°` = top of image. Rim = elevation `0°`, centre = `90°`. Shadow length grows with Z and lower sun |
+| **Combined (4 lights)** | Independent coloured lights | Drag each sun; right-click to colour. Paint only |
+| **Preset** | Four lights 90° apart | Same elevation (not overhead), distinct colours; resets independent positions |
+| **Elevation** | Sun height `0–90°` | Horizon → zenith; also by dragging a sun radially; locked while Pre-cache is on |
+| **Z factor** | Vertical exaggeration `0.01–2` | Default `1`. With U16 centimetre height, `0–1` is the useful range (20× was for unitless 8-bit). Shadow on the dome. Locked while Pre-cache is on |
+| **Pre-cache azimuth** | Freeze elev/Z; background azimuth atlas | Worker on the **viewport** patch; uint8 overlay swap |
 | **Step** | Atlas raster `5–90°` (default 30°) | Finest is 5° (72 frames). 1° is not offered. Must divide 360°. |
-| **RAM line** | Atlas / peak / free RAM | Red: block at ~90% of free RAM; orange: large but allowed |
+| **RAM line** | Atlas / peak / free RAM | Sized from the viewport patch, not the full frame |
 
-**Math (`calculate_hillshade`):** height from grayscale or luminance `0.299R+0.587G+0.114B` → `dx, dy = ∇z` → unit normal · light vector → shade clipped to `[0, 1]`. Live scrub recomputes the current frame. **Pre-cache** builds an azimuth atlas for the current `T` (paint optimization only; step 5–90°, default 30°). Timeline scrub rebuilds that atlas; a cache over all `T` at one angle is still later.
+**Math (`calculate_hillshade`):** height from grayscale or luminance `0.299R+0.587G+0.114B` → `dx, dy = ∇z` → unit normal · light vector → shade clipped to `[0, 1]`. Overlay paint uses the **visible ViewBox** (crop + halo, downsampled to ~screen size) and `ImageItem.setRect` to align. **Combined** averages coloured lights (RGB overlay). **Pre-cache** atlases that viewport patch for the current `T`. A cache over all `T` at one angle is still later.
+
+```mermaid
+flowchart TD
+  dome["Sky dome"] --> az["Around: azimuth 0-360 wrap"]
+  dome --> el["Radius: elevation 0 rim to 90 centre"]
+  dome --> zf["Grey peg shadow opposite the sun"]
+  az --> lights["One sun or four independent"]
+  el --> lights
+  lights --> rgb["Mean of n·l tinted by each colour"]
+  zf --> grad["∇(z · Z) then shade"]
+  rgb --> overlay["Viewport overlay"]
+  grad --> overlay
+```
 
 ```mermaid
 flowchart TD
@@ -405,7 +421,7 @@ Status visible in **Bench → Numba**.
 | Measure | Tools | Area, circularity, bbox | AU calibration |
 | Polyline profile | Tools + Polyline dock | Path sample + ⊥ band stats | CSV |
 | RoSEE | RoSEE | Cumsum fluctuation extrema | — |
-| Hillshade | Shade | Lambertian `n·l` from `∇z` | Preview only; no Apply; azimuth Pre-cache (5–90°) |
+| Hillshade | Shade | Lambertian `n·l` from `∇z` | Preview overlay; viewport paint; sky dome; Combined coloured lights |
 | PCA / SVD | PCA | Exact or randomized SVD | — |
 | LUT levels | LUT dock | Percentile / min-max | (LUT export hidden) |
 | Live / webcam / net | Stream | Ring buffer / OpenCV / Socket.IO | npy over network |

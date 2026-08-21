@@ -40,6 +40,20 @@ def test_ramp_changes_with_azimuth() -> None:
     assert float(np.nanmean(left)) > float(np.nanmean(right))
 
 
+def test_azimuth_zero_lights_screen_north_not_plus_y() -> None:
+    """ViewBox invertY: screen top is low y. Azimuth 0° must light from there.
+
+    A ramp z = y faces north (decreasing y). North light is brighter than south.
+    East/west must stay unflipped (see test_ramp_changes_with_azimuth).
+    """
+    ny = 64
+    y = np.linspace(0.0, 10.0, ny)
+    z = np.broadcast_to(y, (64, ny)).copy()
+    north = calculate_hillshade(z, azimuth_deg=0.0, elevation_deg=45.0)
+    south = calculate_hillshade(z, azimuth_deg=180.0, elevation_deg=45.0)
+    assert float(np.nanmean(north)) > float(np.nanmean(south))
+
+
 def test_z_factor_deepens_relief_on_bump() -> None:
     yy, xx = np.mgrid[-1:1:48j, -1:1:48j]
     z = np.exp(-3.0 * (xx * xx + yy * yy))
@@ -67,6 +81,17 @@ def test_snap_azimuth_half_up_not_bankers() -> None:
     assert snap_azimuth_deg(15.0) == 30
     assert snap_azimuth_deg(345.0) == 0
     assert snap_azimuth_deg(329.9) == 330
+
+
+def test_step_azimuth_wraps_below_zero_on_cache_raster() -> None:
+    from blitz.data.hillshade import step_azimuth_deg
+
+    # Nearest-snap of 355° is 0° — that must not be used for a backward wheel tick.
+    assert snap_azimuth_deg(355.0, 30) == 0
+    assert step_azimuth_deg(0.0, 30, -1) == 330
+    assert step_azimuth_deg(330.0, 30, 1) == 0
+    assert step_azimuth_deg(0.0, 30, 1) == 30
+    assert step_azimuth_deg(360.0, 5, -1) == 355
 
 
 def test_azimuth_cache_bins_and_order() -> None:
@@ -116,3 +141,97 @@ def test_azimuth_atlas_nbytes() -> None:
     peak = azimuth_atlas_peak_nbytes(10, 20, 30)
     assert peak > atlas
     assert azimuth_atlas_nbytes(0, 10, 30) == 0
+
+
+def test_shade_to_uint8_range() -> None:
+    z = np.linspace(0, 1, 16, dtype=np.float32).reshape(4, 4)
+    u8 = shade_to_uint8(z)
+    assert u8.dtype == np.uint8
+    assert int(u8.min()) == 0
+    assert int(u8.max()) == 255
+
+
+def test_combined_azimuths_quarter_turns() -> None:
+    from blitz.data.hillshade import combined_azimuths
+
+    assert combined_azimuths(315.0) == (315.0, 45.0, 135.0, 225.0)
+    assert combined_azimuths(0.0) == (0.0, 90.0, 180.0, 270.0)
+
+
+def test_combined_hillshade_white_lights_match_mean() -> None:
+    from blitz.data.hillshade import (
+        combined_azimuths,
+        shade_from_gradients_combined,
+    )
+
+    yy, xx = np.mgrid[-1:1:32j, -1:1:32j]
+    z = np.exp(-3.0 * (xx * xx + yy * yy))
+    combo = shade_from_gradients_combined(
+        *scaled_height_gradients(z, 1.0), 315.0, 40.0
+    )
+    parts = [
+        calculate_hillshade(z, az, 40.0, combined=False)
+        for az in combined_azimuths(315.0)
+    ]
+    np.testing.assert_allclose(combo, np.mean(parts, axis=0), rtol=0, atol=1e-6)
+
+
+def test_combined_colour_preset_is_rgb() -> None:
+    yy, xx = np.mgrid[-1:1:24j, -1:1:24j]
+    z = np.exp(-3.0 * (xx * xx + yy * yy))
+    rgb = calculate_hillshade(z, 315.0, 40.0, combined=True)
+    assert rgb.ndim == 3 and rgb.shape[-1] == 3
+    assert rgb.dtype == np.float32
+
+
+def test_rotate_lights_wraps_primary_azimuth() -> None:
+    from blitz.data.hillshade import ShadeLight, rotate_lights_to_primary
+
+    lights = [
+        ShadeLight(0.0, 35.0, (1.0, 0.0, 0.0)),
+        ShadeLight(90.0, 20.0, (0.0, 1.0, 0.0)),
+    ]
+    rotated = rotate_lights_to_primary(lights, 350.0)
+    assert abs(rotated[0].azimuth - 350.0) < 1e-9
+    assert abs(rotated[1].azimuth - 80.0) < 1e-9
+    assert rotated[1].elevation == 20.0
+
+
+def test_azimuth_wraps_below_zero() -> None:
+    assert float((-5.0) % 360.0) == 355.0
+    assert float((0.0 - 5.0) % 360.0) == 355.0
+
+
+def test_shadow_falls_opposite_the_sun() -> None:
+    from blitz.data.hillshade import shadow_azimuth_deg
+
+    assert shadow_azimuth_deg(0.0) == 180.0
+    assert shadow_azimuth_deg(315.0) == 135.0
+    assert shadow_azimuth_deg(90.0) == 270.0
+    assert shadow_azimuth_deg(180.0) == 0.0
+
+
+def test_viewport_slices_col_major_includes_halo() -> None:
+    from blitz.data.hillshade import extract_viewport_patch, viewport_slices
+
+    sl, rect = viewport_slices(
+        (100, 80), 10, 20, 5, 15, axis_order="col-major", halo=1
+    )
+    assert sl[0] == slice(9, 21)
+    assert sl[1] == slice(4, 16)
+    assert rect == (9.0, 4.0, 12.0, 12.0)
+    z = np.arange(100 * 80).reshape(100, 80)
+    patch, prect = extract_viewport_patch(
+        z, 10, 20, 5, 15, axis_order="col-major", max_edge=1600, halo=1
+    )
+    assert patch.shape == (12, 12)
+    assert prect == rect
+
+
+def test_downsample_xy_caps_long_edge() -> None:
+    from blitz.data.hillshade import downsample_xy
+
+    z = np.zeros((4000, 500), dtype=np.float32)
+    d = downsample_xy(z, 1000)
+    assert max(d.shape) <= 1000
+    assert d.shape[0] == 1000

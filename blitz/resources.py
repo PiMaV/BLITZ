@@ -1,9 +1,6 @@
-# -*- coding: utf-8 -*-
-
-# Resource object code
-#
-# Created by: The Resource Compiler for PyQt6 (Qt 6)
-#
+# Resource object code (Python 3)
+# Created by: object code
+# Created by: The Resource Compiler for Qt version 6.10.2
 # WARNING! All changes made in this file will be lost!
 
 from PyQt6 import QtCore
@@ -361,7 +358,7 @@ ll=\x22#1e2030\x22 str\
 oke=\x22#3b4261\x22 st\
 roke-width=\x221.5\x22\
 />\x0a</svg>\x0a\
-\x00\x002\x0c\
+\x00\x004B\
 {\
 \x0a    \x22action_ope\
 n_file\x22: \x22Select\
@@ -1081,89 +1078,125 @@ on in degrees. 0\
 \xc2\xb0 = from top of\
  image, clockwis\
 e (90\xc2\xb0 = from t\
-he right). Artif\
-icial sun.\x22,\x0a   \
- \x22slider_shade_a\
-zimuth\x22: \x22Light \
-direction (azimu\
-th) 0\xe2\x80\x93360\xc2\xb0. S\
-ame as the Azimu\
-th spinner.\x22,\x0a  \
+he right). Wraps\
+ through 0\xc2\xb0 \xe2\x86\x94\
+ 360\xc2\xb0. Artifici\
+al sun.\x22,\x0a    \x22o\
+rbit_shade_azimu\
+th\x22: \x22Yellow = s\
+un. Grey wedge =\
+ shadow of the c\
+entre peg, oppos\
+ite the sun. 0\xc2\xb0\
+ / N = top of th\
+e image (north),\
+ clockwise. Drag\
+ the sun (around\
+ = azimuth, inwa\
+rd = elevation).\
+ Drag the dark s\
+hadow tip for Z.\
+ Wheel wraps thr\
+ough 0\xc2\xb0. Combin\
+ed: drag each su\
+n; right-click t\
+o colour.\x22,\x0a    \
+\x22checkbox_shade_\
+combined\x22: \x22Four\
+ independent lig\
+hts. Drag each s\
+un on the dome; \
+right-click to c\
+olour. Preset re\
+stores 90\xc2\xb0 spac\
+ing at the curre\
+nt elevation (no\
+t overhead). Pai\
+nt only \xe2\x80\x94 anal\
+ysis still uses \
+height.\x22,\x0a    \x22b\
+utton_shade_pres\
+et\x22: \x22Four light\
+s 90\xc2\xb0 apart at \
+the current elev\
+ation, with dist\
+inct colours. Re\
+sets independent\
+ positions.\x22,\x0a  \
   \x22spinbox_shade\
 _elevation\x22: \x22Li\
 ght height above\
  the horizon. 0\xc2\
-\xb0 = grazing ligh\
-t, 90\xc2\xb0 = overhe\
-ad. Artificial s\
-un.\x22,\x0a    \x22slide\
-r_shade_elevatio\
-n\x22: \x22Light eleva\
-tion 0\xe2\x80\x9390\xc2\xb0. S\
-ame as the Eleva\
-tion spinner.\x22,\x0a\
-    \x22spinbox_sha\
-de_z\x22: \x22Vertical\
- exaggeration be\
-fore shading. Hi\
+\xb0 = grazing (rim\
+ of the dome), 9\
+0\xc2\xb0 = overhead (\
+centre). Same as\
+ dragging a sun \
+inward. Artifici\
+al sun.\x22,\x0a    \x22s\
+pinbox_shade_z\x22:\
+ \x22Vertical exagg\
+eration before s\
+hading. With U16\
+ centimetre heig\
+ht, useful range\
+ is about 0.01\xe2\x80\
+\x931 (default 1 = \
+no extra scale).\
+ The dome shadow\
+ length shows th\
+e same value. Hi\
 gher values deep\
-en slopes (more \
-dramatic relief)\
-. Step 0.5.\x22,\x0a  \
-  \x22slider_shade_\
-z\x22: \x22Vertical ex\
-aggeration (Z fa\
-ctor). Same as t\
-he Z factor spin\
-ner.\x22,\x0a    \x22chec\
-kbox_shade_preca\
-ched\x22: \x22Freeze e\
-levation and Z f\
-actor, then pre-\
-render hillshade\
- at the chosen a\
-zimuth step in t\
-he background. A\
-zimuth scrub the\
-n swaps cached f\
-rames. Paint opt\
-imization only \xe2\
-\x80\x94 analysis stil\
-l uses height.\x22,\
-\x0a    \x22spinbox_sh\
-ade_cache_step\x22:\
- \x22Azimuth raster\
- for Pre-cache. \
-Finest is 5\xc2\xb0 (7\
-2 frames). 1\xc2\xb0 i\
-s not offered \xe2\x80\
-\x94 that would sto\
-re 360 full-size\
- copies. Steps t\
-hat do not divid\
-e 360\xc2\xb0 snap to \
-the nearest vali\
-d raster. Watch \
-the RAM line bef\
-ore enabling.\x22,\x0a\
-    \x22label_shade\
-_cache_ram\x22: \x22Es\
-timated atlas si\
-ze, compute peak\
-, and currently \
-free RAM. Red: w\
-ould exceed ~90%\
- of free RAM (Pr\
-e-cache will not\
- start). Orange:\
- large but allow\
-ed.\x22,\x0a    \x22label\
-_shade_status\x22: \
-\x22Reminds that Pr\
-eview is view ch\
-rome only; analy\
-sis always uses \
-height.\x22\x0a}\x0a\
+en slopes.\x22,\x0a   \
+ \x22checkbox_shade\
+_precached\x22: \x22Fr\
+eeze elevation a\
+nd Z factor, the\
+n pre-render hil\
+lshade at the ch\
+osen azimuth ste\
+p in the backgro\
+und. Azimuth scr\
+ub then swaps ca\
+ched frames. Pai\
+nt optimization \
+only \xe2\x80\x94 analysi\
+s still uses hei\
+ght.\x22,\x0a    \x22spin\
+box_shade_cache_\
+step\x22: \x22Azimuth \
+raster for Pre-c\
+ache. Finest is \
+5\xc2\xb0 (72 frames).\
+ 1\xc2\xb0 is not offe\
+red \xe2\x80\x94 that wou\
+ld store 360 ful\
+l-size copies. S\
+teps that do not\
+ divide 360\xc2\xb0 sn\
+ap to the neares\
+t valid raster. \
+Watch the RAM li\
+ne before enabli\
+ng.\x22,\x0a    \x22label\
+_shade_cache_ram\
+\x22: \x22Estimated at\
+las size, comput\
+e peak, and curr\
+ently free RAM. \
+Red: would excee\
+d ~90% of free R\
+AM (Pre-cache wi\
+ll not start). O\
+range: large but\
+ allowed.\x22,\x0a    \
+\x22label_shade_sta\
+tus\x22: \x22Reminds t\
+hat Preview is v\
+iew chrome only;\
+ analysis always\
+ uses height.\x22\x0a}\
+\x0a\
 "
 
 qt_resource_name = b"\
@@ -1207,7 +1240,7 @@ qt_resource_struct = b"\
 \x00\x00\x00\x1c\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\
 \x00\x00\x01\x9f\xa3\xe2w^\
 \x00\x00\x00r\x00\x00\x00\x00\x00\x01\x00\x00\x15\x9c\
-\x00\x00\x01\xa0#\xa65V\
+\x00\x00\x01\xa0$\x16\xd4\x92\
 "
 
 def qInitResources():
