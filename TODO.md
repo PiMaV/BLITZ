@@ -73,9 +73,8 @@ Native crash (`SIGSEGV`), no Python traceback. Repro: Connect to dead host → o
 
 ### Color swatch shows LUT color, not real RGB
 
-The little color patch at the cursor is filled from the **colorscale / LUT gradient**, not from the actual pixel RGB. Prefer a true-color swatch when the image is RGB.
-
-Relevant: `blitz/layout/main.py` (`_update_position_display`).
+**In play:** RGB swatch uses the source pixel; grayscale still follows the LUT.
+Confirm on a photo vs a colormapped DTM, then drop this item.
 
 ### Envelopes on RGB — disable?
 

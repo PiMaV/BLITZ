@@ -35,7 +35,7 @@ Source-backed inventory of BLITZ analysis, visualization, and data-processing ca
 |------|------|
 | **Image Viewer** | Main matrix view (`ImageViewer`) |
 | **H Plot** / **V Plot** | Crosshair line profiles (horizontal / vertical) |
-| **Probe** | Frames count, cursor position, LUT-mapped color + swatch |
+| **Probe** | Frames count, cursor position, value + swatch (RGB = pixel, gray = LUT) |
 | **LUT** | Histogram LUT, levels, colormap, Fit / Trim, IDLE + Bench compact |
 | **Options** | Tabbed control panel (File → Log). Tabs **wrap onto extra rows** so later pages (Stream, Log) stay visible instead of hiding off to the right. |
 | **Timeline** | ROI time series + Frame \| Range side panel |
@@ -290,7 +290,7 @@ Scrollable application logger (`LoggingTextEdit`).
 |-------|---------|
 | **Frames** | Stack length |
 | **Position** | Cursor `X`, `Y` |
-| **Color** | LUT-mapped value (RGB or grayscale) + swatch |
+| **Color** | Dtype + pixel value. Swatch is **source RGB** on colour images, **LUT** on grayscale. |
 
 **Ctrl+C** copies Frames + Position + Color lines to the clipboard.
 

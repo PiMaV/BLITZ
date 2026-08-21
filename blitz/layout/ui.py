@@ -167,7 +167,7 @@ class UI_MainWindow(QWidget):
         self.color_swatch.setStyleSheet(
             "background-color: #3b4261; border: 1px solid #565f89;"
         )
-        self.color_swatch.setToolTip("Color at cursor (LUT-mapped)")
+        self.color_swatch.setToolTip("Color at cursor")
         pos_layout.addWidget(self.color_swatch, 0, Qt.AlignmentFlag.AlignLeft)
         pos_layout.addStretch(1)
         self.dock_status.addWidget(position_widget)

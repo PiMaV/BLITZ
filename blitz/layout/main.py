@@ -31,7 +31,7 @@ from ..data.folder_scan import (
 )
 from ..tools import (LoadingManager, format_pixel_value_fixed, format_size_mb,
                      get_available_ram, get_cpu_percent, get_disk_io_mbs,
-                     get_used_ram, log)
+                     get_used_ram, log, pixel_to_swatch_rgb8)
 
 
 def _pca_sync_vb2(plot_widget) -> None:
@@ -1671,6 +1671,7 @@ class MainWindow(QMainWindow):
         else:
             x, y, _value, raw, pv = self.ui.image_viewer.get_position_info(pos)
         frame, max_frame, _ = self.ui.image_viewer.get_frame_info()
+        is_rgb = False
         if img is not None and pv is not None:
             bits = 8 * img.dtype.itemsize
             is_rgb = img.ndim == 4 and img.shape[-1] >= 3
@@ -1682,26 +1683,55 @@ class MainWindow(QMainWindow):
         self.ui.label_frames.setText(f"Frames: {frame} / {max_frame}")
         self.ui.label_position.setText(f"Position: X {x}  Y {y}")
         self.ui.label_color.setText(color_str)
-        # Color swatch from LUT gradient
+        self._paint_color_swatch(img, pv, raw, is_rgb)
+
+    def _paint_color_swatch(
+        self,
+        img,
+        pv,
+        raw: Optional[float],
+        is_rgb: bool,
+    ) -> None:
+        """RGB: source pixel. Grayscale: LUT colour at the cursor."""
+        idle = "background-color: #3b4261; border: 1px solid #565f89;"
+        swatch = self.ui.color_swatch
+        if img is None or pv is None:
+            swatch.setStyleSheet(idle)
+            swatch.setToolTip("Color at cursor")
+            return
+        if is_rgb:
+            lo = hi = None
+            try:
+                lo, hi = self.ui.image_viewer.ui.histogram.getLevels()
+            except (AttributeError, TypeError):
+                pass
+            rgb = pixel_to_swatch_rgb8(pv, dtype=img.dtype, lo=lo, hi=hi)
+            if rgb is None:
+                swatch.setStyleSheet(idle)
+                swatch.setToolTip("Color at cursor")
+                return
+            r, g, b = rgb
+            swatch.setStyleSheet(
+                f"background-color: rgb({r},{g},{b}); border: 1px solid #565f89;"
+            )
+            swatch.setToolTip("Pixel RGB at cursor (source, not LUT)")
+            return
         try:
             hist = self.ui.image_viewer.ui.histogram
             lo, hi = hist.getLevels()
             if raw is not None and hi > lo:
-                norm = (raw - lo) / (hi - lo)
-                norm = max(0.0, min(1.0, norm))
-                r, g, b, a = hist.gradient.getColor(norm, toQColor=False)
-                self.ui.color_swatch.setStyleSheet(
+                norm = max(0.0, min(1.0, (raw - lo) / (hi - lo)))
+                r, g, b, _a = hist.gradient.getColor(norm, toQColor=False)
+                swatch.setStyleSheet(
                     f"background-color: rgb({int(r)},{int(g)},{int(b)});"
                     " border: 1px solid #565f89;"
                 )
             else:
-                self.ui.color_swatch.setStyleSheet(
-                    "background-color: #3b4261; border: 1px solid #565f89;"
-                )
+                swatch.setStyleSheet(idle)
+            swatch.setToolTip("LUT colour at cursor")
         except (AttributeError, TypeError):
-            self.ui.color_swatch.setStyleSheet(
-                "background-color: #3b4261; border: 1px solid #565f89;"
-            )
+            swatch.setStyleSheet(idle)
+            swatch.setToolTip("LUT colour at cursor")
 
     def update_statusbar_position(self, pos: tuple[int, int]) -> None:
         self._update_position_display(pos)

@@ -345,3 +345,43 @@ def format_pixel_value_fixed(
         parts = [_format_pixel_scalar_fixed(float(p), width) for p in arr.flatten()[:3]]
         return f"({parts[0]},{parts[1]},{parts[2]})"
     return _format_pixel_scalar_fixed(float(arr.flat[0]), width)
+
+
+def pixel_to_swatch_rgb8(
+    value: np.ndarray | Sequence[float | int] | None,
+    *,
+    dtype,
+    lo: float | None = None,
+    hi: float | None = None,
+) -> tuple[int, int, int] | None:
+    """Map an RGB pixel to 8-bit display RGB for the cursor swatch.
+
+    Integer dtypes scale by the dtype range. Float in ``[0, 1]`` is treated as
+    unit; float in ``[0, 255]`` as already 8-bit; otherwise ``lo``/``hi``
+    (histogram levels) stretch all three channels together.
+    """
+    if value is None:
+        return None
+    arr = np.asarray(value).reshape(-1)
+    if arr.size < 3:
+        return None
+    ch = arr[:3].astype(np.float64)
+    if not np.all(np.isfinite(ch)):
+        return None
+    dt = np.dtype(dtype)
+    if np.issubdtype(dt, np.integer):
+        info = np.iinfo(dt)
+        span = float(info.max - info.min) or 1.0
+        rgb = (ch - float(info.min)) / span * 255.0
+    else:
+        peak = float(np.max(np.abs(ch)))
+        if peak <= 1.5:
+            rgb = ch * 255.0
+        elif peak <= 255.5:
+            rgb = ch
+        elif lo is not None and hi is not None and hi > lo:
+            rgb = (ch - float(lo)) / (float(hi) - float(lo)) * 255.0
+        else:
+            rgb = ch
+    rgb = np.clip(np.rint(rgb), 0, 255).astype(np.int64)
+    return int(rgb[0]), int(rgb[1]), int(rgb[2])
