@@ -288,6 +288,7 @@ class VideoLoadOptionsDialog(QDialog, ROIMixin):
         self.btn_roi_reset.setToolTip("Reset crop to full frame")
         self.btn_roi_reset.pressed.connect(self._reset_roi)
         preview_opts.addWidget(self.btn_roi_reset)
+        preview_opts.addWidget(self._make_auto_crop_button())
         preview_opts.addStretch()
         layout.addLayout(preview_opts)
 
@@ -750,6 +751,7 @@ class ImageLoadOptionsDialog(QDialog, ROIMixin):
         self.btn_roi_reset.setToolTip("Reset crop to full frame")
         self.btn_roi_reset.pressed.connect(self._reset_roi)
         preview_opts.addWidget(self.btn_roi_reset)
+        preview_opts.addWidget(self._make_auto_crop_button())
         preview_opts.addStretch()
         layout.addLayout(preview_opts)
 
@@ -1171,6 +1173,7 @@ class AsciiLoadOptionsDialog(QDialog, ROIMixin):
         self.btn_roi_reset = QPushButton("Reset ROI")
         self.btn_roi_reset.pressed.connect(self._reset_roi)
         preview_opts.addWidget(self.btn_roi_reset)
+        preview_opts.addWidget(self._make_auto_crop_button())
         preview_opts.addStretch()
         layout.addLayout(preview_opts)
 

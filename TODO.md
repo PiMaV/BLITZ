@@ -11,6 +11,7 @@ Related: [`docs/missing_features.md`](docs/missing_features.md) (hidden UI / con
 
 ## Recently done (this stretch)
 
+- **Cursor swatch:** RGB uses the source pixel; grayscale still follows the LUT.
 - **v2.1.0** Shade sky dome (azimuth / elevation / Z, Combined colours,
   invertY north, Pre-cache wrap through 0°) and D8 **Flow** accumulation
   overlay (viewport veins, Preview-only). Seed path / fill / legend parked.
@@ -71,16 +72,12 @@ Native crash (`SIGSEGV`), no Python traceback. Repro: Connect to dead host → o
 `blitz/tools.py` (queued marshal) — **re-test**; see `BUGS.md` +
 `docs/agent_handoff_sigsegv_log.md`.
 
-### Color swatch shows LUT color, not real RGB
+### Auto-crop in the load dialog
 
-**In play:** RGB swatch uses the source pixel; grayscale still follows the LUT.
-Confirm on a photo vs a colormapped DTM, then drop this item.
-
-### Envelopes on RGB — disable?
-
-H/V envelopes on RGB collapse over channels and are often noisy. Disable for RGB, or force grayscale first?
-
-Relevant: `docs/extraction_envelopes.md`, `ExtractionPlot`.
+**In play:** **Auto-crop** next to Reset ROI (Video / Image / ASCII). Fits the
+existing crop rectangle to content in the **MAX** (or current) preview —
+threshold + margin. User can still drag; **OK** is what loads. Never runs on
+silent drag-and-drop.
 
 ---
 
@@ -92,10 +89,6 @@ Zero-lag Pearson + difference/similarity strip already ship with Live Probe.
 Optional later: full cross-correlation (lag axis / peak lag / r_max) for delayed fronts — not started.
 
 Relevant: `TimelineProbeController`, `ImageViewer` probe similarity path.
-
-### Auto-crop in the load dialog
-
-MAX preview: threshold bounding box + margin; user confirms, no auto-apply on load.
 
 ### RoSEE: isolines + normalization
 
@@ -147,12 +140,11 @@ hiding them or crowding the top row.
 Do not implement until the wrapping layout has been lived with; this is IA,
 not a bugfix.
 
-### Controllable cell-grid overlay (esp. Conway / blocky data)
+### Dropped from the nebenher queue
 
-Make the spatial **cell grid** (hairline lattice over the image) more visible and
-**user-controllable** (on/off, contrast/alpha, maybe pitch). Especially useful for
-Game of Life and other discrete rasters where the lattice is the point — not only
-a faint viewer decoration.
+Not visible enough to keep in P1/P2: **H/V envelopes on RGB** (noisy channel
+collapse) and **controllable cell-grid** (Conway lattice). Revive only if they
+start to hurt in daily use.
 
 ### Dedicated Conway / discrete-level color bar
 

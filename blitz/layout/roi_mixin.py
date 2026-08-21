@@ -4,8 +4,10 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (
     QCheckBox, QGroupBox, QHBoxLayout, QLabel,
-    QSpinBox, QVBoxLayout, QWidget
+    QPushButton, QSpinBox, QVBoxLayout, QWidget
 )
+
+from ..data.autocrop import content_bbox_xywh
 
 
 class ROIMixin:
@@ -75,6 +77,38 @@ class ROIMixin:
         # Compact style
         s.setMaximumWidth(95)
         return s
+
+    def _make_auto_crop_button(self) -> QPushButton:
+        btn = QPushButton("Auto-crop")
+        btn.setToolTip(
+            "Fit the crop to content in this preview (threshold + margin). "
+            "Nothing is loaded until OK. You can still drag the ROI."
+        )
+        btn.clicked.connect(self._auto_crop_roi)
+        return btn
+
+    def _auto_crop_roi(self) -> None:
+        """Move the load-dialog ROI onto the preview content box. Never loads."""
+        if getattr(self, "_preview", None) is None:
+            return
+        if getattr(self, "_roi", None) is None:
+            return
+        img = self._get_transformed_preview()
+        x, y, w, h = content_bbox_xywh(img)
+        self._roi.blockSignals(True)
+        try:
+            self._roi.setPos((x, y))
+            self._roi.setSize((w, h))
+            self._roi.setAngle(0)
+        finally:
+            self._roi.blockSignals(False)
+        self._on_roi_changed()
+        status = getattr(self, "lbl_preview_status", None)
+        if status is not None:
+            ih, iw = int(img.shape[0]), int(img.shape[1])
+            status.setText(f"Auto-crop {w}×{h} inside {iw}×{ih} — adjust, then OK")
+        if hasattr(self, "_update_estimates"):
+            self._update_estimates()
 
     def _connect_roi_signals(self) -> None:
         """Call this after self._roi is created. Configures corner scale handles."""

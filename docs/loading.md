@@ -70,7 +70,8 @@ load_images(path)
 
 ### Crop/Mask
 
-- **Im Dialog**: ROI auf Vorschau ziehen --> `mask` (Pixel-Slices), `mask_rel` (0..1)
+- **Im Dialog**: ROI auf Vorschau ziehen, oder **Auto-crop** (Inhalts-Kasten + Rand).
+  Erst **OK** schreibt `mask` / `mask_rel`. Reset ROI = voller Frame.
 - **mask_rel**: Session-Defaults; beim naechsten Video (Dialog oder Drag&Drop) wieder angewendet
 - **mask**: DataLoader wendet Crop beim Laden pro Frame an
 
@@ -107,7 +108,9 @@ load_images(path)
 ### ImageLoadOptionsDialog
 
 - **Preview**: Default MAX ueber gesampelte Bilder; Mode Single waehlbar
-- **Crop-ROI** auf der Preview --> `mask`, `mask_rel`
+- **Crop-ROI** auf der Preview --> `mask`, `mask_rel`. **Auto-crop** setzt die ROI
+  auf den Inhalts-Kasten der Preview (Schwellwert + Rand); erst **OK** laedt.
+  **Reset ROI** bleibt voller Frame. Kein stilles Auto-crop bei Drag-and-Drop.
 - **Transforms**: Flip X, Flip Y, Flip XY (Transpose) — Preview + nach dem Load (wie View-Tab)
 - **Optionen**: Resize, Grayscale, 8 bit, Normalize each image; bei Ordner zusaetzlich Subset-Ratio
 - **Preview normalize**: nur Anzeige (getrennt durch HLine)
