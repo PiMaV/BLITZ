@@ -2,11 +2,21 @@
 
 The repository includes a GitHub Actions workflow to automate the build process for Windows and Linux.
 
+## Version numbers (`pyproject.toml`)
+
+`MAJOR.MINOR.PATCH` (semver):
+
+- **MAJOR** — breaking change (cube/API contract, install story, incompatible workflow).
+- **MINOR** — new feature that stays compatible (e.g. `2.0.15` → `2.1.0`).
+- **PATCH** — bugfix only (e.g. `2.1.0` → `2.1.1`).
+
+Do not bump PATCH for a feature, and do not fold a feature into a PATCH of the previous line.
+
 ## Release Checklist (Internal)
 
 Before triggering a build:
 
-1.  **Version:** Update `version` in `pyproject.toml` (e.g. `1.5.2` → `1.5.3`).
+1.  **Version:** Update `version` in `pyproject.toml` following the rules above.
 2.  **Commit:** Commit and push your changes to `main`.
 3.  **Release notes:** Write a few sentences for the GitHub Release (what changed, fixes, highlights). You can add them when the workflow finishes, or prepare them in advance.
 4.  **Trigger:** Use one of the two options below.

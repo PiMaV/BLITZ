@@ -11,6 +11,9 @@ Related: [`docs/missing_features.md`](docs/missing_features.md) (hidden UI / con
 
 ## Recently done (this stretch)
 
+- **v2.1.0** Shade sky dome (azimuth / elevation / Z, Combined colours,
+  invertY north, Pre-cache wrap through 0°) and D8 **Flow** accumulation
+  overlay (viewport veins, Preview-only). Seed path / fill / legend parked.
 - **Network index-only seek:** WOLKE table click on an already-loaded
   `__selection__.npy` only changes the current frame (no `set_image`, no
   `reset_options`, no BUSY). New stacks still go NET → BUSY → IDLE.
