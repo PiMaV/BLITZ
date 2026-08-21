@@ -6,12 +6,17 @@ from typing import Optional
 
 import numpy as np
 import pyqtgraph as pg
+from PyQt6 import sip
 from PyQt6.QtCore import QRectF, QTimer
 from PyQt6.QtWidgets import QLabel
 
 from ..data.flow import accumulation_rgba, d8_accumulation
 from ..data.hillshade import VIEWPORT_MAX_EDGE, extract_viewport_patch
 from .viewer import ImageViewer
+
+
+def _qobj_alive(obj) -> bool:
+    return obj is not None and not sip.isdeleted(obj)
 
 
 class FlowAdapter:
@@ -38,7 +43,7 @@ class FlowAdapter:
             pass
         viewer.view.addItem(self._item)
 
-        self._timer = QTimer()
+        self._timer = QTimer(viewer)
         self._timer.setSingleShot(True)
         self._timer.setInterval(80)
         self._timer.timeout.connect(self._refresh_now)
@@ -55,9 +60,13 @@ class FlowAdapter:
     def set_preview(self, on: bool) -> None:
         self._preview = bool(on)
         if not self._preview:
-            self._timer.stop()
-            self._item.clear()
-            self._item.setVisible(False)
+            self._stop_timer()
+            if _qobj_alive(self._item):
+                try:
+                    self._item.clear()
+                    self._item.setVisible(False)
+                except RuntimeError:
+                    pass
             self._overlay_rect = None
             self._set_status("Flow off · analysis = height")
             return
@@ -71,14 +80,28 @@ class FlowAdapter:
         if self._preview:
             self._schedule()
 
+    def _stop_timer(self) -> None:
+        timer = self._timer
+        if not _qobj_alive(timer):
+            return
+        try:
+            timer.stop()
+        except RuntimeError:
+            pass
+
     def _schedule(self, *_args) -> None:
         if not self._preview:
             return
-        self._timer.start()
+        if not _qobj_alive(self._timer):
+            return
+        try:
+            self._timer.start()
+        except RuntimeError:
+            return
 
     def _on_viewer_destroyed(self, *_args) -> None:
         self._preview = False
-        self._timer.stop()
+        self._stop_timer()
 
     def _height_frame(self) -> Optional[np.ndarray]:
         img = self.viewer.image
@@ -134,6 +157,8 @@ class FlowAdapter:
     def _refresh_now(self) -> None:
         if not self._preview:
             return
+        if not _qobj_alive(self._item):
+            return
         spec = self._viewport_patch()
         if spec is None:
             self._item.setVisible(False)
@@ -159,5 +184,9 @@ class FlowAdapter:
         )
 
     def _set_status(self, text: str) -> None:
-        if self._status is not None:
+        if not _qobj_alive(self._status):
+            return
+        try:
             self._status.setText(text)
+        except RuntimeError:
+            pass

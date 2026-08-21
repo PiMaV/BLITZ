@@ -6,6 +6,7 @@ from typing import Callable, Optional
 
 import numpy as np
 import pyqtgraph as pg
+from PyQt6 import sip
 from PyQt6.QtCore import QRectF, QThread, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QLabel
 
@@ -33,6 +34,10 @@ from .viewer import ImageViewer
 
 _RAM_BLOCK_FRAC = 0.90
 _RAM_WARN_FRAC = 0.70
+
+
+def _qobj_alive(obj) -> bool:
+    return obj is not None and not sip.isdeleted(obj)
 
 
 class _ShadeAtlasWorker(QThread):
@@ -133,7 +138,7 @@ class ShadeAdapter:
             pass
         viewer.view.addItem(self._item)
 
-        self._timer = QTimer()
+        self._timer = QTimer(viewer)
         self._timer.setSingleShot(True)
         self._timer.setInterval(50)
         self._timer.timeout.connect(self._on_timer)
@@ -156,10 +161,19 @@ class ShadeAdapter:
     def cache_step_deg(self) -> int:
         return self._step_deg
 
+    def _stop_timer(self) -> None:
+        timer = self._timer
+        if not _qobj_alive(timer):
+            return
+        try:
+            timer.stop()
+        except RuntimeError:
+            pass
+
     def set_preview(self, on: bool) -> None:
         self._preview = bool(on)
         if not self._preview:
-            self._timer.stop()
+            self._stop_timer()
             if self._precached:
                 self._precached = False
                 self._cancel_worker()
@@ -186,7 +200,7 @@ class ShadeAdapter:
         if want and not self.can_precache():
             self._refresh_ram_label()
             return False
-        self._timer.stop()
+        self._stop_timer()
         self._precached = want
         if not self._precached:
             self._cancel_worker()
@@ -322,7 +336,12 @@ class ShadeAdapter:
         self._refresh_ram_label()
         if not self._preview:
             return
-        self._timer.start()
+        if not _qobj_alive(self._timer):
+            return
+        try:
+            self._timer.start()
+        except RuntimeError:
+            return
 
     def _on_timer(self) -> None:
         if self._precached:
@@ -342,6 +361,7 @@ class ShadeAdapter:
     def _on_viewer_destroyed(self, *_args) -> None:
         self._preview = False
         self._precached = False
+        self._stop_timer()
         self._cancel_worker()
 
     def _height_frame(self) -> Optional[np.ndarray]:
@@ -358,7 +378,7 @@ class ShadeAdapter:
         return np.asarray(frame)
 
     def _rebuild_atlas(self) -> None:
-        self._timer.stop()
+        self._stop_timer()
         self._cancel_worker()
         self._atlas.clear()
         if not self._preview or not self._precached:
