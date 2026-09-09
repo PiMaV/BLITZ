@@ -214,6 +214,8 @@ class WebDataLoader(QObject):
         self._downloader: _WebDownloader | None = None
         self._load_kwargs = kwargs
         self._selection_imagedata: ImageData | None = None
+        self._cube_file_name: str | None = None
+        self._cube_imagedata: ImageData | None = None
         self._pending_file_name: str | None = None
         self._pending_index: int | None = None
         self._download_busy = False
@@ -234,13 +236,18 @@ class WebDataLoader(QObject):
         file_name = payload.get("file_name")
         index = payload.get("index")
         index = index if isinstance(index, int) else None
-        if (
-            file_name == "__selection__.npy"
-            and index is not None
-            and self._selection_imagedata is not None
+        # Index-only seek: same cube already in RAM (WOLKE selection or EVT stack).
+        cached = None
+        if file_name == "__selection__.npy" and self._selection_imagedata is not None:
+            cached = self._selection_imagedata
+        elif (
+            file_name is not None
+            and file_name == self._cube_file_name
+            and self._cube_imagedata is not None
         ):
-            # Same ImageData, new frame. MainWindow must seek, not reload.
-            self.image_received.emit(self._selection_imagedata, index)
+            cached = self._cube_imagedata
+        if index is not None and cached is not None:
+            self.image_received.emit(cached, index)
             return
         self._pending_file_name = file_name
         self._pending_index = index
@@ -284,6 +291,8 @@ class WebDataLoader(QObject):
                 img = DataLoader(**self._load_kwargs).load(path)
                 if self._pending_file_name == "__selection__.npy":
                     self._selection_imagedata = img
+                    self._cube_file_name = "__selection__.npy"
+                    self._cube_imagedata = img
                     display_index = (
                         self._pending_index
                         if self._pending_index is not None
@@ -292,7 +301,10 @@ class WebDataLoader(QObject):
                     self.image_received.emit(img, display_index)
                 else:
                     self._selection_imagedata = None
-                    self.image_received.emit(img, None)
+                    self._cube_file_name = self._pending_file_name
+                    self._cube_imagedata = img
+                    display_index = self._pending_index
+                    self.image_received.emit(img, display_index)
             except Exception as e:
                 log(f"[NET] Error loading downloaded file: {e}", color="red")
                 # Keep socket listening; only a None payload from the socket

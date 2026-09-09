@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Stream index-only seek works for any cached cube filename (not only `__selection__.npy`), so an EVT hub can relay `viewer_index` between BLITZ and DONNER without re-downloading the stack.
+
 ## [2.3.1] - 2026-08-31
 
 ### Fixed

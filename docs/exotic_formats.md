@@ -26,8 +26,11 @@ When BLITZ should “handle more formats” without bloating the core:
 
 **Event reader** (`../EVT/`, working title) is the exotic path for EVT3 `.raw`
 archives: decode once, re-bin with live Δt / polarity / window, and push stacks
-to BLITZ over the **WOLKE** Socket.IO + HTTP `.npy` contract. Not embedded in
-the BLITZ Flatpak. A later live/multi-cam streamer (**FUNKE**) is backlog only.
+to BLITZ (and DONNER) over the **WETTER Viewer Contract** (Socket.IO + HTTP
+`.npy`; same hub as WOLKE). Not embedded in the BLITZ Flatpak. A later
+live/multi-cam streamer (**FUNKE**) is backlog only. Viewers do not peer-sync;
+playhead index goes hub-and-spoke (`viewer_index` / `send_file_message` +
+`index`). See [`../../WETTER/docs/interoperability.md`](../../WETTER/docs/interoperability.md).
 
 **Event cube:** the sidecar **Send as** is one of:
 
