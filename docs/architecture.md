@@ -1,5 +1,7 @@
 # Architecture & Code Analysis
 
+Machine-oriented product brief: [`docs/llm-brief.md`](llm-brief.md).
+
 ## Data Sources & Build Variants
 
 Fuer Standard vs. Full Build, Loader/Converter/Handler und die Dependency-Regel siehe **`docs/sources_and_variants.md`**.

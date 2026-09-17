@@ -161,14 +161,6 @@ Common contract for loaders (+ maybe handlers). Converters stay **outside** as s
 
 Converters/OMERO/DICOM = external add-ons. SP/MP fused. No Standard/Full EXE plan unless a real GPU split appears.
 
-### Docker (browser / multi-session server) — low priority, not in active development
-
-Still the right tool if we want **remote multi-instance** for weak clients (container per session + browser desktop). Flatpak does not replace that.
-
-**Not being developed right now.** Flatpak/Flathub launch is tracked and verified in a **separate thread**. Keep `docker/` as optional/server path documentation only until we deliberately revive it.
-
-See `docker/README.md`, `flatpak/README.md`.
-
 ---
 
 ## P4 — Backlog / discussion

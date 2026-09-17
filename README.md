@@ -5,15 +5,14 @@
 [![Python](https://img.shields.io/badge/python-3.x-blue)]()
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-lightgrey)]()
 
-> **Images aren't just pixels—they are structured data.**  
-> BLITZ bridges the gap between lightweight desktop viewing and scientific array inspection.
+BLITZ (**Bulk Loading and Interactive Time series Zonal analysis**) is a matrix-based 2D viewer for large image datasets and single-image analysis — high-speed cameras, optical plasma diagnostics, and scientific `.npy` stacks.
+
+Drag-and-drop images, video, or NumPy arrays. Connect to **WOLKE** or **EVT** for remote cubes.
+
+![BLITZ Interface](docs/images/BLITZ_overview_V2.png)
 
 [![Quick Feature Overview](resources/public/blitz_demo.gif)](resources/public/blitz_demo.gif)
-*(Click animation to open full size)*
-
----
-
-A high-performance, matrix-based image viewer designed for efficiently exploring both **massive image datasets** and **single-image analysis workflows**.
+*(Click the animation for full size)*
 
 ---
 
@@ -21,30 +20,15 @@ A high-performance, matrix-based image viewer designed for efficiently exploring
 
 [Download the latest release for Windows and Ubuntu](https://github.com/PiMaV/BLITZ/releases/latest)
 
-No installation required — simply download and run the executable.
+No installation required — download and run the executable.
 
----
-
-## What is BLITZ
-
-BLITZ (**Bulk Loading and Interactive Time series Zonal analysis**) is a high-performance, matrix-based image exploration and analysis tool designed for efficiently managing both massive datasets and single-image analysis (e.g. high-speed camera footage, optical plasma diagnostics, and fast-framing scientific imaging).
-
-It was originally developed and initially implemented by Philipp Mattern during his time at [INP Greifswald](https://www.inp-greifswald.de) (Leibniz Institute for Plasma Science and Technology) to analyze complex low-temperature plasma discharge dynamics.
-
-It is actively maintained and further developed as part of his independent engineering work at [M.E.S.S. – Mattern Engineering & Software Solutions](https://mess.engineering).
-
-Starting with Version 2.0 a fully refactored architecture with improved performance, stability, and maintainability was introduced.
+Linux Flatpak: [flatpak/](flatpak/README.md) (`engineering.mess.BLITZ`).
 
 ---
 
 ## WETTER Framework
 
-BLITZ is the interactive viewer in the **WETTER framework**: *Raw Data → DAMPF → KEIM → WOLKE → BLITZ*. For the full pipeline, ecosystem overview, and links to all modules, see:
-
-**[WETTER Framework — wetter.mess.engineering](https://wetter.mess.engineering)**
-
-DPG Symposium presentation (architecture and BLITZ–WOLKE integration):  
-📄 [BLITZ_WOLKE_DPG25V2_Compact.pdf](https://wetter.mess.engineering/docs/BLITZ_WOLKE_DPG25V2_Compact.pdf)
+BLITZ is the 2D interactive viewer in the **WETTER framework**. Pipeline and sibling tools: **[wetter.mess.engineering](https://wetter.mess.engineering)**
 
 ---
 
@@ -60,29 +44,13 @@ DPG Symposium presentation (architecture and BLITZ–WOLKE integration):
 
 ---
 
-# Interface Preview
-
-![BLITZ Interface](/docs/images/BLITZ_overview_V2.png)
-
----
-
 ## Documentation
 
-* [Full Documentation Index](docs/md_state.md)
-* [Quick Start Guide](docs/walkthrough.md)
-* [Features & Tabs Explained](docs/tabs_explained.md)
-* [Missing & Planned Features](docs/missing_features.md)
-* [Optimization Report](docs/optimization.md)
-* [Data Sources & Build Variants](docs/sources_and_variants.md)
+- [Quick Start](docs/walkthrough.md)
+- [Tabs explained](docs/tabs_explained.md)
+- [Full documentation index](docs/md_state.md)
 
-## Docker
-
-Run BLITZ in a browser via Docker. See: [docker/README.md](docker/README.md)
-
-## Flatpak / Flathub
-
-Linux App Store packaging lives under [flatpak/](flatpak/README.md)
-(`engineering.mess.BLITZ`, M.E.S.S. branding). Build and Flathub notes are there.
+---
 
 ## Development
 
@@ -105,7 +73,9 @@ To compile and develop locally:
 
 ## Acknowledgements
 
-Early development of BLITZ was supported by Richard Krieg (student assistant) until v1.3.0 / January 2025, including refactoring, bug fixing, and feature development during the INP-funded project phase.
+Originally developed by Philipp Mattern at [INP Greifswald](https://www.inp-greifswald.de), now maintained at [M.E.S.S. – Mattern Engineering & Software Solutions](https://mess.engineering).
+
+Early development was supported by Richard Krieg (student assistant) until v1.3.0 / January 2025.
 
 ## Additional Resources & Datasets
 

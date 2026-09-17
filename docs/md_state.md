@@ -7,6 +7,7 @@ Overview of all documentation files in this repository.
 | File | Purpose |
 |------|---------|
 | [`README.md`](../README.md) | Main project overview, installation, and quick links. |
+| [`docs/llm-brief.md`](llm-brief.md) | Machine-oriented product brief (agents). |
 | [`docs/walkthrough.md`](walkthrough.md) | Quick Start Guide with screenshots. |
 | [`docs/features.md`](features.md) | **Hero Features:** Top capabilities (SVD/PCA, hillshade, polyline, Numba, …). |
 | [`docs/tabs_explained.md`](tabs_explained.md) | **Features & Tabs:** Comprehensive user guide for all UI elements. |
@@ -53,4 +54,4 @@ Overview of all documentation files in this repository.
 |------|---------|
 | [`docs/build_workflow.md`](build_workflow.md) | **Release checklist**, GitHub Actions workflow, how to trigger a build. |
 | [`docs/pyinstaller_command.md`](pyinstaller_command.md) | Developer notes for building the executable. |
-| [`docker/README.md`](../docker/README.md) | Docker deployment instructions. |
+| [`flatpak/README.md`](../flatpak/README.md) | Linux Flatpak / Flathub packaging. |
