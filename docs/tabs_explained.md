@@ -264,7 +264,7 @@ This is the page **EVT** and **WOLKE** tell you to open (there is no separate Ne
 | **Generate Synthetic Live Data Stream** | Lissajous / Lightning ring buffer | No hardware; FPS, resolution, grayscale, exposure knobs |
 | **Game of Life** | Classic Conway B3/S23 ring buffer | Sibling; W64×H128; Classic 0/1 or Ember 0…N; cell scale 1; pattern icons; Speed live; scrub after Stop |
 | **Webcam** | USB camera via OpenCV | Exposure, gain, brightness, contrast; ring buffer |
-| **Connect (EVT / WOLKE)** | Remote `.npy` ingest | Socket.IO + HTTP download; **NET** + % while downloading, **BUSY** while opening; index-only WOLKE sync seeks the cached cube (no reload, no BUSY, ROI/options kept). File-tab 8-bit / Normalize / Grayscale are **not** applied (8-bit would zero uint16 counts). |
+| **Connect (EVT / WOLKE)** | Remote `.npy` ingest | Socket.IO + HTTP download; **NET** + % while downloading, **BUSY** while opening; index-only WOLKE sync seeks the cached cube (no reload, no BUSY, ROI/options kept). Status bar stays one line: `File:` shows hub basename / selection names (not a temp `.npy`); idle listening is on the Connect button, not a permanent `showMessage` (that would hide File/Frame). Timeline scrub emits `viewer_index` (deduped). File-tab 8-bit / Normalize / Grayscale are **not** applied (8-bit would zero uint16 counts). |
 
 ---
 

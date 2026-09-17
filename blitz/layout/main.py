@@ -2518,14 +2518,18 @@ class MainWindow(QMainWindow):
     def _on_web_ingest_failed(self) -> None:
         if self.ui.button_disconnect.isEnabled():
             self._restore_web_listening_ui()
-        self.statusBar().showMessage("Network: download failed — still listening")
+        # Transient fail hint; do not leave showMessage covering File:/Frame:.
+        self.statusBar().showMessage("Network: download failed — still listening", 4000)
 
     def _restore_web_listening_ui(self) -> None:
         self.ui.button_connect.setText("Listening...")
         self.ui.blocking_status.setText("IDLE")
         self.ui.blocking_status.setStyleSheet(get_style("idle"))
         self.statusBar().setStyleSheet(get_style("statusbar_idle"))
-        self.statusBar().showMessage("Network: listening")
+        # Listening is shown on the Connect button + badge — not as showMessage
+        # (showMessage hides File:/Frame: widgets).
+        self.statusBar().clearMessage()
+        self.update_statusbar()
 
     def _seek_viewer_frame(self, index: int) -> None:
         """Show frame `index` on the cube already in the viewer. No reload."""

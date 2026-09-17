@@ -20,13 +20,29 @@ LOGGER: Any = None
 _LOG_ONE_LINER: Optional[QLabel] = None
 
 
+def status_one_liner_text(message: str) -> Optional[str]:
+    """
+    Text for the slim status-bar one-liner, or None to leave it unchanged.
+    Multi-line dumps (Dataset summary) must not inflate the bar.
+    """
+    if message == "\n":
+        return None
+    tip = str(message).strip()
+    if not tip or "\n" in tip:
+        return None
+    txt = " ".join(tip.split())[:120]
+    return txt or None
+
+
 def log(message: str, color: str | tuple[int, int, int] = "white") -> None:
     if LOGGER is None:
         print(message)
     else:
         LOGGER.log(message, color=color)
-    if _LOG_ONE_LINER is not None and message != "\n":
-        txt = str(message).strip()[:120]
+    if _LOG_ONE_LINER is not None:
+        txt = status_one_liner_text(message)
+        if txt is None:
+            return
         tip = str(message).strip()
         # Status label must only be touched on the GUI thread (Network worker logs here).
         label = _LOG_ONE_LINER

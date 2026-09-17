@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Stream idle no longer leaves `Network: listening` as a permanent status-bar message (that hid `File:` / `Frame:`).
+- Multi-line Dataset load summary stays in the Log tab only; status-bar one-liner no longer grows the bar height.
+
 ### Changed
 
 - Stream index-only seek works for any cached cube filename (not only `__selection__.npy`), so an EVT hub can relay `viewer_index` between BLITZ and DONNER without re-downloading the stack.
+- Hub `file_name` / `file_names` stamp frame metadata so the status bar shows real WOLKE basenames; `viewer_index` emits only when the index changes.
 
 ## [2.3.1] - 2026-08-31
 

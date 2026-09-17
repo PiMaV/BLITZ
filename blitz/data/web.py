@@ -16,6 +16,47 @@ from .image import ImageData
 from .load import DataLoader
 
 
+def _basename_display(path: str | None) -> str:
+    if not path:
+        return ""
+    text = str(path).strip().replace("\\", "/")
+    if not text:
+        return ""
+    return text.rsplit("/", 1)[-1]
+
+
+def apply_hub_file_names(
+    img: ImageData,
+    *,
+    file_name: str | None,
+    file_names: list[str] | None = None,
+) -> None:
+    """
+    Stamp MetaData.file_name from hub payload (Viewer Contract).
+
+    Prefer file_names when length matches frame count; else basename of file_name
+    for a single-file cube; for packed __selection__.npy without a list use
+    selection[i].
+    """
+    meta = getattr(img, "meta", None) or []
+    if not meta:
+        return
+    n = len(meta)
+    names: list[str] | None = None
+    if isinstance(file_names, list) and len(file_names) == n:
+        names = [_basename_display(x) or f"frame_{i}" for i, x in enumerate(file_names)]
+    elif file_name and file_name != "__selection__.npy":
+        base = _basename_display(file_name) or str(file_name)
+        names = [base] * n
+    elif file_name == "__selection__.npy":
+        names = [f"selection[{i}]" for i in range(n)]
+    if names is None:
+        return
+    for i, name in enumerate(names):
+        if name:
+            meta[i].file_name = name
+
+
 def _loopback_http_target(url: str) -> bool:
     host = (urlparse(url).hostname or "").lower()
     return host in {"127.0.0.1", "localhost", "::1"}
@@ -218,7 +259,9 @@ class WebDataLoader(QObject):
         self._cube_imagedata: ImageData | None = None
         self._pending_file_name: str | None = None
         self._pending_index: int | None = None
+        self._pending_file_names: list[str] | None = None
         self._download_busy = False
+        self._last_emitted_index: int | None = None
 
     def _start_listening(self) -> None:
         self._socket = _WebSocket(self._target)
@@ -236,6 +279,12 @@ class WebDataLoader(QObject):
         file_name = payload.get("file_name")
         index = payload.get("index")
         index = index if isinstance(index, int) else None
+        raw_names = payload.get("file_names")
+        file_names = (
+            [str(x) for x in raw_names]
+            if isinstance(raw_names, list)
+            else None
+        )
         # Index-only seek: same cube already in RAM (WOLKE selection or EVT stack).
         cached = None
         if file_name == "__selection__.npy" and self._selection_imagedata is not None:
@@ -247,10 +296,15 @@ class WebDataLoader(QObject):
         ):
             cached = self._cube_imagedata
         if index is not None and cached is not None:
+            if file_names is not None:
+                apply_hub_file_names(
+                    cached, file_name=file_name, file_names=file_names
+                )
             self.image_received.emit(cached, index)
             return
         self._pending_file_name = file_name
         self._pending_index = index
+        self._pending_file_names = file_names
         self._start_download(file_name)
 
     def _start_download(self, file_name: str) -> None:
@@ -289,6 +343,11 @@ class WebDataLoader(QObject):
             try:
                 self.ingest_opening.emit()
                 img = DataLoader(**self._load_kwargs).load(path)
+                apply_hub_file_names(
+                    img,
+                    file_name=self._pending_file_name,
+                    file_names=self._pending_file_names,
+                )
                 if self._pending_file_name == "__selection__.npy":
                     self._selection_imagedata = img
                     self._cube_file_name = "__selection__.npy"
@@ -322,8 +381,12 @@ class WebDataLoader(QObject):
 
     def emit_index(self, index: int) -> None:
         """Tell WOLKE which row index is shown (BLITZ -> WOLKE sync)."""
+        idx = int(index)
+        if self._last_emitted_index == idx:
+            return
         if getattr(self, "_socket", None) is not None:
-            self._socket.queue_emit("viewer_index", {"index": index})
+            self._last_emitted_index = idx
+            self._socket.queue_emit("viewer_index", {"index": idx})
 
     def start(self) -> None:
         self._start_listening()
