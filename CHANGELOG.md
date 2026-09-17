@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-09-17
+
 ### Fixed
 
 - Stream idle no longer leaves `Network: listening` as a permanent status-bar message (that hid `File:` / `Frame:`).
@@ -69,7 +71,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - In-core File-tab test patterns.
 
-[Unreleased]: https://github.com/PiMaV/BLITZ/compare/build-v2.3.1...HEAD
+[Unreleased]: https://github.com/PiMaV/BLITZ/compare/build-v2.4.0...HEAD
+[2.4.0]: https://github.com/PiMaV/BLITZ/compare/build-v2.3.1...build-v2.4.0
 [2.3.1]: https://github.com/PiMaV/BLITZ/compare/build-v2.3.0...build-v2.3.1
 [2.3.0]: https://github.com/PiMaV/BLITZ/compare/build-v2.2.1...build-v2.3.0
 [2.2.1]: https://github.com/PiMaV/BLITZ/compare/build-v2.2.0...build-v2.2.1
