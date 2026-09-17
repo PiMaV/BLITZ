@@ -1,4 +1,4 @@
-"""Console entry point for BLITZ (desktop Exec=blitz / Flatpak)."""
+"""Console entry point for BLITZ (desktop Exec=blitz)."""
 
 import os
 import sys

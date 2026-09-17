@@ -8,7 +8,7 @@ Brand names stay uppercase English: **WETTER**, **WOLKE**, **DAMPF**, **KEIM**, 
 
 PyQt6 + PyQtGraph **2D** desktop viewer for one dense `ImageData` cube in RAM, shape `(T, H, W, C)`. Load folders of images, video, or `.npy`. Live USB camera, synthetic streams, Conway. Network ingest from the WETTER hub (**WOLKE**, **EVT**) over Socket.IO + HTTP `.npy`.
 
-Entry: `blitz/cli.py` → `blitz/app.py`. Run: `uv sync` then `uv run python -m blitz`. Ship: PyInstaller GitHub Releases and Linux Flatpak `engineering.mess.BLITZ` (`flatpak/`).
+Entry: `blitz/cli.py` → `blitz/app.py`. Run: `uv sync` then `uv run python -m blitz`. Ship: PyInstaller GitHub Releases.
 
 ## Do
 
@@ -19,6 +19,7 @@ Entry: `blitz/cli.py` → `blitz/app.py`. Run: `uv sync` then `uv run python -m 
 ## Don't
 
 - Do not add a Docker / container runtime to this repo.
+- Do not advertise Linux Flatpak. `flatpak/` is in preparation only, not a ship path.
 - Do not mosaic GeoTIFF tiles in the folder loader (suite sidecar `converters/dgm_mosaic`).
 - Do not embed EVT3 decode, OMERO, DICOM, or GDAL in the core viewer.
 - Do not peer-sync viewers; playhead is hub-and-spoke.

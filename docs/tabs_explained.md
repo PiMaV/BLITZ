@@ -384,7 +384,7 @@ Frame range / step (video), resize, 8-bit, grayscale, normalize, pre-load ROI + 
 | Mode | Output |
 |------|--------|
 | **Current frame** | Single image with on-screen LUT/levels |
-| **Frame range** | Numbered `frame_XXX.{ext}` (Flatpak → one ZIP) |
+| **Frame range** | Numbered `frame_XXX.{ext}` |
 | **Full stack** | Raw `np.save` of viewer volume as `.npy` |
 
 Image formats: **png, jpg, jpeg, tif, bmp**.

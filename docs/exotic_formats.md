@@ -1,6 +1,6 @@
 # Exotic formats and the standard loader
 
-BLITZ’s **standard loader** (Flatpak / EXE) focuses on:
+BLITZ’s **standard loader** (GitHub EXE / `uv run`) focuses on:
 
 - Images, video, `.npy`
 - ASCII grids (`.asc` / `.dat` / probed `.txt`)
@@ -10,7 +10,7 @@ BLITZ’s **standard loader** (Flatpak / EXE) focuses on:
 ## What stays out of the core
 
 Domain / exotic formats (historical DICOM path, OMERO, Bio-Formats, …) are **not**
-embedded in the Flatpak/EXE. That keeps the artifact lean and avoids optional
+embedded in the shipped viewer. That keeps the artifact lean and avoids optional
 heavy dependencies.
 
 ## Later bridges (policy)
@@ -27,7 +27,7 @@ When BLITZ should “handle more formats” without bloating the core:
 **Event reader** (`../EVT/`, working title) is the exotic path for EVT3 `.raw`
 archives: decode once, re-bin with live Δt / polarity / window, and push stacks
 to BLITZ (and DONNER) over the **WETTER Viewer Contract** (Socket.IO + HTTP
-`.npy`; same hub as WOLKE). Not embedded in the BLITZ Flatpak. A later
+`.npy`; same hub as WOLKE). Not embedded in BLITZ. A later
 live/multi-cam streamer (**FUNKE**) is backlog only. Viewers do not peer-sync;
 playhead index goes hub-and-spoke (`viewer_index` / `send_file_message` +
 `index`). See [`../../WETTER/docs/interoperability.md`](../../WETTER/docs/interoperability.md).
@@ -66,8 +66,8 @@ OpenCV + world file / `dgm025_32_{e}_{n}` names, then **Send to BLITZ** over
 the same Socket.IO + HTTP `.npy` contract as the Event reader (not WOLKE, not
 a live tile stream). GUI preview is one mosaic (0…1 stretch, blue–white–red);
 drag a rectangle of tiles to export (holes in the box are 0). Optional disk
-`.npy`. GeoTIFF stays out of the Flatpak; GDAL is not required. Stream address
+`.npy`. GeoTIFF stays out of the core viewer; GDAL is not required. Stream address
 `http://127.0.0.1:5056`, token `dgm`.
 
-Do **not** grow the core Flatpak with exotic native deps unless a format is
+Do **not** grow the core viewer with exotic native deps unless a format is
 numpy/cv2-only and clearly belongs in the standard loader (like HIKMICRO).

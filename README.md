@@ -7,7 +7,7 @@
 
 BLITZ (**Bulk Loading and Interactive Time series Zonal analysis**) is a matrix-based 2D viewer for large image datasets and single-image analysis — high-speed cameras, optical plasma diagnostics, and scientific `.npy` stacks.
 
-Drag-and-drop images, video, or NumPy arrays. Connect to **WOLKE** or **EVT** for remote cubes.
+Drag-and-drop images, video, or NumPy arrays. Check out the full **[WETTER](https://wetter.mess.engineering)** framework for **WOLKE**, **DONNER**, and the other loaders.
 
 ![BLITZ Interface](docs/images/BLITZ_overview_V2.png)
 
@@ -22,13 +22,11 @@ Drag-and-drop images, video, or NumPy arrays. Connect to **WOLKE** or **EVT** fo
 
 No installation required — download and run the executable.
 
-Linux Flatpak: [flatpak/](flatpak/README.md) (`engineering.mess.BLITZ`).
-
 ---
 
 ## WETTER Framework
 
-BLITZ is the 2D interactive viewer in the **WETTER framework**. Pipeline and sibling tools: **[wetter.mess.engineering](https://wetter.mess.engineering)**
+BLITZ is the 2D interactive viewer in the **WETTER framework**. Loaders and siblings (**WOLKE**, **DONNER**, EVT, and more): **[wetter.mess.engineering](https://wetter.mess.engineering)**
 
 ---
 

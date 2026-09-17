@@ -1,4 +1,10 @@
-# BLITZ Flatpak / Flathub
+# In preparation
+
+Linux Flatpak / Flathub packaging for BLITZ. **Not a shipping path.** Do not
+link this folder from the README, About text, or other landing docs.
+
+The manifests below are kept for later work. Do not treat them as current
+install instructions.
 
 ## Identity convention (M.E.S.S.)
 
