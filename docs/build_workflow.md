@@ -37,12 +37,14 @@ The build workflow is **not** triggered on every push. It runs only in the follo
 
 ## Artifacts
 
-Upon successful completion, the workflow produces the following artifacts:
+GitHub Release assets use the version from `pyproject.toml` in the filename (two downloads side-by-side stay identifiable):
 
-*   **Windows:** `BLITZ-Windows` (contains `BLITZ.exe`)
-*   **Linux:** `BLITZ-Linux` (contains `BLITZ` executable)
+*   **Windows:** `BLITZ-vX.Y.Z-windows-x86_64.exe`
+*   **Linux:** `BLITZ-vX.Y.Z-linux-x86_64`
 
-These artifacts can be downloaded directly from the workflow run summary page.
+Do not ship evergreen names (`BLITZ.exe`, `BLITZ`) as the only asset name.
+
+The workflow run also keeps intermediate Actions artifacts `BLITZ-Windows` / `BLITZ-Linux` (same files). Those can be downloaded from the run summary before the Release exists.
 
 ## Local Build Artefacts
 

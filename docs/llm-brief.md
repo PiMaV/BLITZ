@@ -8,7 +8,7 @@ Brand names stay uppercase English: **WETTER**, **WOLKE**, **DAMPF**, **KEIM**, 
 
 PyQt6 + PyQtGraph **2D** desktop viewer for one dense `ImageData` cube in RAM, shape `(T, H, W, C)`. Load folders of images, video, or `.npy`. Live USB camera, synthetic streams, Conway. Network ingest from the WETTER hub (**WOLKE**, **EVT**) over Socket.IO + HTTP `.npy`.
 
-Entry: `blitz/cli.py` → `blitz/app.py`. Run: `uv sync` then `uv run python -m blitz`. Ship: PyInstaller GitHub Releases.
+Entry: `blitz/cli.py` → `blitz/app.py`. Run: `uv sync` then `uv run python -m blitz`. Ship: PyInstaller GitHub Releases (`BLITZ-vX.Y.Z-windows-x86_64.exe`, `BLITZ-vX.Y.Z-linux-x86_64`).
 
 ## Do
 

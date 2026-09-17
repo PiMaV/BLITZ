@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- GitHub Release binaries are named `BLITZ-vX.Y.Z-windows-x86_64.exe` and `BLITZ-vX.Y.Z-linux-x86_64` (version from `pyproject.toml`).
+
 ## [2.4.0] - 2026-09-17
 
 ### Fixed
