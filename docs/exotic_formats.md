@@ -13,18 +13,17 @@ Domain / exotic formats (historical DICOM path, OMERO, Bio-Formats, …) are **n
 embedded in the shipped viewer. That keeps the artifact lean and avoids optional
 heavy dependencies.
 
-## Later bridges (policy)
+## Sidecar bridges (policy)
 
-When BLITZ should “handle more formats” without bloating the core:
+When BLITZ should “handle more formats” without bloating the core, use a
+**suite sidecar** (Go binary with Viewer Contract hub, or EVT Python):
 
-1. **Standalone converter** — CLI/toolbox (same idea as suite `converters/`) that
-   writes `.npy` (or plain images). User opens the result in BLITZ.
-2. **Mini-server** — convert remotely; BLITZ only receives standard payloads
-   (aligned with WOLKE → viewer `.npy` delivery).
+1. Convert / mosaic / bin outside the viewer.
+2. **Send** over Socket.IO + HTTP `.npy`, or save `.npy` and open in BLITZ.
 
 ### EVT3 event cameras (IDS / Prophesee)
 
-**Event reader** (`../EVT/`, working title) is the exotic path for EVT3 `.raw`
+**Event reader** (`../EVT/`) is the exotic path for EVT3 `.raw`
 archives: decode once, re-bin with live Δt / polarity / window, and push stacks
 to BLITZ (and DONNER) over the **WETTER Viewer Contract** (Socket.IO + HTTP
 `.npy`; same hub as WOLKE). Not embedded in BLITZ. A later
@@ -61,13 +60,13 @@ flowchart TD
 ### DGM / GeoTIFF tiles (LGL)
 
 Do **not** mosaic in the BLITZ folder loader (that would stack tiles as `T`).
-Use the suite sidecar `../converters/dgm_mosaic/` (`uv run dgm-mosaic`):
-OpenCV + world file / `dgm025_32_{e}_{n}` names, then **Send to BLITZ** over
-the same Socket.IO + HTTP `.npy` contract as the Event reader (not WOLKE, not
-a live tile stream). GUI preview is one mosaic (0…1 stretch, blue–white–red);
-drag a rectangle of tiles to export (holes in the box are 0). Optional disk
-`.npy`. GeoTIFF stays out of the core viewer; GDAL is not required. Stream address
-`http://127.0.0.1:5056`, token `dgm`.
+Product: suite `../DGM/` (GitHub `PiMaV/dgm-mosaic`) — download the binary or
+`uv run dgm-mosaic`. Stream: `http://127.0.0.1:5056`, token `dgm` (`(1, H, W)` plane).
+
+### HIKMICRO / DICOM
+
+Parked as separate sidecars. Single HIKMICRO JPEG stays in-core in BLITZ.
+DICOM is out of scope until un-parked.
 
 Do **not** grow the core viewer with exotic native deps unless a format is
 numpy/cv2-only and clearly belongs in the standard loader (like HIKMICRO).

@@ -20,10 +20,10 @@ Entry: `blitz/cli.py` → `blitz/app.py`. Run: `uv sync` then `uv run python -m 
 
 - Do not add a Docker / container runtime to this repo.
 - Do not advertise Linux Flatpak. `flatpak/` is in preparation only, not a ship path.
-- Do not mosaic GeoTIFF tiles in the folder loader (suite sidecar `converters/dgm_mosaic`).
+- Do not mosaic GeoTIFF tiles in the folder loader (suite sidecar `../DGM/`).
 - Do not embed EVT3 decode, OMERO, DICOM, or GDAL in the core viewer.
 - Do not peer-sync viewers; playhead is hub-and-spoke.
-- **DONNER** is the 3D sibling, not a BLITZ tab. Converters live in the suite `converters/` tree.
+- **DONNER** is the 3D sibling, not a BLITZ tab. Format sidecars: `DGM/`, `HIKMICRO/`, `DICOM/`, `EVT/`.
 
 ## Key paths
 
