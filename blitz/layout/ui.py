@@ -7,9 +7,10 @@ from PyQt6.QtWidgets import (QAbstractSpinBox, QApplication, QButtonGroup,
                              QCheckBox, QComboBox, QDoubleSpinBox, QFrame,
                              QGridLayout, QGroupBox, QHBoxLayout, QLabel,
                              QLayout, QLineEdit, QMenu, QMenuBar,
-                             QPushButton, QRadioButton, QScrollArea, QSizePolicy,
-                             QSlider, QSplitter, QSpinBox, QStatusBar,
-                             QTableWidget, QVBoxLayout, QWidget)
+                             QProgressBar, QPushButton, QRadioButton,
+                             QScrollArea, QSizePolicy, QSlider, QSplitter,
+                             QSpinBox, QStatusBar, QTableWidget, QVBoxLayout,
+                             QWidget)
 from pyqtgraph.dockarea import Dock, DockArea
 
 from .. import __version__, settings
@@ -1183,7 +1184,8 @@ class UI_MainWindow(QWidget):
         combined_row.addWidget(self.checkbox_shade_combined)
         self.button_shade_preset = QPushButton("Preset")
         self.button_shade_preset.setToolTip(
-            "Four lights 90° apart at the current elevation, with distinct colours."
+            "Four lights 90° apart at the current elevation, with distinct colours. "
+            "Elevation and Z stay shared; only azimuth (and colour) is per light."
         )
         combined_row.addWidget(self.button_shade_preset)
         combined_row.addStretch()
@@ -1227,6 +1229,15 @@ class UI_MainWindow(QWidget):
         shade_precached_layout.addWidget(self.label_shade_cache_ram)
         shade_precached_group.setLayout(shade_precached_layout)
         shade_layout.addWidget(shade_precached_group)
+        self.progress_shade = QProgressBar()
+        self.progress_shade.setRange(0, 0)
+        self.progress_shade.setTextVisible(False)
+        self.progress_shade.setFixedHeight(8)
+        self.progress_shade.setVisible(False)
+        self.progress_shade.setToolTip(
+            "Shade is computing (Preview / Combined / Pre-cache). UI stays responsive."
+        )
+        shade_layout.addWidget(self.progress_shade)
         self.label_shade_status = QLabel(
             "Artificial sun · analysis always uses height"
         )

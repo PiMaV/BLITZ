@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import time
-from typing import Callable, Optional
+from typing import Callable, Optional, Union
 
 import numpy as np
 import pyqtgraph as pg
 from PyQt6 import sip
 from PyQt6.QtCore import QThread, QTimer, pyqtSignal
-from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QLabel, QProgressBar
 
 from ..data.hillshade import (
     AZIMUTH_CACHE_STEP_DEG,
@@ -37,6 +37,53 @@ _RAM_WARN_FRAC = 0.70
 
 def _qobj_alive(obj) -> bool:
     return obj is not None and not sip.isdeleted(obj)
+
+
+class _ShadeLiveWorker(QThread):
+    """One full-frame hillshade off the UI thread."""
+
+    ready = pyqtSignal(int, object, float)  # generation, shade array, elapsed_s
+    failed = pyqtSignal(int, str)
+
+    def __init__(
+        self,
+        frame: np.ndarray,
+        azimuth_deg: float,
+        elevation_deg: float,
+        z_factor: float,
+        generation: int,
+        lights: Optional[list[tuple[float, float, float, float, float]]] = None,
+    ) -> None:
+        super().__init__()
+        self._frame = frame
+        self._azimuth = float(azimuth_deg)
+        self._elevation = float(elevation_deg)
+        self._z_factor = float(z_factor)
+        self._generation = int(generation)
+        self._lights = list(lights or [])
+
+    def run(self) -> None:
+        gen = self._generation
+        t0 = time.perf_counter()
+        try:
+            lights = [
+                ShadeLight(a, e, (r, g, b)) for a, e, r, g, b in self._lights
+            ]
+            if self.isInterruptionRequested():
+                return
+            shade = calculate_hillshade(
+                self._frame,
+                self._azimuth,
+                self._elevation,
+                self._z_factor,
+                lights=lights,
+            )
+        except Exception as e:
+            if not self.isInterruptionRequested():
+                self.failed.emit(gen, str(e))
+            return
+        if not self.isInterruptionRequested():
+            self.ready.emit(gen, shade, time.perf_counter() - t0)
 
 
 class _ShadeAtlasWorker(QThread):
@@ -105,12 +152,14 @@ class ShadeAdapter:
         viewer: ImageViewer,
         status_label: Optional[QLabel] = None,
         ram_label: Optional[QLabel] = None,
+        progress_bar: Optional[QProgressBar] = None,
         on_precache_off: Optional[Callable[[], None]] = None,
         on_compute: Optional[Callable[[], None]] = None,
     ) -> None:
         self.viewer = viewer
         self._status = status_label
         self._ram_label = ram_label
+        self._progress = progress_bar
         self._on_precache_off = on_precache_off
         self._on_compute = on_compute
         self._preview = False
@@ -125,7 +174,7 @@ class ShadeAdapter:
         self._frame_hw: Optional[tuple[int, int]] = None
         self._atlas: dict[int, np.ndarray] = {}
         self._generation = 0
-        self._worker: Optional[_ShadeAtlasWorker] = None
+        self._worker: Optional[Union[_ShadeLiveWorker, _ShadeAtlasWorker]] = None
         self._zombies: list[QThread] = []
 
         self._item = pg.ImageItem()
@@ -153,6 +202,7 @@ class ShadeAdapter:
         self._ram_timer = QTimer(viewer)
         self._ram_timer.setInterval(1000)
         self._ram_timer.timeout.connect(self._refresh_ram_label)
+        self._set_busy_off()
         self._set_ram_idle()
 
     @property
@@ -177,6 +227,39 @@ class ShadeAdapter:
         except RuntimeError:
             pass
 
+    def _set_busy_off(self) -> None:
+        bar = self._progress
+        if bar is None or not _qobj_alive(bar):
+            return
+        try:
+            bar.setVisible(False)
+            bar.setRange(0, 100)
+            bar.setValue(0)
+        except RuntimeError:
+            pass
+
+    def _set_busy_indeterminate(self) -> None:
+        bar = self._progress
+        if bar is None or not _qobj_alive(bar):
+            return
+        try:
+            bar.setRange(0, 0)
+            bar.setVisible(True)
+        except RuntimeError:
+            pass
+
+    def _set_busy_fraction(self, have: int, total: int) -> None:
+        bar = self._progress
+        if bar is None or not _qobj_alive(bar):
+            return
+        n = max(1, int(total))
+        try:
+            bar.setRange(0, n)
+            bar.setValue(min(n, max(0, int(have))))
+            bar.setVisible(True)
+        except RuntimeError:
+            pass
+
     def set_preview(self, on: bool) -> None:
         self._preview = bool(on)
         if not self._preview:
@@ -185,6 +268,9 @@ class ShadeAdapter:
                 self._precached = False
                 self._cancel_worker()
                 self._atlas.clear()
+            else:
+                self._cancel_worker()
+            self._set_busy_off()
             self._item.clear()
             self._item.setVisible(False)
             self._frame_hw = None
@@ -214,6 +300,7 @@ class ShadeAdapter:
         if not self._precached:
             self._cancel_worker()
             self._atlas.clear()
+            self._set_busy_off()
             if self._preview:
                 self._schedule()
             self._sync_ram_watch()
@@ -332,9 +419,13 @@ class ShadeAdapter:
         if elevation is not None:
             el = float(np.clip(elevation, 0.0, 90.0))
             self._elevation = el
+            # Combined / multi-light: one shared elevation (same as Preset).
             if self._lights:
-                L = self._lights[0]
-                self._lights[0] = ShadeLight(L.azimuth, el, L.color)
+                self._lights = [
+                    ShadeLight(L.azimuth, el, L.color) for L in self._lights
+                ]
+            else:
+                self._lights = [ShadeLight(self._azimuth, el)]
         if z_factor is not None:
             self._z_factor = float(max(0.01, z_factor))
         if self._preview:
@@ -375,6 +466,7 @@ class ShadeAdapter:
         except RuntimeError:
             pass
         self._cancel_worker()
+        self._set_busy_off()
 
     def _height_frame(self) -> Optional[np.ndarray]:
         """Authoritative height: ImageData / ImageView buffer (not the overlay)."""
@@ -407,6 +499,7 @@ class ShadeAdapter:
         frame = self._height_frame()
         if frame is None:
             self._item.setVisible(False)
+            self._set_busy_off()
             self._set_status("No image · load a height map first")
             return
         self._frame_hw = self._spatial_hw(frame)
@@ -415,6 +508,8 @@ class ShadeAdapter:
             return
         copied = np.array(frame, copy=True, order="C")
         gen = self._generation
+        n = len(azimuth_cache_bins(self._step_deg))
+        self._set_busy_fraction(0, n)
         self._worker = _ShadeAtlasWorker(
             copied,
             self._elevation,
@@ -459,14 +554,39 @@ class ShadeAdapter:
         self._set_precache_status()
 
     def _on_worker_failed(self, generation: int, message: str) -> None:
-        if generation != self._generation or not self._precached:
+        if generation != self._generation:
             return
-        self._set_status(f"Shade cache failed: {message}")
+        self._set_busy_off()
+        self.last_compute_s = None
+        self._notify_compute()
+        if self._precached:
+            self._set_status(f"Shade cache failed: {message}")
+        else:
+            self._item.setVisible(False)
+            self._set_status(f"Shade failed: {message}")
 
     def _on_atlas_done(self, generation: int) -> None:
         if generation != self._generation or not self._precached or not self._preview:
             return
+        self._set_busy_off()
         self._set_precache_status(ready=True)
+
+    def _on_live_ready(self, generation: int, shade: object, elapsed_s: float) -> None:
+        if generation != self._generation or not self._preview or self._precached:
+            return
+        self._set_busy_off()
+        self.last_compute_s = float(elapsed_s)
+        self._notify_compute()
+        self._show_shade(np.asarray(shade))
+        ms = 1000.0 * self.last_compute_s
+        fps = (1.0 / self.last_compute_s) if self.last_compute_s > 1e-9 else 0.0
+        hw = self._frame_hw or (0, 0)
+        h, w = hw
+        self._set_status(
+            f"Hillshade full frame · az {self._azimuth:.0f}° elev {self._elevation:.0f}° "
+            f"Z×{self._z_factor:g} · {h}×{w} · "
+            f"{ms:.1f} ms ({fps:.0f} fps) · analysis = height"
+        )
 
     def _apply_cached_or_wait(self) -> None:
         az = self._snap_az()
@@ -501,37 +621,29 @@ class ShadeAdapter:
             return
         frame = self._height_frame()
         if frame is None:
+            self._cancel_worker()
+            self._set_busy_off()
             self._item.setVisible(False)
             self._set_status("No image · load a height map first")
             return
         self._frame_hw = self._spatial_hw(frame)
-        t0 = time.perf_counter()
-        try:
-            shade = calculate_hillshade(
-                frame,
-                self._azimuth,
-                self._elevation,
-                self._z_factor,
-                lights=self._lights,
-            )
-        except Exception as e:
-            self.last_compute_s = None
-            self._item.setVisible(False)
-            self._set_status(f"Shade failed: {e}")
-            self._notify_compute()
-            return
-        self.last_compute_s = time.perf_counter() - t0
-        self._notify_compute()
-
-        self._show_shade(shade)
-        ms = 1000.0 * self.last_compute_s
-        fps = (1.0 / self.last_compute_s) if self.last_compute_s > 1e-9 else 0.0
-        h, w = self._frame_hw
-        self._set_status(
-            f"Hillshade full frame · az {self._azimuth:.0f}° elev {self._elevation:.0f}° "
-            f"Z×{self._z_factor:g} · {h}×{w} · "
-            f"{ms:.1f} ms ({fps:.0f} fps) · analysis = height"
+        self._cancel_worker()
+        copied = np.array(frame, copy=True, order="C")
+        gen = self._generation
+        self._set_busy_indeterminate()
+        self._set_status("Shading…")
+        worker = _ShadeLiveWorker(
+            copied,
+            self._azimuth,
+            self._elevation,
+            self._z_factor,
+            gen,
+            lights=self._lights_payload(),
         )
+        worker.ready.connect(self._on_live_ready)
+        worker.failed.connect(self._on_worker_failed)
+        self._worker = worker
+        worker.start()
 
     def _snap_az(self, azimuth: Optional[float] = None) -> int:
         src = self._azimuth if azimuth is None else azimuth
@@ -623,12 +735,14 @@ class ShadeAdapter:
         )
         ram = f" · {self._fmt_bytes(atlas)}" if atlas else ""
         if ready or have >= n:
+            self._set_busy_off()
             self._set_status(
                 f"Pre-cache ready · az {az}° step {self._step_deg}° "
                 f"elev {self._elevation:.0f}° Z×{self._z_factor:g}{ram} "
                 f"· analysis = height"
             )
             return
+        self._set_busy_fraction(have, n)
         self._set_status(
             f"Caching {have}/{n} · az {az}° step {self._step_deg}°{ram}…"
         )

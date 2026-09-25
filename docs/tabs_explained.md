@@ -162,20 +162,21 @@ stack** — that would bake `0…1` shade into `ImageData`. See the
 
 | Control | What it does | Algorithm / notes |
 |---------|--------------|-------------------|
-| **Preview** | Toggle Lambertian shade overlay | Separate `ImageItem` (z≈0.1); base opacity → 0 while previewing |
+| **Preview** | Toggle Lambertian shade overlay | Separate `ImageItem` (z≈0.1); cube stays visible under the overlay |
 | **Azimuth** | Light direction `0–360°` (wraps both ways) | Sky dome + spinner. `0°` / **N** = top of the image (ViewBox `invertY`, decreasing y), clockwise toward +x (90° = east); snaps to the Pre-cache step while cache is on |
 | **Sky dome** | Azimuth, elevation, and Z together | Yellow = sun; grey wedge = peg shadow opposite the sun. `N` / `0°` = top of image. Rim = elevation `0°`, centre = `90°`. Shadow length grows with Z and lower sun |
-| **Combined (4 lights)** | Independent coloured lights | Drag each sun; right-click to colour. Paint only |
+| **Combined (4 lights)** | Independent coloured lights | Drag each sun; right-click to colour. Paint only. Multi-light mix amplifies each shade’s deviation from the mean before tinting. **Elevation and Z are shared** across all lights; azimuth/colour stay per light |
 | **Preset** | Four lights 90° apart | Same elevation (not overhead), distinct colours; resets independent positions |
 | **Elevation** | Sun height `0–90°` | Horizon → zenith; also by dragging a sun radially; locked while Pre-cache is on |
-| **Z factor** | Vertical exaggeration `0.01–2` | Default `1`. With U16 centimetre height, `0–1` is the useful range (20× was for unitless 8-bit). Shadow on the dome. Locked while Pre-cache is on |
+| **Z factor** | Vertical exaggeration `0.01–2` | Default `1`. With DGM **u16dm** (decimetre codes), `0–1` is the useful range (20× was for unitless 8-bit). Shadow on the dome. Locked while Pre-cache is on |
+| **Progress** | Thin bar while shading | Indeterminate for live Preview / Combined; determinate `have/N` for Pre-cache. Non-modal; last overlay stays until the new frame is ready |
 | **Pre-cache azimuth** | Freeze elev/Z; background azimuth atlas | Worker on the **full frame**; uint8 overlay swap |
 | **Step** | Atlas raster `5–90°` (default 30°) | Finest is 5° (72 frames). 1° is not offered. Must divide 360°. |
 | **RAM line** | Atlas / peak / free RAM hint | 1 Hz while Preview/Pre-cache is on; sized from **full frame**. Hard check when enabling Pre-cache |
 | **Flow → Preview accumulation** | D8 drainage overlay | Each cell → steepest of 8 neighbours; gold–cyan veins. Still **viewport** crop; sits on LUT or Shade. Analysis = height |
 | **Flow → Log scale** | `log1p` colour stretch | Default on so channels show instead of one sink |
 
-**Math (`calculate_hillshade`):** height from grayscale or luminance `0.299R+0.587G+0.114B` → `dx, dy = ∇z` → unit normal · light vector → shade clipped to `[0, 1]`. Shade Preview paints the **full frame** once; pan/zoom only transforms the overlay (same ViewBox as the cube). **Combined** averages coloured lights (RGB overlay). **Pre-cache** atlases that full frame for the current `T`. A cache over all `T` at one angle is still later.
+**Math (`calculate_hillshade`):** height from grayscale or luminance `0.299R+0.587G+0.114B` → `dx, dy = ∇z` → unit normal · light vector → shade clipped to `[0, 1]`. Shade Preview paints the **full frame** once on a worker thread; pan/zoom only transforms the overlay (same ViewBox as the cube). **Combined** averages coloured lights after a direction gain on each shade’s deviation from the mean (RGB overlay) — needed for metre-scale DEMs where four lights 90° apart would otherwise cancel. DGM **u16dm** is **absolute** decimetres (`403 m → 4030`); the ×10 code scale plus 0.1 m stairs can look “crisp” without that gain. Prefer **f32 metres** for Schummerung. **Pre-cache** atlases that full frame for the current `T`. A cache over all `T` at one angle is still later.
 
 **Math (`d8_accumulation`):** same viewport height patch at source resolution → steepest-descent among 8 neighbours (drop / distance; diagonals `√2`) → accumulate cell counts high-to-low. Pits/flats are sinks. Overlay is RGBA (not a cube). Not a palaeo reconstruction: buildings in the DEM steer flow.
 
@@ -186,10 +187,31 @@ flowchart TD
   dome --> zf["Grey peg shadow opposite the sun"]
   az --> lights["One sun or four independent"]
   el --> lights
-  lights --> rgb["Mean of n·l tinted by each colour"]
+  lights --> gain["Multi-light: amplify deviation from mean"]
+  gain --> rgb["Mean of tinted boosted shades"]
   zf --> grad["∇(z · Z) then shade"]
   rgb --> overlay["Full-frame overlay"]
   grad --> overlay
+```
+
+```mermaid
+flowchart TD
+  z["Height per pixel"] --> gradZ["dx dy = gradient of z times Z"]
+  gradZ --> lights4["Four Lamberts 90 deg apart"]
+  lights4 --> meanTint["Mean of four colours"]
+  meanTint --> flat["Float32 metres: near-constant tint"]
+  lights4 --> clipNL["Clip 0 to 1"]
+  clipNL --> crisp["UInt16 dm: steep edges plus 0.1 m stairs"]
+  lights4 --> boost["Direction gain then tint"]
+  boost --> relief["Readable Combined on f32"]
+```
+
+```mermaid
+flowchart TD
+  click["Preview or Combined"] --> bar["Progress bar on; status Shading"]
+  bar --> liveW["QThread one frame"]
+  liveW --> paint["Overlay set; bar off"]
+  liveW --> cancel["New params: bump generation"]
 ```
 
 ```mermaid

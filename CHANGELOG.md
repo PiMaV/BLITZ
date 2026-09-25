@@ -7,9 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-09-25
+
+### Added
+
+- Shade tab progress bar while Preview / Combined compute (indeterminate) and while Pre-cache fills (determinate). Live hillshade runs on a worker thread so the UI stays responsive.
+
+### Fixed
+
+- Combined (4 lights) no longer washes to a flat green–amber tint on metre-scale float DEMs: multi-light mix amplifies each shade’s deviation from the mean before colouring.
+- Combined / Preset: Elevation spin, dome, and sun drag keep one shared elevation on all lights (Z was already global).
+
 ### Changed
 
 - GitHub Release binaries are named `BLITZ-vX.Y.Z-windows-x86_64.exe` and `BLITZ-vX.Y.Z-linux-x86_64` (version from `pyproject.toml`).
+- Shade docs: DGM u16dm is **absolute** decimetres (`403 m → 4030`); prefer f32 metres for Schummerung.
 
 ## [2.4.0] - 2026-09-17
 
@@ -75,7 +87,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - In-core File-tab test patterns.
 
-[Unreleased]: https://github.com/PiMaV/BLITZ/compare/build-v2.4.0...HEAD
+[Unreleased]: https://github.com/PiMaV/BLITZ/compare/build-v2.5.0...HEAD
+[2.5.0]: https://github.com/PiMaV/BLITZ/compare/build-v2.4.0...build-v2.5.0
 [2.4.0]: https://github.com/PiMaV/BLITZ/compare/build-v2.3.1...build-v2.4.0
 [2.3.1]: https://github.com/PiMaV/BLITZ/compare/build-v2.3.0...build-v2.3.1
 [2.3.0]: https://github.com/PiMaV/BLITZ/compare/build-v2.2.1...build-v2.3.0

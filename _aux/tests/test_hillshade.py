@@ -159,21 +159,81 @@ def test_combined_azimuths_quarter_turns() -> None:
 
 
 def test_combined_hillshade_white_lights_match_mean() -> None:
+    """With gain 1 (no direction boost), white Combined equals the shade mean."""
     from blitz.data.hillshade import (
+        ShadeLight,
         combined_azimuths,
-        shade_from_gradients_combined,
+        shade_rgb_from_gradients,
     )
 
     yy, xx = np.mgrid[-1:1:32j, -1:1:32j]
     z = np.exp(-3.0 * (xx * xx + yy * yy))
-    combo = shade_from_gradients_combined(
-        *scaled_height_gradients(z, 1.0), 315.0, 40.0
+    dx, dy = scaled_height_gradients(z, 1.0)
+    lights = tuple(
+        ShadeLight(az, 40.0, (1.0, 1.0, 1.0))
+        for az in combined_azimuths(315.0)
     )
+    combo = shade_rgb_from_gradients(dx, dy, lights, direction_gain=1.0)[..., 0]
     parts = [
         calculate_hillshade(z, az, 40.0, combined=False)
         for az in combined_azimuths(315.0)
     ]
     np.testing.assert_allclose(combo, np.mean(parts, axis=0), rtol=0, atol=1e-6)
+
+
+def test_single_light_rgb_matches_plain_shade() -> None:
+    """One light stays color × shade (direction gain must not change it)."""
+    from blitz.data.hillshade import ShadeLight, shade_from_gradients, shade_rgb_from_gradients
+
+    yy, xx = np.mgrid[-1:1:24j, -1:1:24j]
+    z = np.exp(-3.0 * (xx * xx + yy * yy))
+    dx, dy = scaled_height_gradients(z, 1.0)
+    light = ShadeLight(315.0, 40.0, (0.8, 0.5, 0.2))
+    rgb = shade_rgb_from_gradients(dx, dy, [light])
+    part = shade_from_gradients(dx, dy, 315.0, 40.0)
+    expected = np.empty(part.shape + (3,), dtype=np.float32)
+    expected[..., 0] = part * 0.8
+    expected[..., 1] = part * 0.5
+    expected[..., 2] = part * 0.2
+    np.testing.assert_allclose(rgb, expected, rtol=0, atol=1e-6)
+
+
+def test_combined_direction_gain_boosts_gentle_metre_ramp() -> None:
+    """Four coloured lights on a gentle metre hill: gain restores colour span."""
+    from blitz.data.hillshade import (
+        four_way_lights,
+        shade_rgb_from_gradients,
+    )
+
+    # Soft 1 m hill — Combined without gain washes to a near-constant tint.
+    yy, xx = np.mgrid[-1:1:48j, -1:1:48j]
+    z = 1.0 * np.exp(-2.5 * (xx * xx + yy * yy))
+    dx, dy = scaled_height_gradients(z, 1.0)
+    lights = four_way_lights(315.0, 45.0)
+    flat = shade_rgb_from_gradients(dx, dy, lights, direction_gain=1.0)
+    boosted = shade_rgb_from_gradients(dx, dy, lights, direction_gain=8.0)
+
+    def _colour_rms(rgb: np.ndarray) -> float:
+        mean_c = rgb.mean(axis=(0, 1), keepdims=True)
+        return float(np.sqrt(((rgb - mean_c) ** 2).sum(axis=-1)).mean())
+
+    assert _colour_rms(boosted) > 2.0 * _colour_rms(flat)
+    assert _colour_rms(boosted) > 0.02
+
+
+def test_uint16_dm_steepens_gradients_tenfold() -> None:
+    """DGM u16dm stores dm (×10); that alone steepens ∇z — and stairs at 0.1 m."""
+    # Gentle ramp: 0 … 0.5 m over 64 px → dm codes with long plateaus.
+    z_m = np.tile(np.linspace(0.0, 0.5, 64, dtype=np.float64), (64, 1))
+    z_dm = np.rint(z_m / 0.1).astype(np.float64)  # same numbers BLITZ sees as uint16
+    _dx_m, dy_m = scaled_height_gradients(z_m, 1.0)
+    _dx_dm, dy_dm = scaled_height_gradients(z_dm, 1.0)
+    mean_m = float(np.mean(np.abs(dy_m[1:-1, 1:-1])))
+    mean_dm = float(np.mean(np.abs(dy_dm[1:-1, 1:-1])))
+    assert mean_m > 0.0
+    assert mean_dm > 8.0 * mean_m
+    # Plateaus between 0.1 m steps → many zero central differences.
+    assert float(np.mean(dy_dm[1:-1, 1:-1] == 0.0)) > 0.5
 
 
 def test_combined_colour_preset_is_rgb() -> None:

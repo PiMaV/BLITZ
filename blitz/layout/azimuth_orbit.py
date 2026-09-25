@@ -107,14 +107,17 @@ class AzimuthOrbit(QWidget):
         self.update()
 
     def setElevation(self, deg: float) -> None:
+        """Set sun height for every light (Combined keeps one shared elevation)."""
         el = float(max(0.0, min(90.0, deg)))
         if not self._lights:
             self._lights = [ShadeLight(315.0, el)]
-        else:
-            L = self._lights[0]
-            if abs(L.elevation - el) < 0.05:
-                return
-            self._lights[0] = ShadeLight(L.azimuth, el, L.color)
+            self.update()
+            return
+        if all(abs(L.elevation - el) < 0.05 for L in self._lights):
+            return
+        self._lights = [
+            ShadeLight(L.azimuth, el, L.color) for L in self._lights
+        ]
         self.update()
 
     def setZFactor(self, value: float) -> None:
@@ -323,11 +326,23 @@ class AzimuthOrbit(QWidget):
         color = self._lights[idx].color
         if self._lock_elev_z:
             el = self._lights[idx].elevation
-        self._replace_light(idx, ShadeLight(az, el, color))
+        # Combined: azimuth stays per light; elevation is shared (Preset contract).
+        if len(self._lights) > 1:
+            self._lights = [
+                ShadeLight(
+                    az if i == idx else L.azimuth,
+                    el,
+                    color if i == idx else L.color,
+                )
+                for i, L in enumerate(self._lights)
+            ]
+        else:
+            self._replace_light(idx, ShadeLight(az, el, color))
         if idx == 0:
             self._emit_primary()
         else:
             self.lightsChanged.emit()
+            self.elevationChanged.emit(el)
         self.update()
 
     def _apply_z(self, value: float) -> None:

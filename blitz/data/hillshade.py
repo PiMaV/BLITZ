@@ -19,6 +19,11 @@ FOUR_WAY_PRESET_COLORS: tuple[tuple[float, float, float], ...] = (
 )
 Z_FACTOR_MIN = 0.01
 Z_FACTOR_MAX = 2.0
+# Amplify per-light deviation from the mean shade when blending ≥2 lights.
+# On metre-scale DEMs, four lights 90° apart nearly cancel; U16 dm (×10) only
+# looked crisp because of that scale plus 0.1 m stair-steps. Gain restores
+# colour relief without requiring dtype tricks.
+COMBINED_DIRECTION_GAIN = 8.0
 
 
 class ShadeLight(NamedTuple):
@@ -218,22 +223,47 @@ def shade_rgb_from_gradients(
     dx: np.ndarray,
     dy: np.ndarray,
     lights: Sequence[ShadeLight],
+    *,
+    direction_gain: float = COMBINED_DIRECTION_GAIN,
 ) -> np.ndarray:
-    """Weighted mean of coloured Lambertian lights → float32 RGB ``[0, 1]``."""
-    acc = None
-    n = 0
-    for light in lights:
-        part = shade_from_gradients(dx, dy, light.azimuth, light.elevation)
+    """Coloured Lambertian lights → float32 RGB ``[0, 1]``.
+
+    One light: ``color × shade`` (unchanged). Several lights: amplify each
+    shade's deviation from the mean, then tint and average — so Combined
+    four-way colour stays readable on gentle metre-scale slopes.
+    """
+    items = list(lights)
+    if not items:
+        return np.zeros(np.asarray(dx).shape + (3,), dtype=np.float32)
+
+    parts = [
+        shade_from_gradients(dx, dy, light.azimuth, light.elevation)
+        for light in items
+    ]
+
+    if len(parts) == 1:
+        part = parts[0]
         rgb = np.empty(part.shape + (3,), dtype=np.float32)
-        r, g, b = light.color
+        r, g, b = items[0].color
         rgb[..., 0] = part * float(r)
         rgb[..., 1] = part * float(g)
         rgb[..., 2] = part * float(b)
-        acc = rgb if acc is None else acc + rgb
-        n += 1
-    if acc is None:
-        return np.zeros(np.asarray(dx).shape + (3,), dtype=np.float32)
-    return np.clip(acc / float(max(n, 1)), 0.0, 1.0).astype(np.float32)
+        return np.clip(rgb, 0.0, 1.0).astype(np.float32)
+
+    stack = np.stack(parts, axis=0)
+    base = np.mean(stack, axis=0)
+    gain = float(direction_gain) if np.isfinite(direction_gain) else COMBINED_DIRECTION_GAIN
+    if gain < 0.0:
+        gain = 0.0
+
+    acc = np.zeros(parts[0].shape + (3,), dtype=np.float32)
+    for part, light in zip(parts, items):
+        boosted = np.clip(base + gain * (part - base), 0.0, 1.0)
+        r, g, b = light.color
+        acc[..., 0] += boosted * float(r)
+        acc[..., 1] += boosted * float(g)
+        acc[..., 2] += boosted * float(b)
+    return np.clip(acc / float(len(parts)), 0.0, 1.0).astype(np.float32)
 
 
 def shade_rgb_to_uint8(shade: np.ndarray) -> np.ndarray:

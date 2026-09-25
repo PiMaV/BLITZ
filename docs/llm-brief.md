@@ -13,6 +13,7 @@ Entry: `blitz/cli.py` → `blitz/app.py`. Run: `uv sync` then `uv run python -m 
 ## Do
 
 - One measurand per cube. Preview overlays (Shade, LUT, Flow, isolines, RoSEE bounds) never bake lighting into the stack.
+- Shade **Combined** (≥2 lights) amplifies each shade’s deviation from the mean before tinting so metre-scale DEMs keep colour relief; DGM u16dm is absolute dm (`403→4030`, prefer f32 metres for Schummerung). Live Preview/Combined run off the UI thread with a progress bar.
 - Stream Connect: index-only seek on the cached cube; stamp `MetaData.file_name` from hub `file_name` / `file_names`; emit `viewer_index` only when the index changes.
 - Status bar keeps `File:` / `Frame:` widgets visible. Do not leave a permanent `QStatusBar.showMessage` on idle listen. Multi-line dataset dumps stay in the Log tab.
 

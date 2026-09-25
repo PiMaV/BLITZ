@@ -75,8 +75,17 @@ azimuth atlas for the **full current `T` frame** on a worker thread (step
 5–90°, default 30°; 5° is the finest). Shade Preview paints the **entire
 frame** once; pan/zoom only transforms the ImageItem (no recompute). Flow
 still uses a ViewBox crop for D8 (separate story). Combined mode blends
-independent coloured lights (Preset = four at 90°, same elevation). Optional
-later: cache the current angles over `T` so timeline scrub stays smooth.
+independent coloured lights (Preset = four at 90°, same elevation). For two
+or more lights, each Lambertian shade is pushed away from the mean
+(`base + gain × (shade − base)`, default gain 8) before tinting — otherwise
+four lights on gentle **metre-scale** DEMs cancel to a flat green–amber wash.
+DGM **u16dm** stores **absolute** decimetres (1 DN = 0.1 m, `z0=0`: 403 m →
+4030). The ×10 scale makes Combined look crisp but stairs at 0.1 m; prefer
+**f32 metres** for Schummerung when you want smooth metre slopes. Live
+Preview / Combined compute on a worker thread; a thin progress bar on the
+Shade tab is indeterminate while shading and determinate while Pre-cache
+fills. Optional later: cache the current angles over `T` so timeline scrub
+stays smooth.
 
 ### Pixel identity (overlays)
 
@@ -149,10 +158,31 @@ flowchart TD
   dome --> zf["Grey peg shadow opposite the sun; length from Z and elevation"]
   az --> lights["One sun or four independent"]
   el --> lights
-  lights --> rgb["Mean of n·l tinted by each colour"]
+  lights --> gain["Multi-light: amplify deviation from mean shade"]
+  gain --> rgb["Mean of tinted boosted shades"]
   zf --> grad["∇ of z times Z then shade"]
-  rgb --> overlay["Viewport overlay"]
+  rgb --> overlay["Full-frame overlay"]
   grad --> overlay
+```
+
+```mermaid
+flowchart TD
+  z["Height per pixel"] --> gradZ["dx dy = gradient of z times Z"]
+  gradZ --> lights4["Four Lamberts 90 deg apart"]
+  lights4 --> meanTint["Mean of four colours"]
+  meanTint --> flat["Float32 metres: near-constant tint"]
+  lights4 --> clipNL["Clip 0 to 1"]
+  clipNL --> crisp["UInt16 dm: steep edges plus 0.1 m stairs"]
+  lights4 --> boost["Direction gain then tint"]
+  boost --> relief["Readable Combined on f32"]
+```
+
+```mermaid
+flowchart TD
+  click["Preview or Combined"] --> bar["Progress bar on; status Shading"]
+  bar --> liveW["QThread one frame"]
+  liveW --> paint["Overlay set; bar off"]
+  liveW --> cancel["New params: bump generation"]
 ```
 
 ```mermaid

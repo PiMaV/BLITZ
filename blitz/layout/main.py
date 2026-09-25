@@ -138,6 +138,7 @@ class MainWindow(QMainWindow):
             self.ui.image_viewer,
             status_label=self.ui.label_shade_status,
             ram_label=self.ui.label_shade_cache_ram,
+            progress_bar=self.ui.progress_shade,
             on_precache_off=self._sync_shade_precache_ui_off,
             on_compute=self._update_bench_overlay,
         )
